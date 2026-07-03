@@ -7,3 +7,10 @@ tsconfig.tsbuildinfo
 # phase execution outputs
 phases/**/phase*-output.json
 phases/**/step*-output.json
+
+# per-user harness overrides (not shared)
+.claude/settings.local.json
+.claude/**/*.local.json
+.claude/**/*.local.md
+.claude/commands/local/
+.claude/hooks/local/
