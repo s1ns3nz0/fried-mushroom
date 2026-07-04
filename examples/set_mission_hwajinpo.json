@@ -1,0 +1,7 @@
+{
+  "directive_text": "화진포 일대 연안 정찰. 서측 능선과 동측 해안 고지에 적 저격조·화기 배치 첩보. 도로 회랑 따라 북상하여 연안 시설 정찰 후 복귀.",
+  "enemy_tracks": [
+    { "id": "E1", "kind": "T3", "pos": { "lat": 38.26426, "lon": 128.45712 }, "radius": 240, "confidence": 0.9 },
+    { "id": "E2", "kind": "T3", "pos": { "lat": 38.26732, "lon": 128.43480 }, "radius": 260, "confidence": 0.85 }
+  ]
+}

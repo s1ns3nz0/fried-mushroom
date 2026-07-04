@@ -68,6 +68,7 @@ const live = {
   channels: null, // tick.channels(실 파이프라인 11채널 스냅샷) — 신호 패널 소스(없으면 mock 폴백).
   threatEvent: null, // 현재 라이브 조우의 threat_event — 변경 감지로 새 조우를 연다.
   debug: null, // tick.debug(최신 사이클의 레이어별 input/output) — 디버그 로그 패널 소스.
+  satellite: false, // init.background === "satellite" 이면 위성 이미지를 지도 배경으로 쓴다(프레임 기반 시나리오).
 };
 
 // AI 결정 모델 설명 마법사 — 5블록(0..4)을 한 단계씩 짚어 청중에게 설명(관측 전용).
@@ -196,6 +197,7 @@ function connectStream() {
     live.active = false; // 연결 끊김 → mock 재개(updateMock 프리즈 해제).
     live.channels = null; // 신호 패널도 mock(computeChannels)으로 복귀.
     live.threatEvent = null;
+    live.satellite = false; // 위성 배경도 mock 좌표계로 복귀(잔존 시 mock과 오정렬 렌더 방지).
     setStatus("라이브 끊김", false);
     scheduleStreamReconnect();
   };
@@ -251,6 +253,7 @@ function applyStreamInit(msg) {
   live.trail = [];
   live.enemies = msg.enemies || [];
   live.briefing = msg.briefing || null;
+  live.satellite = msg.background === "satellite";
   rebuildLiveEnemyFootprints();
 }
 
@@ -1018,6 +1021,17 @@ const terrainGrid = buildTerrainGrid();
 // terrainGrid.hmin/hmax에 별도 보관해 뷰셰드/footprint 고각 계산에 사용한다).
 const terrainLayer = D4DRender.buildTerrainLayer(terrainGrid.u16, terrainGrid.H, terrainGrid.W, 0, 65535);
 
+// 위성 이미지 배경(프레임 기반 시나리오, init.background === "satellite") — 좌표계와 1:1 정합.
+// 비동기 로드 후 준비되면 drawMap 에서 절차적 지형 대신 캔버스를 꽉 채운다.
+let satelliteImg = null;
+(function loadSatellite() {
+  if (typeof Image === "undefined") return;
+  const im = new Image();
+  im.onload = () => { satelliteImg = im; };
+  im.onerror = () => { satelliteImg = null; };
+  im.src = "/static/assets/satellite.jpg";
+})();
+
 // 위협 유형별 마커 dispatch — kind→category→symbol 매핑:
 //   T3/T4 (물리 적: 소화기/포획)                → physical → drawHostileGround (적색 다이아몬드)
 //   T1/T2/T5 (원격 전자전: GPS스푸핑/사이버/레이저) → ew      → drawEwThreat (보라 육각형+번개)
@@ -1311,6 +1325,16 @@ function droneColor() {
   return mock.phase === "NORMAL" ? "#4CC38A" : (mock.phase === "RTL" ? "#E5A93D" : "#F0555D");
 }
 
+/** 위성 모드 마커 후광 — 마커 뒤에 반투명 어두운 원반을 깔아 위성 배경 위 대비를 준다. */
+function satHalo(ctx, x, y, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fill();
+  ctx.restore();
+}
+
 /**
  * 지도/경로 — 레이어 순서: terrain(u16 격자) → UAV 가시영역(뷰셰드) → 적 탐지범위(footprint)
  * → 경로 → 복귀경로(RTL 시) → 마커(적 다이아몬드, 목표 OBJ, 출발지 SP, 드론).
@@ -1336,17 +1360,27 @@ function drawMap() {
     ? live.route.waypoints : PATH;
 
   // 1) terrain + 좌표 그리드 오버레이(1/8 간격, 미터 라벨).
-  if (activeTerrainLayer) ctx.drawImage(activeTerrainLayer, 0, 0, W, H);
+  // 위성 모드(live.satellite)는 위성 이미지로 배경을 교체, 아니면 절차적 지형 레이어.
+  if (live.satellite && satelliteImg) {
+    ctx.drawImage(satelliteImg, 0, 0, W, H);
+    // 위성 배경을 반투명 어두운 스크림으로 눌러 개체(경로/마커/드론)가 튀게 한다.
+    ctx.fillStyle = "rgba(6,10,16,0.32)";
+    ctx.fillRect(0, 0, W, H);
+  } else if (activeTerrainLayer) {
+    ctx.drawImage(activeTerrainLayer, 0, 0, W, H);
+  }
   D4DRender.drawMapGrid(ctx, W, H, MAP_EXTENT_M);
 
   // 2) UAV 가시영역(뷰셰드) — 지형 위, 나머지 오버레이/마커 아래.
-  if (viewshedLayer) ctx.drawImage(viewshedLayer, 0, 0, W, H);
+  // 위성 모드에선 절차적 지형 기반 뷰셰드가 위성과 안 맞아 숨긴다.
+  if (!live.satellite && viewshedLayer) ctx.drawImage(viewshedLayer, 0, 0, W, H);
 
   // 3) 적 탐지범위(footprint, 지형 반영 · 원 아님) — mock 시나리오 전용(라이브엔 적 데이터 없음).
   if (!live.active && enemyFootprintLayer) ctx.drawImage(enemyFootprintLayer, 0, 0, W, H);
 
   // 3.5) 라이브 사전 브리핑 적 탐지범위(footprint, 지형 반영 · 원 아님) — init 시 캐시된 레이어.
-  if (live.active && live._enemyFootprints) {
+  // 위성 모드에선 절차적 지형 기반 footprint 가 위성과 안 맞아 숨긴다(5.5에서 점선 원으로 대체).
+  if (!live.satellite && live.active && live._enemyFootprints) {
     for (const fp of live._enemyFootprints) if (fp) ctx.drawImage(fp, 0, 0, W, H);
   }
 
@@ -1360,8 +1394,14 @@ function drawMap() {
       if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
     }
   };
-  strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.25)"; ctx.lineWidth = 6; ctx.stroke();
-  strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.9)"; ctx.lineWidth = 2.5; ctx.stroke();
+  if (live.satellite) {
+    // 위성 위에서 경로가 묻히지 않게 글로우/본선을 더 굵고 밝게.
+    strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.45)"; ctx.lineWidth = 8; ctx.stroke();
+    strokePath(); ctx.strokeStyle = "#FFB95A"; ctx.lineWidth = 3.5; ctx.stroke();
+  } else {
+    strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.25)"; ctx.lineWidth = 6; ctx.stroke();
+    strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.9)"; ctx.lineWidth = 2.5; ctx.stroke();
+  }
   ctx.restore();
 
   // 4.5) 경로 waypoint 마커 — 중간 waypoint(1..len-2)만 그린다(0=출발 SP, 마지막=목표 OBJ
@@ -1372,14 +1412,22 @@ function drawMap() {
   ctx.textBaseline = "bottom";
   for (let i = 1; i < routeWps.length - 1; i++) {
     const X = px(routeWps[i].x), Y = py(routeWps[i].y);
+    if (live.satellite) satHalo(ctx, X, Y, 9);
     ctx.beginPath();
-    ctx.arc(X, Y, 4, 0, Math.PI * 2);
+    ctx.arc(X, Y, live.satellite ? 5 : 4, 0, Math.PI * 2);
     ctx.fillStyle = "#0D0D0F";
     ctx.fill();
     ctx.strokeStyle = "rgba(240,160,60,0.9)";
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = live.satellite ? 2 : 1.5;
     ctx.stroke();
-    ctx.fillStyle = "rgba(240,160,60,0.75)";
+    if (live.satellite) {
+      ctx.strokeStyle = "rgba(0,0,0,0.8)";
+      ctx.lineWidth = 3;
+      ctx.strokeText(String(i), X + 6, Y - 5);
+      ctx.fillStyle = "rgba(255,185,90,0.95)";
+    } else {
+      ctx.fillStyle = "rgba(240,160,60,0.75)";
+    }
     ctx.fillText(String(i), X + 6, Y - 5);
   }
   ctx.restore();
@@ -1408,15 +1456,35 @@ function drawMap() {
     ctx.textBaseline = "alphabetic";
     for (const en of live.enemies) {
       const ex = px(en.x), ey = py(en.y);
+      // 위성 모드에선 지형 반영 footprint(3.5)를 숨기므로, 적 위치에 en.radius(정규) 기준
+      // 간단한 점선 원으로 탐지범위를 표시한다(붉은/앰버 반투명 — briefed=red, discovered=amber).
+      if (live.satellite && typeof en.radius === "number" && en.radius > 0) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ex, ey, en.radius * W, 0, Math.PI * 2);
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = en.discovered ? "rgba(255,185,90,0.72)" : "rgba(240,85,93,0.72)";
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
       // 탐지범위는 3.5)의 지형 반영 footprint 레이어가 담당(평면 원 제거).
       // 위협 유형별 MIL-STD-2525 계열 심볼 — kind→category 디스패치(drawThreatMarker).
-      drawThreatMarker(ctx, en.kind || en.type, ex, ey, 8);
+      const enSize = live.satellite ? 10 : 8;
+      if (live.satellite) satHalo(ctx, ex, ey, enSize + 6);
+      drawThreatMarker(ctx, en.kind || en.type, ex, ey, enSize);
       // 사전 첩보(briefed) 적은 라벨을 밝게 + GCS 확신도 병기(예: "T3·95%").
       // 임무 중 식별(discovered)된 popup 적은 앰버 라벨 + "신규 식별" 표기.
       const label = (en.kind || en.type) +
         (en.briefed && typeof en.confidence === "number"
           ? "·" + Math.round(en.confidence * 100) + "%" : "") +
         (en.discovered ? " · 신규 식별" : "");
+      if (live.satellite) {
+        ctx.strokeStyle = "rgba(0,0,0,0.8)";
+        ctx.lineWidth = 3;
+        ctx.strokeText(label, ex + 11, ey - 8);
+      }
       ctx.fillStyle = en.briefed ? "rgba(255,154,147,0.95)"
         : (en.discovered ? "rgba(255,185,90,0.95)" : "rgba(240,85,93,0.55)");
       ctx.fillText(label, ex + 11, ey - 8);
@@ -1454,8 +1522,13 @@ function drawMap() {
   // MIL-STD-2525 objective/start tactical graphics (render.js pure helpers) —
   // 라이브/mock 공통. 라벨(OBJ/SP)은 헬퍼가 자체 렌더한다.
   const sN = routeWps[0], gN = routeWps[routeWps.length - 1];
-  D4DRender.drawObjective(ctx, px(gN.x), py(gN.y), 9);
-  D4DRender.drawStartPoint(ctx, px(sN.x), py(sN.y), 9);
+  const objSize = live.satellite ? 11 : 9;
+  if (live.satellite) {
+    satHalo(ctx, px(gN.x), py(gN.y), objSize + 6);
+    satHalo(ctx, px(sN.x), py(sN.y), objSize + 6);
+  }
+  D4DRender.drawObjective(ctx, px(gN.x), py(gN.y), objSize);
+  D4DRender.drawStartPoint(ctx, px(sN.x), py(sN.y), objSize);
 
   // 드론 마커 — 라이브 tick 수신 중이면 live.drone, 아니면 mock(라이브 대기 중엔 프리즈된 마지막 위치).
   const liveDrone = live.active && live.drone;
@@ -1464,13 +1537,15 @@ function drawMap() {
   const dc = liveDrone ? "#66C2FF" : droneColor();
   const odoLike = liveDrone ? live.drone.s : mock.odo;
   const dx = px(dronePos.x), dy = py(dronePos.y);
-  const pulse = 8 + 3 * (0.5 + 0.5 * Math.sin(odoLike * 10));
+  const pulse = (live.satellite ? 11 : 8) + (live.satellite ? 4 : 3) * (0.5 + 0.5 * Math.sin(odoLike * 10));
+  if (live.satellite) satHalo(ctx, dx, dy, pulse + 3);
   ctx.beginPath(); ctx.arc(dx, dy, pulse, 0, Math.PI * 2);
-  ctx.globalAlpha = 0.35; ctx.strokeStyle = dc; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.globalAlpha = live.satellite ? 0.6 : 0.35;
+  ctx.strokeStyle = dc; ctx.lineWidth = live.satellite ? 2.5 : 1.5; ctx.stroke();
   ctx.globalAlpha = 1;
   // MIL-STD-2525 friendly AIR frame (render.js pure helper) — affiliation
   // blue beats the phase color; the pulse ring above keeps phase feedback.
-  D4DRender.drawFriendlyAir(ctx, dx, dy, 9, droneHeadRad);
+  D4DRender.drawFriendlyAir(ctx, dx, dy, live.satellite ? 11 : 9, droneHeadRad);
 
   // 6.5) 마법사 스포트라이트 — 대상 위치를 점선 앰버 원으로 감싸고 원 밖을 어둡게.
   if (wizard.active && wizard.spot) {

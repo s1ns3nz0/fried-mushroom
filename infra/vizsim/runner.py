@@ -189,7 +189,8 @@ def build_scenario(
     their rt0/evs0-anchored positions since the returned route was generated
     specifically to keep out of them.
     """
-    bbox = route.compute_bbox(brief["corridor"]["waypoints"])
+    frame = brief.get("frame")
+    bbox = route.frame_to_bbox(frame) if frame else route.compute_bbox(brief["corridor"]["waypoints"])
     rt0 = route.generate_route(brief)
     total0 = path.total_length(rt0["waypoints"])
     evs0 = events_module.generate_events(seed, total0)
@@ -431,6 +432,7 @@ def main(argv=None) -> int:
         ],
         "enemies": scenario["enemies"],
         "popup_count": len(popup_enemies),
+        "background": "satellite" if brief.get("frame") else "procedural",
     }
     if briefing is not None:
         init_payload["briefing"] = briefing
