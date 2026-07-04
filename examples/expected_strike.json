@@ -235,66 +235,77 @@
         "lat": 37.61,
         "lon": 127.11,
         "alt_m": 150.0,
-        "clearance_m": 150.0
+        "terrain_elev_m": 0.571982,
+        "clearance_m": 149.428018
       },
       {
         "lat": 37.6,
         "lon": 127.1,
         "alt_m": 150.0,
-        "clearance_m": 150.0
+        "terrain_elev_m": 3.236298,
+        "clearance_m": 146.763702
       },
       {
         "lat": 37.598888888888894,
         "lon": 127.1,
         "alt_m": 140.0,
-        "clearance_m": 140.0
+        "terrain_elev_m": 0.437997,
+        "clearance_m": 139.562003
       },
       {
         "lat": 37.59777777777778,
         "lon": 127.1,
         "alt_m": 130.0,
-        "clearance_m": 130.0
+        "terrain_elev_m": 0.034771,
+        "clearance_m": 129.965229
       },
       {
         "lat": 37.59666666666667,
         "lon": 127.1,
         "alt_m": 120.0,
-        "clearance_m": 120.0
+        "terrain_elev_m": 0.00165,
+        "clearance_m": 119.99835
       },
       {
         "lat": 37.595555555555556,
         "lon": 127.1,
         "alt_m": 110.0,
-        "clearance_m": 110.0
+        "terrain_elev_m": 5e-05,
+        "clearance_m": 109.99995
       },
       {
         "lat": 37.59444444444445,
         "lon": 127.1,
         "alt_m": 100.0,
-        "clearance_m": 100.0
+        "terrain_elev_m": 1e-06,
+        "clearance_m": 99.999999
       },
       {
         "lat": 37.593333333333334,
         "lon": 127.1,
         "alt_m": 90.0,
+        "terrain_elev_m": 0.0,
         "clearance_m": 90.0
       },
       {
         "lat": 37.592222222222226,
         "lon": 127.1,
         "alt_m": 80.0,
+        "terrain_elev_m": 0.0,
         "clearance_m": 80.0
       },
       {
         "lat": 37.59111111111111,
         "lon": 127.1,
         "alt_m": 70.0,
+        "terrain_elev_m": 0.0,
         "clearance_m": 70.0
       },
       {
         "lat": 37.59,
         "lon": 127.1,
         "alt_m": 60.0,
+        "terrain_elev_m": 0.0,
         "clearance_m": 60.0
       }
     ],
