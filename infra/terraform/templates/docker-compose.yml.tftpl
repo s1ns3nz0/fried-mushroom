@@ -10,8 +10,10 @@ services:
     environment:
       - APP_PORT=${GROUND_APP_PORT}
       - LOG_ENDPOINT=http://log:${LOG_SERVER_PORT}
-    depends_on:
-      - log
+    # ground 는 log 로 네트워크(LOG_ENDPOINT) 통신만 하며 재시도 가능하다. 부팅 시점
+    # startup 순서 의존이 아니므로 depends_on 을 두지 않는다 — log repo 가 IMMUTABLE 이라
+    # 신규 EC2 부팅 시 log:<sha> 이미지가 아직 없을 수 있는데, depends_on 이 있으면 log
+    # 기동 실패가 ground 까지 막는다(#328). 분리하면 ground 는 독립 기동하고 log 는 배포 시 붙는다.
 
   log:
     image: ${LOG_IMAGE}

@@ -39,4 +39,8 @@ ENV
 # ECR 로그인 후 compose up — 이미지 미준비 시 배포 워크플로가 이후 SSM으로 갱신.
 aws ecr get-login-password --region "${region}" | docker login --username AWS --password-stdin "${ecr_registry}" || true
 cd "$APP_DIR" && docker compose pull || true
+# ground 를 먼저 독립 기동한다 — log repo 는 IMMUTABLE 이라 부팅 시 log:<sha> 이미지가
+# 아직 없을 수 있고(그땐 log 기동만 실패), depends_on 제거로 ground 는 그와 무관하게 뜬다(#328).
+cd "$APP_DIR" && docker compose up -d ground || true
+# 전체 스택도 best-effort 시도(log 이미지가 이미 있으면 함께 기동). 없으면 배포 SSM 이 이후 붙인다.
 cd "$APP_DIR" && docker compose up -d || true
