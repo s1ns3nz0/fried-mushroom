@@ -6,6 +6,10 @@
   "drone_profile": {"armament": [], "spare_asset_available": true, "battery_pct": 65},
   "corridor": {"waypoints": [], "bases": {}},
   "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
+  "enemy_tracks": [
+    {"id": "trk-1", "kind": "T3", "lat": 37.508, "lon": 127.006, "radius_m": 260, "confidence": 0.9},
+    {"id": "trk-2", "kind": "T3", "lat": 37.513, "lon": 127.014, "radius_m": 220, "confidence": 0.85}
+  ],
   "c4i": {
     "enemy_situation": ["적 저격조 활동 첩보 확인"],
     "asset_management": {"spare_asset_available": true},
