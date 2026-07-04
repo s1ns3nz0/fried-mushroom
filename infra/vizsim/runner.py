@@ -163,18 +163,6 @@ def split_enemies(enemies: list[dict]) -> tuple[list[dict], list[dict]]:
     return briefed, popup
 
 
-def _track_lat_lon(pos) -> tuple[float, float]:
-    """Normalize an enemy_track's `pos` field to (lat, lon).
-
-    Accepts both shapes seen in the wild: the flat dashboard dict
-    {"lat":.., "lon":..} and the C4I/B-1 canonical list [lat, lon]
-    (#195/#219/#255 P2-1).
-    """
-    if isinstance(pos, (list, tuple)):
-        return pos[0], pos[1]
-    return pos["lat"], pos["lon"]
-
-
 def build_scenario(
     seed: int,
     brief: dict,
@@ -192,14 +180,6 @@ def build_scenario(
     directive. When provided they become the BRIEFED enemies at their exact
     positions and ALL seed-derived enemies become popups; when None the
     briefed/popup split stays seed-based.
-
-    Popup enemies are rebuilt on the FINAL route/events (after avoidance),
-    not the provisional rt0/evs0 — otherwise, whenever avoidance actually
-    changes the route's arc length, popup positions/`s` would stay anchored
-    to a discarded scale, desyncing from the `events` this function returns
-    and from what gets injected into World (#255 P2-2). BRIEFED enemies keep
-    their rt0/evs0-anchored positions since the returned route was generated
-    specifically to keep out of them.
     """
     frame = brief.get("frame")
     bbox = route.frame_to_bbox(frame) if frame else route.compute_bbox(brief["corridor"]["waypoints"])
@@ -212,8 +192,7 @@ def build_scenario(
             # flat dashboard shape (lat/lon/radius_m) + C4I/B-1 canonical shape
             # (pos/radius) both accepted (#195/#219).
             pos = trk.get("pos") or trk
-            lat, lon = _track_lat_lon(pos)
-            x, y = route.to_norm(lat, lon, bbox)
+            x, y = route.to_norm(pos["lat"], pos["lon"], bbox)
             radius_m = float(trk.get("radius_m") or trk.get("radius") or _ENEMY_DETECT_RADIUS_M)
             kind = trk.get("kind")
             briefed.append(
@@ -228,18 +207,14 @@ def build_scenario(
                     "briefed": True,
                 }
             )
+        popup = _select_spread_popups(build_enemies(rt0["waypoints"], evs0), POPUP_ENEMY_COUNT)
+        all_enemies = briefed + popup
     else:
-        all_enemies0 = build_enemies(rt0["waypoints"], evs0, briefed_threats)
-        briefed, _popup0 = split_enemies(all_enemies0)
+        all_enemies = build_enemies(rt0["waypoints"], evs0, briefed_threats)
+        briefed, popup = split_enemies(all_enemies)
     rt = route.generate_route(brief, enemies=briefed)
     total_s = path.total_length(rt["waypoints"])
     evs = events_module.generate_events(seed, total_s)
-    if enemy_tracks is not None:
-        popup = _select_spread_popups(build_enemies(rt["waypoints"], evs), POPUP_ENEMY_COUNT)
-    else:
-        all_final = build_enemies(rt["waypoints"], evs, briefed_threats)
-        _briefed_final, popup = split_enemies(all_final)
-    all_enemies = briefed + popup
     return {
         "bbox": bbox,
         "route": rt,
@@ -311,27 +286,27 @@ def build_tick_payload(
         "debug": {
             "layers": [
                 {
-                    "layer": "02→03 Sensor Abstraction",
+                    "layer": "02→03 센서 추상화",
                     "input": raw,
                     "output": result["abstraction"],
                 },
                 {
-                    "layer": "03→04 Threat Modeling",
+                    "layer": "03→04 위협 모델링",
                     "input": result["abstraction"],
                     "output": result["threat"],
                 },
                 {
-                    "layer": "04→05 Risk Assessment",
+                    "layer": "04→05 위험 평가",
                     "input": result["threat"],
                     "output": result["risk"],
                 },
                 {
-                    "layer": "05→06 Response",
+                    "layer": "05→06 대응 결정",
                     "input": result["risk"],
                     "output": result["response"],
                 },
                 {
-                    "layer": "06→07 Flight Planning",
+                    "layer": "06→07 비행 계획",
                     "input": result["response"],
                     "output": result["flight_plan"],
                 },

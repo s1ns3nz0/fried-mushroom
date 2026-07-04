@@ -352,10 +352,10 @@ function applyLiveDecision(dec, channels) {
   }
   const stages = decision.current.stages;
 
-  // 1 탐지 — state != normal 채널명 나열.
+  // 1 탐지 — state != normal 채널명 나열(한글 라벨로 표기).
   const fired = (channels || [])
     .filter((c) => c && c.state !== "normal")
-    .map((c) => c.channel);
+    .map((c) => channelLabelKo(c.channel));
   stages.detect = {
     msg: fired.length ? fired.join(" · ") : "-",
     sub: fired.length + "개 채널 이상",
@@ -591,7 +591,7 @@ function renderDecisionChips(channels) {
     const on = c.state !== "normal";
     if (on) fired++;
     refs.chip.className = "dc-chip" + (on ? (c.state === "degraded" ? " warn on" : " on") : "");
-    refs.txt.textContent = def.label + " · " + c.state;
+    refs.txt.textContent = def.label + " · " + (STATE_LABEL_KO[c.state] || c.state);
   });
   if (dcEl.combineLbl) dcEl.combineLbl.textContent = fired + "개 신호 결합";
   if (dcEl.meta) {
@@ -1683,6 +1683,15 @@ const CHANNEL_DEFS = [
   { key: "obstacle_proximity", label: "장애물 근접" },
   { key: "operational_margin", label: "운용 여유도" },
 ];
+
+/** 채널 state(normal/degraded/anomaly) → 한글 라벨 (0/1단계 UI 표기용). */
+const STATE_LABEL_KO = { normal: "정상", degraded: "저하", anomaly: "이상" };
+
+/** 채널 key → CHANNEL_DEFS 한글 라벨(정의 없으면 key 그대로 폴백). */
+function channelLabelKo(key) {
+  const def = CHANNEL_DEFS.find((d) => d.key === key);
+  return def ? def.label : key;
+}
 
 /** quality(0..1) → state 라벨 공통 임계값. */
 function stateFromQuality(q) {
