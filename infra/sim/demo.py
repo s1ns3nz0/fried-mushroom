@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         sortie = brief.get("sortie_id", "SIM")
         for seq, f in enumerate(frames):
             payload = runner.build_tick_payload(
-                seq, seq * int(args.dt * 1000) if args.dt else seq,
+                seq, int(seq * args.dt * 1000),
                 f"{sortie}-{seq:04d}", f["world"], f["result"], scen["enemies"],
             )
             print(json.dumps(payload, ensure_ascii=False))
