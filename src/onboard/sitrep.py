@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from onboard.explain import explain_cycle
-from onboard.shared.constants import RAC_ORDER
+from onboard.shared.constants import RAC_ORDER, THREAT_CATALOG
 from onboard.trend import assess_threat_trend
 
 _LEVEL_ORDER = ("ROUTINE", "MONITOR", "ALERT", "ACT")
@@ -61,7 +61,10 @@ def build_sitrep(
     current = explain_cycle(latest)
     trend = assess_threat_trend(seq, window=window)
 
-    primary_te = current.get("primary_threat_event")
+    # 표시 위협은 **결정(05/06)의 primary** 기준 — RAC·flight_action 과 같은 후보라야 헤드라인이
+    # 일관된다(04 threat.primary 는 match_count 로 다를 수 있음). 부재 시 explain 값으로 폴백.
+    primary_te = (latest.get("response") or {}).get("primary_threat_event") \
+        or current.get("primary_threat_event")
     flight_action = current.get("flight_action")
     rac = _rac_from_explain(current)
     level = _attention_level(primary_te, rac, flight_action, trend)
@@ -70,7 +73,7 @@ def build_sitrep(
         headline = f"[{level}] 위협 없음 — {flight_action or '대기'}"
         rec = "정상 운용. 특이 조치 불요."
     else:
-        desc = current["steps"][1]["detail"].get("threat_desc", "") if len(current.get("steps", [])) > 1 else ""
+        desc = THREAT_CATALOG.get(primary_te, primary_te)
         headline = f"[{level}] {primary_te}({desc}) RAC={rac} → {flight_action}"
         if level == "ACT":
             rec = f"즉시 주목 — {flight_action} 실행 중, 궤적 {trend.get('level')}. 운용자 확인 요망."

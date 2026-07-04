@@ -105,3 +105,13 @@ def test_window_forwarded_to_trend():
     seq = [_cyc("T3", 0.9, "후기", "High", "RTL")] + [_cyc() for _ in range(4)]
     out = build_sitrep(seq, window=2)  # 최근 2 = 무위협
     assert out["attention_level"] == "ROUTINE"
+
+
+def test_headline_threat_aligned_with_decision():
+    """04 threat.primary 와 05/06 결정 primary 가 다르면 — 헤드라인은 결정 primary 기준."""
+    r = _cyc("T3", 0.8, "중기", "Serious", "REROUTE")
+    # 04 는 T5 를 primary 로, 05/06(결정)은 T3 를 primary 로 (RAC/action 은 T3 것)
+    r["threat"]["primary"] = {"threat_event": "T5", "confidence": 0.6, "kill_chain_stage": "초기"}
+    out = build_sitrep([r])
+    assert out["primary_threat_event"] == "T3"       # 결정 primary
+    assert "T3" in out["headline"] and "T5" not in out["headline"]
