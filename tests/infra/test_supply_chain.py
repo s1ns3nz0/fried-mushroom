@@ -2,8 +2,9 @@
 
 #242: infra/log·infra/dashboard requirements.txt 모든 패키지 == 버전 핀,
       infra/log/Dockerfile base image SHA-256 다이제스트 고정.
-#247: transitive 의존성 lock 파일(requirements.lock) 존재 + 전체 해시 포함,
+#247: infra/log transitive 의존성 lock 파일(requirements.lock) 존재 + 전체 해시 포함,
       Dockerfile pip install --require-hashes 사용.
+      (infra/dashboard 는 컨테이너 없는 정적자산/S3 → lock 불필요, requirements.txt 핀만 유지)
 
 DevSecOps 감사 F-06/F-07 — 빌드 재현성 보장.
 src/onboard, src/gcs, infra/sim 무접촉.
@@ -18,7 +19,6 @@ _REPO = pathlib.Path(__file__).resolve().parents[2]
 _LOG_REQ = _REPO / "infra" / "log" / "requirements.txt"
 _DASH_REQ = _REPO / "infra" / "dashboard" / "requirements.txt"
 _LOG_LOCK = _REPO / "infra" / "log" / "requirements.lock"
-_DASH_LOCK = _REPO / "infra" / "dashboard" / "requirements.lock"
 _LOG_DOCKERFILE = _REPO / "infra" / "log" / "Dockerfile"
 
 
@@ -52,37 +52,50 @@ def test_requirements_all_pinned(req_path: pathlib.Path) -> None:
     )
 
 
-# ── 2. lock 파일 존재 + 전체 해시 포함 (#247) ────────────────────────────────
+# ── 2. log lock 파일 존재 + 각 패키지 블록에 실제 hash 포함 (#247) ──────────
 
-@pytest.mark.parametrize("lock_path", [_LOG_LOCK, _DASH_LOCK], ids=["log", "dashboard"])
-def test_lock_file_exists(lock_path: pathlib.Path) -> None:
-    """requirements.lock 파일이 존재해야 한다 (transitive 의존성 lock, F-07 확장)."""
-    assert lock_path.exists(), (
-        f"{lock_path.relative_to(_REPO)}: lock 파일 없음\n"
-        "  → pip-compile --generate-hashes 로 생성 필요"
+def test_log_lock_file_exists() -> None:
+    """infra/log/requirements.lock 파일이 존재해야 한다 (transitive 의존성 lock, F-07 확장).
+
+    infra/dashboard 는 컨테이너 없는 정적자산(S3) → lock 불필요, requirements.txt 핀만 유지.
+    """
+    assert _LOG_LOCK.exists(), (
+        f"infra/log/requirements.lock: lock 파일 없음\n"
+        "  → pip-compile --generate-hashes infra/log/requirements.txt 로 생성 필요"
     )
 
 
-@pytest.mark.parametrize("lock_path", [_LOG_LOCK, _DASH_LOCK], ids=["log", "dashboard"])
-def test_lock_file_all_hashed(lock_path: pathlib.Path) -> None:
-    """requirements.lock 의 모든 패키지 라인이 --hash=sha256: 를 가져야 한다."""
-    if not lock_path.exists():
-        pytest.skip("lock 파일 없음 — test_lock_file_exists 가 먼저 실패")
+def test_log_lock_each_package_has_hash() -> None:
+    """infra/log/requirements.lock 의 각 패키지 블록에 --hash=sha256: 가 최소 1개 있어야 한다.
 
-    text = lock_path.read_text(encoding="utf-8")
-    # 패키지 라인: 공백 없이 시작하고 == 포함하거나 \로 끝나는 라인
-    # pip-compile 출력: "package==X.Y.Z \\\n    --hash=sha256:..."
-    # 패키지 헤더 줄: 공백 없이 시작, ==, \\ 로 끝남
-    pkg_lines = [
-        l.rstrip()
-        for l in text.splitlines()
-        if l and not l.startswith(" ") and not l.startswith("#") and "==" in l
-    ]
-    assert pkg_lines, f"{lock_path.name}: 패키지 라인 없음"
+    헤더 shape(\\로 끝남)만 보면 실제 hash 없는 경우도 통과할 수 있으므로,
+    패키지 헤더 직후 들여쓰기 continuation 블록에서 --hash=sha256: 실존을 assert.
+    """
+    if not _LOG_LOCK.exists():
+        pytest.skip("lock 파일 없음 — test_log_lock_file_exists 가 먼저 실패")
 
-    unhashed = [l for l in pkg_lines if not l.endswith("\\")]
-    assert not unhashed, (
-        f"{lock_path.name}: --hash 없는 패키지 (단독 줄, \\로 끝나지 않음): {unhashed[:5]}\n"
+    lines = _LOG_LOCK.read_text(encoding="utf-8").splitlines()
+    no_hash: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # 패키지 헤더: 공백 없이 시작, == 포함, \ 로 끝남 (continuation 있음)
+        if (re.match(r"^[a-zA-Z]", line) and "==" in line and line.rstrip().endswith("\\")):
+            pkg_name = line.split("==")[0].strip()
+            # continuation 블록에서 --hash=sha256: 탐색
+            found_hash = False
+            j = i + 1
+            while j < len(lines) and (lines[j].startswith("    ") or lines[j].startswith("\t")):
+                if "--hash=sha256:" in lines[j]:
+                    found_hash = True
+                    break
+                j += 1
+            if not found_hash:
+                no_hash.append(pkg_name)
+        i += 1
+
+    assert not no_hash, (
+        f"infra/log/requirements.lock: --hash=sha256: 없는 패키지: {no_hash[:5]}\n"
         "  → pip-compile --generate-hashes 로 재생성 필요"
     )
 
