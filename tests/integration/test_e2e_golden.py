@@ -45,5 +45,9 @@ def test_golden_t7() -> None:
     _assert_golden(_run("raw_t7.json", "mission_brief_t7.json"), "expected_t7.json")
 
 
+def test_golden_t6() -> None:
+    _assert_golden(_run("raw_t6.json", "mission_brief_t6.json"), "expected_t6.json")
+
+
 def test_golden_strike() -> None:
     _assert_golden(_run("raw_t3.json", "mission_brief_strike.json"), "expected_strike.json")
