@@ -29,9 +29,16 @@ variable "ground_instance_type" {
 }
 
 variable "allowed_ssh_cidr" {
-  description = "SSH(22) 허용 CIDR — 본인 IP/32 권장. 0.0.0.0/0 지양."
+  description = "SSH(22) 허용 CIDR — 본인 공인 IP/32 필수. 0.0.0.0/0(전세계) 금지 (F-10 감사 #232)."
   type        = string
-  default     = "0.0.0.0/0"
+  # default 제거 — 명시 설정 강제(fail-closed). 세계개방 SSH 를 무설정으로 흘리지 않는다.
+
+  validation {
+    # SSH 는 단일 IPv4 호스트(/32)만 — /0·광역 범위·IPv6 차단. SG cidr_blocks 는 IPv4 전용이라
+    # regex 로 IPv4 /32 형식 강제 + cidrhost 로 옥텟 유효성(0-255) 검증.
+    condition     = can(cidrhost(var.allowed_ssh_cidr, 0)) && can(regex("^([0-9]{1,3}[.]){3}[0-9]{1,3}/32$", var.allowed_ssh_cidr))
+    error_message = "allowed_ssh_cidr 는 유효 IPv4 /32(단일 호스트)여야 함 — 본인 공인 IP/32 지정."
+  }
 }
 
 variable "ground_app_port" {

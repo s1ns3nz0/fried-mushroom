@@ -8,7 +8,7 @@
 # 이 컨테이너는 성격이 다른 두 로그 계층을 함께 실행한다(README.md · API.md 참고):
 #   - log_server.py : 실시간 로그 스트림 + /gcs/* 파이프라인 실행 — 포트 8500 (운영 관측용, 대시보드 연동)
 #   - main.py       : raw_log 수신(POST /raw_log)               — 포트 8181 (비행후 RAG 학습용, 무손실)
-FROM --platform=linux/amd64 python:3.11-slim
+FROM --platform=linux/amd64 python:3.11-slim@sha256:b27df5841f3355e9473f9a516d38a6783b6c8dfeacaf2d14a240f443b368ddb6
 
 # WORKDIR 는 infra/log — uvicorn CMD 가 log_server.py / main.py 를 모듈로 찾는다.
 WORKDIR /app/infra/log

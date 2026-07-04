@@ -25,8 +25,8 @@ __pycache__/
 *.egg-info/
 
 # terraform (상태·계획·변수는 커밋 금지 — 민감)
+# .terraform.lock.hcl 은 커밋한다(F-13 감사 #232): provider 버전/해시 고정 = 재현성·공급망 무결성.
 infra/terraform/.terraform/
-infra/terraform/.terraform.lock.hcl
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
 infra/terraform/tfplan
