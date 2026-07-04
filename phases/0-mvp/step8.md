@@ -5,10 +5,10 @@
 먼저 아래 파일들을 읽고 프로젝트의 아키텍처와 설계 의도를 파악하라:
 
 - `/CLAUDE.md`
-- `/d4d_pipeline/schemas.py` (`FlightPlanOutput`, `ResponseOutput`)
-- `/d4d_pipeline/constants.py` (`ALTITUDE_DELTA_PREVENTIVE_M`, `POSTURE_ELEVATE_ALTITUDE_M`, `ALTITUDE_DELTA_TERRAIN_M`)
-- `/d4d_pipeline/layer_06_response/run.py` (Step 7)
-- `/d4d_pipeline/layer_04_threat/run.py` (`cycle_context` 필드가 여기서 07으로 전달됨)
+- `/src/onboard/shared/schemas.py` (`FlightPlanOutput`, `ResponseOutput`)
+- `/src/onboard/shared/constants.py` (`ALTITUDE_DELTA_PREVENTIVE_M`, `POSTURE_ELEVATE_ALTITUDE_M`, `ALTITUDE_DELTA_TERRAIN_M`)
+- `/src/onboard/layer_06_response/run.py` (Step 7)
+- `/src/onboard/layer_04_threat/run.py` (`cycle_context` 필드가 여기서 07으로 전달됨)
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
@@ -23,7 +23,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 ### 1) 파일 구성
 
-`d4d_pipeline/layer_07_planning/`:
+`src/onboard/layer_07_planning/`:
 
 - `run.py`
 - `bearing.py` — threat_category별 방향 결정

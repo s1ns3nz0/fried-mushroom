@@ -7,10 +7,10 @@
 - `/CLAUDE.md`
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md` (ADR-003)
-- `/d4d_pipeline/schemas.py` (Step 1 산출물, `ChannelOutput`, `AbstractionOutput`)
-- `/d4d_pipeline/constants.py` (Step 1 산출물, `QUALITY_DELTA_DROP_THRESHOLD`, `TIME_TO_COLLISION_THRESHOLD_S`)
-- `/d4d_pipeline/layer_02_sensor/schema.py` (Step 2 산출물, `RawSensorEnvelope`)
-- `/d4d_pipeline/layer_02_sensor/mock_source.py` (Step 2 산출물, 어떤 원시 필드가 실제로 들어오는지 확인)
+- `/src/onboard/shared/schemas.py` (Step 1 산출물, `ChannelOutput`, `AbstractionOutput`)
+- `/src/onboard/shared/constants.py` (Step 1 산출물, `QUALITY_DELTA_DROP_THRESHOLD`, `TIME_TO_COLLISION_THRESHOLD_S`)
+- `/src/onboard/layer_02_sensor/schema.py` (Step 2 산출물, `RawSensorEnvelope`)
+- `/src/onboard/layer_02_sensor/mock_source.py` (Step 2 산출물, 어떤 원시 필드가 실제로 들어오는지 확인)
 - `/examples/raw_t3.json`, `/examples/raw_t4.json`, `/examples/raw_t7.json` (Step 2 산출물, 이 데이터를 소비할 수 있어야 한다)
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
@@ -26,7 +26,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 각 파일에 `def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> ChannelOutput`을 노출한다. `previous_quality`가 있으면 `quality_delta = quality - previous_quality`로 계산, 없으면 0.0.
 
-파일 목록 (전부 `d4d_pipeline/layer_03_abstraction/` 하위):
+파일 목록 (전부 `src/onboard/layer_03_abstraction/` 하위):
 
 - `position_consistency.py` — GPS lat/lon/alt와 IMU 관성항법 추정치의 잔차(빼셈). 임계값(`threshold_m`) 초과 시 `state="anomaly"`. `payload = {gps_imu_residual_m, baro_residual_m, airspeed_residual_ms, threshold_m, hdop, vdop, satellite_count, cn0_avg_db}`. GPS/IMU 두 위치 벡터 차이는 대충 haversine 근사 (온보드 정밀도 요구 낮음 — MVP에선 lat/lon 차이를 미터로 스케일링하는 상수 곱셈 근사도 허용). threshold_m=5.0 상수.
 - `link_status.py` — `payload.rssi_dbm, noise_floor_dbm, freq_mhz, packet_loss_rate, latency_ms`. `state`는 `rssi_dbm - noise_floor_dbm`가 20 미만이거나 packet_loss_rate > 5% 이면 anomaly, 15~20 사이면 degraded, else normal.
@@ -40,7 +40,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 각 채널의 `quality`는 raw 데이터의 신뢰도 대리값(예: link_status의 quality는 packet_loss_rate가 낮을수록 1에 가깝게). 저시정·저조도 등 이번 step 범위 밖 요인은 무시.
 
-### 2) 오케스트레이터 `d4d_pipeline/layer_03_abstraction/run.py`
+### 2) 오케스트레이터 `src/onboard/layer_03_abstraction/run.py`
 
 ```python
 def run(raw: RawSensorEnvelope,

@@ -86,7 +86,7 @@ pip install -e '.[dev]'
 ```bash
 python3 -m pytest                            # 전체
 python3 -m pytest tests/layer_04_threat/     # 특정 레이어
-python3 -m d4d_pipeline.run examples/scenario_t3.json  # E2E (step9 이후)
+python3 -m onboard.run examples/scenario_t3.json  # E2E (step9 이후)
 ```
 
 ### 5. Harness 실행 (Claude Code 사용자 대상)
@@ -138,7 +138,7 @@ harness 워크플로우 상세: [`.claude/commands/harness.md`](./.claude/comman
 
 전문은 [`CLAUDE.md`](./CLAUDE.md) 참조. 위반 시 PR 반려.
 
-1. **레이어 격리**: `d4d_pipeline/layer_XX/` 는 다른 layer 의 내부 모듈을 import 금지. 통신은 오직 JSON-직렬화 가능한 dict.
+1. **레이어 격리**: `src/onboard/layer_XX/` 는 다른 layer 의 내부 모듈을 import 금지. 통신은 오직 JSON-직렬화 가능한 dict.
 2. **결정론 vs AI 분리**: RAC_MATRIX(6×4) 는 AI 가 절대 변경 불가 (MIL-STD-882E SCC-1). AI 강화판은 병렬 참고지표.
 3. **하드코딩 상수**: `RAC_MATRIX`, `PHASE_THREAT_MULTIPLIER`, `SIGNAL_TO_THREAT`, `CHANNEL_WEIGHTS` 는 모듈 상수. 함수 인자로 오버라이드 금지.
 4. **AI 스텁 고정**: layer 03 의 AI 채널(proximity_object, terrain_class 보조, acoustic YAMNet 2차) 은 MVP 에서 stub 고정값 반환.

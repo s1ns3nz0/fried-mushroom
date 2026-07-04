@@ -6,9 +6,9 @@
 
 - `/CLAUDE.md`
 - `/docs/ADR.md` (ADR-003 결정론+AI 분리)
-- `/d4d_pipeline/schemas.py` (Step 1 — `ThreatCandidate`, `ThreatModelingOutput`)
-- `/d4d_pipeline/constants.py` (Step 1 — `THREAT_CATALOG`, `POTENTIAL_OUTCOME_MAP`, `SIGNAL_TO_THREAT`, `T4_MULTI_CHANNEL_CONDITIONS`, `PHASE_THREAT_MULTIPLIER`, `CHANNEL_WEIGHTS`, `CONFIDENCE_BY_MATCH_COUNT`, `W_MIN`, `Q_MIN`, `CROSS_CHECK_TOLERANCE`, `QUALITY_DELTA_DROP_THRESHOLD`)
-- `/d4d_pipeline/layer_03_abstraction/run.py` (Step 3, 4) 및 11개 채널 payload 구조
+- `/src/onboard/shared/schemas.py` (Step 1 — `ThreatCandidate`, `ThreatModelingOutput`)
+- `/src/onboard/shared/constants.py` (Step 1 — `THREAT_CATALOG`, `POTENTIAL_OUTCOME_MAP`, `SIGNAL_TO_THREAT`, `T4_MULTI_CHANNEL_CONDITIONS`, `PHASE_THREAT_MULTIPLIER`, `CHANNEL_WEIGHTS`, `CONFIDENCE_BY_MATCH_COUNT`, `W_MIN`, `Q_MIN`, `CROSS_CHECK_TOLERANCE`, `QUALITY_DELTA_DROP_THRESHOLD`)
+- `/src/onboard/layer_03_abstraction/run.py` (Step 3, 4) 및 11개 채널 payload 구조
 - `/examples/raw_t3.json`, `raw_t4.json`, `raw_t7.json` 및 03을 통과시켰을 때 나오는 골든 dict
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
@@ -22,7 +22,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 ### 1) 파일 구성
 
-`d4d_pipeline/layer_04_threat/`:
+`src/onboard/layer_04_threat/`:
 
 - `run.py`
 - `step_a_phase.py`

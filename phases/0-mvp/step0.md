@@ -38,14 +38,14 @@ addopts = "-ra --strict-markers"
 만들 디렉토리:
 
 ```
-d4d_pipeline/
-d4d_pipeline/layer_02_sensor/
-d4d_pipeline/layer_03_abstraction/
-d4d_pipeline/layer_04_threat/
-d4d_pipeline/layer_05_risk/
-d4d_pipeline/layer_06_response/
-d4d_pipeline/layer_07_planning/
-d4d_pipeline/ai_stubs/
+src/onboard/
+src/onboard/layer_02_sensor/
+src/onboard/layer_03_abstraction/
+src/onboard/layer_04_threat/
+src/onboard/layer_05_risk/
+src/onboard/layer_06_response/
+src/onboard/layer_07_planning/
+src/onboard/ai_stubs/
 examples/
 tests/
 tests/layer_03_abstraction/
@@ -102,5 +102,5 @@ python3 -m pytest -v
 
 - 채널별 모듈 파일(`position_consistency.py` 등)을 이 step에서 생성하지 마라. 이유: 이 step은 "빈 뼈대"만 다룬다. 다음 step들이 각자의 파일을 생성한다.
 - `numpy`, `pydantic`, `pyyaml` 등 외부 의존성을 추가하지 마라. 이유: 표준 라이브러리로 충분히 커버되는지 먼저 확인한다. 필요하면 해당 step에서 명시적으로 추가.
-- `d4d_pipeline/schemas.py`, `d4d_pipeline/constants.py`, `d4d_pipeline/run.py`를 만들지 마라. 이유: step 1과 step 9에서 각각 다룬다.
+- `src/onboard/shared/schemas.py`, `src/onboard/shared/constants.py`, `src/onboard/run.py`를 만들지 마라. 이유: step 1과 step 9에서 각각 다룬다.
 - 기존 `docs/`, `scripts/`, `CLAUDE.md`, `phases/` 를 수정하지 마라.

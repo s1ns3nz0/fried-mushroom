@@ -6,9 +6,9 @@
 
 - `/CLAUDE.md`
 - `/docs/ADR.md` (ADR-003)
-- `/d4d_pipeline/schemas.py` (Step 1 — `RiskCandidate`, `RiskAssessmentOutput`, `MissionBrief`)
-- `/d4d_pipeline/constants.py` (Step 1 — `BASE_RATE_PHYSICAL`, `BASE_RATE_REMOTE_NAV`, `L_VALUE_TO_CLASS_THRESHOLDS`, `RAC_MATRIX`, `RAC_ORDER`, `SEVERITY_ORDER`, `CONTINUOUS_S_BASE_SCORE`, `CONTINUOUS_S_TO_NUM_THRESHOLDS`, `AMBIENT_EXPOSURE_THRESHOLD`)
-- `/d4d_pipeline/layer_04_threat/run.py` 및 스텝들 (Step 5)
+- `/src/onboard/shared/schemas.py` (Step 1 — `RiskCandidate`, `RiskAssessmentOutput`, `MissionBrief`)
+- `/src/onboard/shared/constants.py` (Step 1 — `BASE_RATE_PHYSICAL`, `BASE_RATE_REMOTE_NAV`, `L_VALUE_TO_CLASS_THRESHOLDS`, `RAC_MATRIX`, `RAC_ORDER`, `SEVERITY_ORDER`, `CONTINUOUS_S_BASE_SCORE`, `CONTINUOUS_S_TO_NUM_THRESHOLDS`, `AMBIENT_EXPOSURE_THRESHOLD`)
+- `/src/onboard/layer_04_threat/run.py` 및 스텝들 (Step 5)
 - `/examples/mission_brief_t3.json`, `_t4.json`, `_t7.json`
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
@@ -22,7 +22,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 ### 1) 파일 구성
 
-`d4d_pipeline/layer_05_risk/`:
+`src/onboard/layer_05_risk/`:
 
 - `run.py`
 - `likelihood.py` — base_rate 조회 + posture_shift

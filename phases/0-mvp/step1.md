@@ -8,7 +8,7 @@
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md` (ADR-003, ADR-004)
 - `/pyproject.toml` (Step 0 산출물)
-- `/d4d_pipeline/__init__.py` (Step 0 산출물)
+- `/src/onboard/__init__.py` (Step 0 산출물)
 
 또한 아래 D4D 원문 문서를 반드시 읽는다 (레포 내 `/docs/D4D/`):
 
@@ -24,7 +24,7 @@
 
 레이어 간 계약이 되는 모든 스키마와 상수를 두 파일에 모은다. 이 값들은 이후 step에서 import 전용이며 함수 인자로 오버라이드하지 않는다.
 
-### 1) `d4d_pipeline/schemas.py`
+### 1) `src/onboard/shared/schemas.py`
 
 `TypedDict`로 레이어 간 I/O 스키마를 선언한다. 런타임 검증(`__required_keys__`)은 넣지 않는다. IDE 힌트용.
 
@@ -108,7 +108,7 @@ class MissionBrief(TypedDict):
 
 11 채널 개별 payload 스키마(예: `PositionConsistencyPayload`)는 만들지 말고 `dict`로 두라. 이유: MVP 스코프. 다음 step들이 각자 채널에서 실제 필드를 채우며 검증한다.
 
-### 2) `d4d_pipeline/constants.py`
+### 2) `src/onboard/shared/constants.py`
 
 D4D 문서 표를 그대로 옮긴다. 값 하나라도 변경 금지. 문서에 없는 값을 임의로 추가하지 말 것.
 
@@ -178,4 +178,4 @@ python3 -m pytest tests/test_constants.py tests/test_schemas.py -v
 - 값을 임의로 반올림·정정하지 마라. D4D 문서 값을 그대로 옮긴다. 이유: RAG 재학습·손계산 검증이 문서 값 기준.
 - 채널별 payload TypedDict를 세밀하게 만들지 마라. 이유: 아직 각 채널이 실제로 어떤 필드를 채우는지 다음 step에서 결정된다. 지금 세부화하면 다음 step에서 재수정 필요.
 - `pydantic` 등 검증 라이브러리를 도입하지 마라. 이유: ADR-004 (런타임 검증은 후순위).
-- `d4d_pipeline/schemas.py`에 함수를 정의하지 마라. 이유: 이 파일은 타입 선언 전용.
+- `src/onboard/shared/schemas.py`에 함수를 정의하지 마라. 이유: 이 파일은 타입 선언 전용.

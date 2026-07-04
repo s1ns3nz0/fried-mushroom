@@ -5,9 +5,9 @@
 먼저 아래 파일들을 읽고 프로젝트의 아키텍처와 설계 의도를 파악하라:
 
 - `/CLAUDE.md`
-- `/d4d_pipeline/schemas.py` (`ResponseOutput`, `MissionBrief`)
-- `/d4d_pipeline/constants.py`
-- `/d4d_pipeline/layer_05_risk/run.py` (Step 6)
+- `/src/onboard/shared/schemas.py` (`ResponseOutput`, `MissionBrief`)
+- `/src/onboard/shared/constants.py`
+- `/src/onboard/layer_05_risk/run.py` (Step 6)
 - `/examples/mission_brief_t7.json` (armament에 expendable=True 있음)
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
@@ -21,7 +21,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 ### 1) 파일 구성
 
-`d4d_pipeline/layer_06_response/`:
+`src/onboard/layer_06_response/`:
 
 - `run.py`
 - `flight_comms.py` — (RAC, kill_chain_stage, threat_category) 조회 테이블

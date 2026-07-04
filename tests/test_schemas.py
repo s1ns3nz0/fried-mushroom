@@ -2,7 +2,7 @@
 
 from typing import get_type_hints
 
-from d4d_pipeline import schemas as S
+from onboard.shared import schemas as S
 
 
 class TestChannelOutput:
