@@ -81,3 +81,41 @@ def test_advisory_only_flag_and_no_mutation():
     r = assess_nav_integrity(win)
     assert r["advisory_only"] is True
     assert win == before
+
+
+# ── #410: 가변 cadence 실경과 합산 ────────────────────────────────────────────
+
+
+def test_variable_cadence_sums_actual_seconds():
+    """가변 cadence: streak 각 사이클의 실경과를 합산한다 (#410 핵심).
+
+    [0s, 1s, 8s] 항법상실 3사이클 → sum=9s → RTL(≥8s).
+    스칼라 폴백(8×3=24s)이면 LAND(≥20s) 오에스컬레이션.
+    """
+    r = assess_nav_integrity(_win("anomaly", "anomaly", "anomaly"), cycle_seconds=[0.0, 1.0, 8.0])
+    assert r["recommended_action"] == "RTL", f"RTL 예상(sum=9s), got {r['recommended_action']}"
+    assert abs(r["untrusted_seconds"] - 9.0) < 0.01, f"9.0s 예상, got {r['untrusted_seconds']}"
+
+
+def test_variable_cadence_partial_streak_sums_trailing_only():
+    """cycle_seconds: 말단 상실 스트릭만 합산 — 앞 정상 사이클 제외."""
+    # [normal, anomaly, anomaly]: streak=2, cycle_seconds[-2:] = [1.0, 8.0] → sum=9s ≥ rtl=8s
+    r = assess_nav_integrity(
+        _win("normal", "anomaly", "anomaly"),
+        cycle_seconds=[5.0, 1.0, 8.0],
+    )
+    assert r["recommended_action"] == "RTL"
+    assert abs(r["untrusted_seconds"] - 9.0) < 0.01
+
+
+def test_cycle_seconds_none_falls_back_to_scalar():
+    """cycle_seconds=None 이면 기존 cycle_interval_s 스칼라 동작 유지 (backward-compat)."""
+    r = assess_nav_integrity(_win("anomaly", "anomaly", "anomaly"), cycle_interval_s=8.0, cycle_seconds=None)
+    assert r["untrusted_seconds"] == 24.0
+    assert r["recommended_action"] == "LAND"
+
+
+def test_cycle_seconds_empty_falls_back_to_scalar():
+    """cycle_seconds=[] 이면 스칼라 폴백."""
+    r = assess_nav_integrity(_win("anomaly", "anomaly"), cycle_interval_s=1.0, cycle_seconds=[])
+    assert r["untrusted_seconds"] == 2.0

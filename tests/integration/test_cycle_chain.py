@@ -77,3 +77,40 @@ def test_chain_threads_flight_plan_state_continuity():
     brief = _brief()
     results = run_cycle_chain([(_raw_terrain(1.0), brief), (_raw_terrain(1.0), brief)])
     assert all("flight_plan_state" in r for r in results)
+
+
+# ── #410: 가변 cadence link_loss/nav_integrity 실경과 합산 ───────────────────
+
+
+def _raw_lost_link(ts_ms: int) -> dict:
+    """link_status lost(근-전손 패킷손실) + ts_ms 지정 raw. 가변 cadence 시나리오용."""
+    raw = build_normal_envelope("chain_lost", 0, 0)
+    raw["ts_ms"] = ts_ms
+    # 03 link_status 채널은 raw["c2_link"]를 소비 — packet_loss_rate=1.0 → 실질두절.
+    raw["c2_link"]["packet_loss_rate"] = 1.0
+    return raw
+
+
+def test_chain_variable_cadence_link_loss_outage():
+    """run_cycle_chain: 가변 cadence ts_ms 로 link_loss outage_seconds 실경과 합산 (#410).
+
+    ts_ms [0, 1000, 12000] → intervals [1.0s fallback, 1.0s, 11.0s].
+    3사이클 모두 두절 → cycle_seconds=[1.0, 1.0, 11.0] → sum=13s → RTL.
+    스칼라(11×3=33s)면 LAND 오에스컬레이션.
+    """
+    brief = _brief()
+    pairs = [
+        (_raw_lost_link(0), brief),
+        (_raw_lost_link(1_000), brief),
+        (_raw_lost_link(12_000), brief),
+    ]
+    results = run_cycle_chain(pairs)
+    ll = results[-1]["link_loss"]
+    assert ll["assessable"] is True
+    # 실경과 합산 → RTL(≥10s) 또는 LAND(≥30s이면 오에스컬레이션). 스칼라면 33s=LAND.
+    assert ll["outage_seconds"] < 30.0, (
+        f"가변 cadence 합산 미적용 의심 — outage_seconds={ll['outage_seconds']} (30s 미만이어야 함)"
+    )
+    assert ll["recommended_action"] in ("RTL", "HOLD"), (
+        f"RTL 또는 HOLD 예상, got {ll['recommended_action']}"
+    )

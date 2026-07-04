@@ -99,3 +99,41 @@ def test_advisory_only_flag_and_no_mutation():
     r = assess_link_loss(win)
     assert r["advisory_only"] is True
     assert win == before  # 입력 불변
+
+
+# ── #410: 가변 cadence 실경과 합산 ────────────────────────────────────────────
+
+
+def test_variable_cadence_sums_actual_seconds():
+    """가변 cadence: streak 각 사이클의 실경과를 합산한다 (#410 핵심).
+
+    [0s, 1s, 11s] 두절 3사이클 → sum=12s → RTL(≥10s).
+    스칼라 폴백(11×3=33s)이면 LAND(≥30s) 오에스컬레이션 — 이 테스트가 그걸 막는다.
+    """
+    r = assess_link_loss(_lost(3), cycle_seconds=[0.0, 1.0, 11.0])
+    assert r["recommended_action"] == "RTL", f"RTL 예상(sum=12s), got {r['recommended_action']}"
+    assert abs(r["outage_seconds"] - 12.0) < 0.01, f"12.0s 예상, got {r['outage_seconds']}"
+
+
+def test_variable_cadence_partial_streak_sums_trailing_only():
+    """cycle_seconds: 말단 두절 스트릭만 합산 — 앞 정상 사이클은 제외."""
+    # [normal, lost, lost]: streak=2, cycle_seconds[-2:] = [1.0, 11.0] → sum=12s ≥ rtl=10s
+    r = assess_link_loss(
+        _win("normal") + _lost(2),
+        cycle_seconds=[5.0, 1.0, 11.0],
+    )
+    assert r["recommended_action"] == "RTL"
+    assert abs(r["outage_seconds"] - 12.0) < 0.01
+
+
+def test_cycle_seconds_none_falls_back_to_scalar():
+    """cycle_seconds=None 이면 기존 cycle_interval_s 스칼라 동작 유지 (backward-compat)."""
+    r = assess_link_loss(_lost(3), cycle_interval_s=11.0, cycle_seconds=None)
+    assert r["outage_seconds"] == 33.0
+    assert r["recommended_action"] == "LAND"
+
+
+def test_cycle_seconds_empty_falls_back_to_scalar():
+    """cycle_seconds=[] 이면 스칼라 폴백."""
+    r = assess_link_loss(_lost(3), cycle_interval_s=1.0, cycle_seconds=[])
+    assert r["outage_seconds"] == 3.0

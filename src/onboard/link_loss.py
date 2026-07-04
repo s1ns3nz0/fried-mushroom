@@ -82,6 +82,7 @@ def assess_link_loss(
     link_window: list[Any],
     *,
     cycle_interval_s: float = _DEFAULT_CYCLE_INTERVAL_S,
+    cycle_seconds: list[float] | None = None,
     hold_s: float = _DEFAULT_HOLD_S,
     rtl_s: float = _DEFAULT_RTL_S,
     land_s: float = _DEFAULT_LAND_S,
@@ -89,6 +90,8 @@ def assess_link_loss(
     """최근 link_status 출력 윈도우(오래된→최신) → lost-link failsafe 권고. advisory.
 
     윈도우 원소는 03 `link_status` ChannelOutput dict({"state": ...}) 또는 상태 문자열.
+    cycle_seconds: link_window 와 병렬인 사이클별 실경과(초) 리스트 (#410). 제공 시 말단 streak
+    구간의 실경과를 합산(가변 cadence 정확). None/빈 리스트면 cycle_interval_s 스칼라 폴백.
     반환: {assessable, recommended_action(CONTINUE|MONITOR|HOLD|RTL|LAND|UNKNOWN),
            advisory_only, current_state, outage_streak, outage_seconds, note}.
     """
@@ -111,7 +114,10 @@ def assess_link_loss(
             streak += 1
         else:
             break
-    outage_s = streak * cycle_interval_s
+    if cycle_seconds and streak > 0:
+        outage_s = sum(cycle_seconds[-streak:])
+    else:
+        outage_s = streak * cycle_interval_s
 
     # 실질두절 아님(anomaly/degraded 지만 링크 존재) → 에스컬레이션 없이 감시.
     if streak == 0:

@@ -21,7 +21,9 @@ from onboard.layer_02_sensor.mock_source import build_normal_envelope, build_sce
 from onboard.link_loss import assess_link_loss
 from onboard.nav_integrity import assess_nav_integrity
 from onboard.run import (
+    extract_link_cycle_seconds,
     extract_link_window,
+    extract_nav_cycle_seconds,
     extract_nav_window,
     run_cycle,
     run_cycle_chain,
@@ -297,6 +299,8 @@ def test_split_stream_resume_preserves_outage_streak():
         previous_link_window=extract_link_window(b1),
         previous_nav_window=extract_nav_window(b1),
         previous_ts_ms=7 * 1000,
+        previous_link_cycle_seconds=extract_link_cycle_seconds(b1),
+        previous_nav_cycle_seconds=extract_nav_cycle_seconds(b1),
     )
     assert mono[-1]["link_loss"]["recommended_action"] == "RTL"  # 12s ≥ rtl 10s
     assert b2[-1]["link_loss"]["recommended_action"] == mono[-1]["link_loss"]["recommended_action"]
@@ -307,12 +311,19 @@ def test_three_batch_resume_accumulates_window():
     """3개 배치: 윈도우 누적 seed 로 12 두절이 온전히 카운트돼 RTL."""
     brief = _brief()
     win: list = []
+    secs: list = []
     last_ts = None
     last = None
     for start in (0, 4, 8):
         batch = [(_raw_link_lost(i), brief) for i in range(start, start + 4)]
-        res = run_cycle_chain(batch, previous_link_window=win, previous_ts_ms=last_ts)
+        res = run_cycle_chain(
+            batch,
+            previous_link_window=win,
+            previous_ts_ms=last_ts,
+            previous_link_cycle_seconds=secs,
+        )
         win = win + extract_link_window(res)
+        secs = extract_link_cycle_seconds(res)
         last_ts = (start + 3) * 1000
         last = res[-1]
     assert last["link_loss"]["recommended_action"] == "RTL"
