@@ -57,9 +57,16 @@ def to_norm(lat: float, lon: float, bbox: dict) -> tuple[float, float]:
 
 
 def compute_bbox(waypoints: list[dict]) -> dict:
-    """코리더 waypoints 의 lat/lon 경계상자. vizsim/route.compute_bbox 동일."""
-    lats = [float(wp["lat"]) for wp in waypoints]
-    lons = [float(wp["lon"]) for wp in waypoints]
+    """코리더 waypoints 의 lat/lon 경계상자. vizsim/route.compute_bbox 동일.
+
+    빈 리스트/lat|lon 결측 waypoint 는 크래시 대신 0 경계상자를 반환한다(방어) — public
+    헬퍼가 degenerate 입력에 ValueError 로 죽지 않게. to_norm 이 range 0 을 or 1.0 로
+    처리하므로 0-bbox 도 안전하다.
+    """
+    lats = [float(wp["lat"]) for wp in waypoints if wp.get("lat") is not None]
+    lons = [float(wp["lon"]) for wp in waypoints if wp.get("lon") is not None]
+    if not lats or not lons:
+        return {"lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0}
     return {
         "lat_min": min(lats), "lat_max": max(lats),
         "lon_min": min(lons), "lon_max": max(lons),
