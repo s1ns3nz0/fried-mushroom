@@ -47,6 +47,15 @@ def _semantic_threat(clause: str):
     return nlp_model.classify_threat(clause)
 
 
+def _semantic_civil(clause: str):
+    """NLP 모델 민간/ROE 분류 위임 — 모델 미가용/미설치 시 None(키워드 폴백)."""
+    try:
+        from gcs.layer_01_info_center import nlp_model
+    except ImportError:
+        return None
+    return nlp_model.classify_civil(clause)
+
+
 def _clause_confidence(clause: str) -> float:
     if any(w in clause for w in _CERTAIN_WORDS):
         return _CERTAIN
@@ -67,12 +76,15 @@ def extract_signals(directive_text: str, *, use_nlp_model: bool = False) -> list
     for clause in _CLAUSE_SPLIT.split(directive_text or ""):
         conf = _clause_confidence(clause)
         keyword_threat = False
+        keyword_civil = False
         for phrases, signal_type, extra in _KEYWORD_RULES:
             matched = next((p for p in phrases if p in clause), None)
             if matched is None:
                 continue
             if signal_type == "threat":
                 keyword_threat = True
+            elif signal_type == "civil":
+                keyword_civil = True
             signals.append(
                 {"source_phrase": matched, "signal_type": signal_type, **extra, "confidence": conf}
             )
@@ -88,6 +100,15 @@ def extract_signals(directive_text: str, *, use_nlp_model: bool = False) -> list
                 signals.append(
                     {"source_phrase": seg[:40], "signal_type": "threat",
                      "threat": code, "confidence": min(m_conf, conf), "source": "nlp_model"}
+                )
+        # 키워드가 민간(ROE)을 못 잡은 절 → NLP 모델 시맨틱 보강(민간 negation 가드 포함).
+        if use_nlp_model and not keyword_civil and clause.strip():
+            civil_hit = _semantic_civil(clause)
+            if civil_hit is not None:
+                c_conf, seg = civil_hit
+                signals.append(
+                    {"source_phrase": seg[:40], "signal_type": "civil",
+                     "effect": "roe_caution", "confidence": min(c_conf, conf), "source": "nlp_model"}
                 )
         # 임무목적 (대조표 ⑤) — 지시서 내 첫 언급만.
         if not purpose_taken:
