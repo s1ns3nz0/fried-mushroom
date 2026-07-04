@@ -54,18 +54,37 @@ def _segment_clearance(p1: dict, p2: dict, enemy: dict) -> float:
 
 
 def _avoid_waypoint(p1: dict, p2: dict, enemy: dict) -> dict:
-    """적을 지나는 구간에 삽입할 우회점 — 적에서 경로 수직방향으로 (radius+margin) 이동."""
+    """적을 감싸 도는 우회점 — 적에서 경로 수직방향으로 offset 이동.
+
+    단일 offset(radius+margin)은 두 leg(p1→우회점, 우회점→p2)가 여전히 원을 관통할 수
+    있으므로(긴 구간·중점 적), **두 leg 의 clearance 가 모두 radius 이상이 될 때까지
+    offset 을 결정론적으로 키운다**(수렴). radius 가 구간 절반보다 크면(끝점이 원 안)
+    기하학상 불가 — 그 경우 도달 가능한 최대 offset(best-effort)을 쓴다.
+    """
     e = enemy["pos"]
     lat0 = e["lat"]
-    # 경로 방향(북/동 m).
     north = (p2["lat"] - p1["lat"]) * 111_320.0
     east = (p2["lon"] - p1["lon"]) * 111_320.0 * math.cos(math.radians(lat0))
     norm = math.hypot(north, east) or 1.0
     # 수직 단위벡터 (좌현: (-east, north)). 결정론 위해 항상 좌현 우회.
     perp_n, perp_e = -east / norm, north / norm
-    offset = enemy["detect_radius_m"] + AVOID_MARGIN_M
-    dlat, dlon = _meters_to_deg(lat0, perp_n * offset, perp_e * offset)
-    return {"lat": e["lat"] + dlat, "lon": e["lon"] + dlon, "alt_m": p1.get("alt_m", 120)}
+    radius = enemy["detect_radius_m"]
+
+    def _wp(offset: float) -> dict:
+        dlat, dlon = _meters_to_deg(lat0, perp_n * offset, perp_e * offset)
+        return {"lat": round(e["lat"] + dlat, 7), "lon": round(e["lon"] + dlon, 7),
+                "alt_m": p1.get("alt_m", 120)}
+
+    offset = radius + AVOID_MARGIN_M
+    wp = _wp(offset)
+    # 두 leg 가 모두 clear 될 때까지 offset 을 1.5배씩 키움(결정론 수렴, 상한).
+    for _ in range(40):
+        if (_segment_clearance(p1, wp, enemy) >= radius
+                and _segment_clearance(wp, p2, enemy) >= radius):
+            break
+        offset *= 1.5
+        wp = _wp(offset)
+    return wp
 
 
 def generate_route(mission_brief: dict, enemies: list[dict] | None = None) -> list[dict]:

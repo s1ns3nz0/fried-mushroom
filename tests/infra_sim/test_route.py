@@ -56,3 +56,34 @@ def test_route_is_deterministic():
 def test_far_enemy_does_not_perturb():
     enemy = {"id": "E1", "pos": {"lat": 40.0, "lon": 130.0}, "detect_radius_m": 400}
     assert generate_route(_brief(), enemies=[enemy]) == generate_route(_brief(), enemies=None)
+
+
+def _leg_clearances(route, enemy):
+    """경로의 각 선분(leg)과 적 최소거리(m) 리스트 — 점이 아닌 선분 기준."""
+    from route import _segment_clearance
+    return [_segment_clearance(route[i], route[i + 1], enemy) for i in range(len(route) - 1)]
+
+
+def test_every_leg_clears_enemy_codex_counterexample():
+    # codex 반례: ~1km 구간, 중점 적, radius≈segment/2.5 → 모든 leg clearance > radius.
+    brief = {"corridor": {"waypoints": [
+        {"lat": 37.700, "lon": 127.20, "alt_m": 120},
+        {"lat": 37.709, "lon": 127.20, "alt_m": 120},  # ~1km 북향
+    ], "bases": {}}}
+    enemy = {"id": "E1", "pos": {"lat": 37.7045, "lon": 127.20}, "detect_radius_m": 400}
+    route = generate_route(brief, enemies=[enemy])
+    legs = _leg_clearances(route, enemy)
+    assert all(c >= enemy["detect_radius_m"] for c in legs), \
+        f"leg clearance 위반: {[round(c, 1) for c in legs]}"
+
+
+def test_enemy_near_endpoint_legs_clear():
+    # 적이 시작점 근처(단, 끝점·시작점은 원 밖이라 회피 가능). radius 150, 적은 p1 에서
+    # ~223m(원 밖). 단일 우회점이면 근접 leg 가 원을 관통할 수 있는 케이스.
+    brief = {"corridor": {"waypoints": [
+        {"lat": 37.700, "lon": 127.20, "alt_m": 120},
+        {"lat": 37.709, "lon": 127.20, "alt_m": 120},
+    ], "bases": {}}}
+    enemy = {"id": "E1", "pos": {"lat": 37.702, "lon": 127.20}, "detect_radius_m": 150}
+    route = generate_route(brief, enemies=[enemy])
+    assert all(c >= enemy["detect_radius_m"] for c in _leg_clearances(route, enemy))
