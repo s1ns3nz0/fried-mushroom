@@ -22,10 +22,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          pip install pytest
           if [ -f pyproject.toml ]; then
-            pip install -e '.[dev]'
-          else
-            pip install pytest
+            # dev extra가 정의돼 있으면 함께, 없으면 본체만 설치
+            pip install -e '.[dev]' || pip install -e .
           fi
 
       - name: Run pytest
