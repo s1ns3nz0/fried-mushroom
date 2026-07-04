@@ -93,3 +93,17 @@ def test_disabled_uses_stub_secondary(monkeypatch):
     stub = classify_acoustic(raw["acoustic"])
     # ambiguous 경로에서 stub 어휘 정규화 결과를 따름.
     assert out["payload"]["detection_stage"] in ("threshold_only", "yamnet_secondary")
+
+
+# --- 견고성: malformed waveform 은 크래시 대신 안전 파싱 ---
+
+
+def test_resolve_audio_malformed_does_not_crash():
+    import base64
+    b = base64.b64encode(b"xxxx").decode()
+    for bad in ("abc", None, "8000.5"):
+        clip = resolve_audio({"waveform": {"bytes_b64": b, "sample_rate": bad, "channels": bad}})
+        assert clip is not None
+        assert isinstance(clip["sample_rate"], int) and isinstance(clip["channels"], int)
+    clip = resolve_audio({"waveform": {"bytes_b64": b, "meta": "notdict"}})
+    assert clip is not None and clip["meta"] == {}
