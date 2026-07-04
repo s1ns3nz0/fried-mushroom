@@ -79,6 +79,51 @@ uvicorn main:app --reload
 # http://localhost:8000
 ```
 
+## 로컬 개발 스택 (CI/CD 없이)
+
+`scripts/dev_stack.sh`가 관측 스택 3계층(수집기 + vizsim 피더 + 대시보드)을 로컬에서
+한 번에 띄운다. 배포 없이 수동으로 검증된 구성을 재현하는 개발용 런처다.
+
+```bash
+./scripts/dev_stack.sh
+```
+
+접속: http://localhost:8080
+
+### 뜨는 3계층
+
+| 계층 | 실행 | 역할 |
+|---|---|---|
+| 수집기 | `uvicorn log_server:app` (`infra/log`) | 로그/텔레메트리 수신·중계 (`/log`, `/logs`, `/stream`, `/health`) |
+| vizsim 피더 | `python -m vizsim.runner` (`infra/vizsim`) | 임무 브리핑 기반 시뮬레이션 → 온보드 파이프라인 실행 → 수집기로 tick 전송 |
+| 대시보드 | `uvicorn main:app` (`infra/dashboard`) | 정적 UI 서빙 + `/config`, `/ws` (관측 전용) |
+
+### 필요 의존성
+
+`infra/dashboard/requirements.txt`, `infra/log/requirements.txt` 기준.
+
+- `fastapi==0.135.3`
+- `uvicorn[standard]==0.44.0`
+- `httpx==0.28.1` (수집기의 `/gcs/*` 및 vizsim 피더의 collector 전송용)
+- `pydantic==2.12.5` (수집기)
+
+### 환경변수 오버라이드
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `PYTHON` | `python3` | 사용할 파이썬 인터프리터 경로 |
+| `SEED` | `42` | vizsim 시나리오 시드 |
+| `BRIEF` | `examples/mission_brief_t3.json` | vizsim 피더에 넘길 임무 브리핑 JSON |
+| `DIRECTIVE` | (빈값, 미사용) | GCS 지시문 JSON 경로 — 지정 시 피더에 `--directive`로 전달, METT+TC 적 시나리오 등 편향 반영 |
+| `COLLECTOR_PORT` | `8500` | 로그 수집기 포트 |
+| `DASH_PORT` | `8080` | 대시보드 포트 |
+| `RATE` | `2` | 사이클 속도 (Hz) |
+| `SPEED` | `1` | 시뮬 속도 배율 |
+
+예: `COLLECTOR_PORT=8600 DASH_PORT=8090 ./scripts/dev_stack.sh`
+
+Ctrl-C로 종료하면 세 프로세스가 모두 정리된다.
+
 ## 현재 상태
 
 스켈레톤 — 서버/엔드포인트/핸들러 골격 + 최소 UI. 실제 렌더·수신 로직은 TODO.
