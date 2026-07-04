@@ -203,7 +203,7 @@ def _canned_threat(primary) -> dict:
 def _canned_response() -> dict:
     return {
         "primary_threat_event": None, "rac": "Low", "kill_chain_stage": None,
-        "threat_category": None, "flight_action": "CONTINUE", "comms_level": "NORMAL",
+        "threat_category": None, "flight_action": "MAINTAIN", "comms_level": "L0",
         "payload_action": [], "nav_mode": None, "special_action": None,
         "secondary_threats": [], "ai_reliability": "normal",
     }
@@ -211,6 +211,6 @@ def _canned_response() -> dict:
 
 def _canned_flight_plan() -> dict:
     return {
-        "flight_action": "CONTINUE", "target_bearing_deg": None,
+        "flight_action": "MAINTAIN", "target_bearing_deg": None,
         "altitude_delta_m": 0, "replan_scope": "NONE", "reroute_anchor": None,
     }
