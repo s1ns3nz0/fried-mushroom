@@ -55,22 +55,26 @@
    * (correlation_id 를 함께 넘기면 조립·사이클 로그가 연결됨).
    */
   function assembleFromSetMission(tag) {
+    let enemyTracks = null;
     return collectorFetch("/gcs/set-mission/" + encodeURIComponent(tag))
       .then((r) => {
         if (!r.ok) throw new Error("set_mission 로드 실패: " + tag);
         return r.json();
       })
-      .then((setMission) =>
-        collectorFetch("/gcs/assemble", {
+      .then((setMission) => {
+        // 번들의 enemy_tracks(E 요소)를 조립 결과에 실어 폼 E 테이블 프리필에 쓴다.
+        enemyTracks = Array.isArray(setMission.enemy_tracks) ? setMission.enemy_tracks : null;
+        return collectorFetch("/gcs/assemble", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ set_mission: setMission }),
-        }),
-      )
+        });
+      })
       .then((r) => {
         if (!r.ok) throw new Error("assemble 실패");
         return r.json();
-      });
+      })
+      .then((body) => ({ ...body, enemy_tracks: enemyTracks }));
   }
   // 외부(향후 리뷰 패널 UI)에서 참조 가능하도록 노출.
   if (typeof window !== "undefined") window.assembleFromSetMission = assembleFromSetMission;
@@ -89,6 +93,13 @@
     },
     weights: { stealth: 0.4, survival: 0.35, info_value: 0.2, timeliness: 0.05 },
   };
+
+  // E · 적 트랙 예시(set_mission_recon.json 과 동일) — 프리셋 미로드 시 프리필.
+  const EXAMPLE_ENEMY_TRACKS = [
+    { id: "trk-1", kind: "T3", lat: 37.508, lon: 127.006, radius_m: 260, confidence: 0.9 },
+    { id: "trk-2", kind: "T3", lat: 37.513, lon: 127.014, radius_m: 220, confidence: 0.85 },
+  ];
+  const ENEMY_KINDS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7"];
 
   // ── 폼 유틸 ─────────────────────────────────────────────────
 
@@ -159,6 +170,77 @@
     tr.appendChild(td);
 
     tbody.appendChild(tr);
+  }
+
+  // ── E · 적 트랙 테이블 ──────────────────────────────────────
+
+  function addEnemyRow(trk) {
+    const tbody = $("gcs-enemy-body");
+    const tr = document.createElement("tr");
+
+    const mkCell = (cls, type, value) => {
+      const td = document.createElement("td");
+      const input = document.createElement("input");
+      input.type = type;
+      input.className = cls;
+      if (type === "number") input.step = "any";
+      input.value = value;
+      td.appendChild(input);
+      tr.appendChild(td);
+    };
+
+    mkCell("et-id", "text", trk && trk.id != null ? trk.id : "trk-" + (tbody.childElementCount + 1));
+
+    const tdKind = document.createElement("td");
+    const kindSel = document.createElement("select");
+    kindSel.className = "et-kind";
+    ENEMY_KINDS.forEach((k) => {
+      const opt = document.createElement("option");
+      opt.value = k;
+      opt.textContent = k;
+      kindSel.appendChild(opt);
+    });
+    setSelect(kindSel, trk && trk.kind != null ? trk.kind : null, "T3");
+    tdKind.appendChild(kindSel);
+    tr.appendChild(tdKind);
+
+    mkCell("et-lat", "number", trk && trk.lat != null ? trk.lat : 37.5);
+    mkCell("et-lon", "number", trk && trk.lon != null ? trk.lon : 127.0);
+    mkCell("et-radius", "number", trk && trk.radius_m != null ? trk.radius_m : 200);
+    mkCell("et-conf", "number", trk && trk.confidence != null ? trk.confidence : 0.8);
+
+    const td = document.createElement("td");
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "gcs-btn gcs-wp-remove";
+    rm.textContent = "−";
+    rm.title = "행 삭제";
+    rm.addEventListener("click", () => {
+      tr.remove();
+      updatePreview();
+    });
+    td.appendChild(rm);
+    tr.appendChild(td);
+
+    tbody.appendChild(tr);
+  }
+
+  function collectEnemyTracks() {
+    return Array.from(document.querySelectorAll("#gcs-enemy-body tr")).map((tr, i) => ({
+      id: tr.querySelector(".et-id").value.trim() || "trk-" + (i + 1),
+      kind: tr.querySelector(".et-kind").value,
+      lat: numVal(tr.querySelector(".et-lat"), 0),
+      lon: numVal(tr.querySelector(".et-lon"), 0),
+      radius_m: numVal(tr.querySelector(".et-radius"), 0),
+      confidence: numVal(tr.querySelector(".et-conf"), 0),
+    }));
+  }
+
+  /** E 테이블 채우기 — 트랙이 없으면 예시 2건으로 프리필(빈 상태 금지). */
+  function fillEnemyTracks(tracks) {
+    $("gcs-enemy-body").textContent = "";
+    const list = Array.isArray(tracks) && tracks.length ? tracks : EXAMPLE_ENEMY_TRACKS;
+    list.forEach(addEnemyRow);
   }
 
   // ── 폼 → mission_brief 조립 / mission_brief → 폼 채우기 ─────
@@ -251,10 +333,35 @@
     setNum("gcs-w-survival", weights.survival, D.weights.survival);
     setNum("gcs-w-info", weights.info_value, D.weights.info_value);
     setNum("gcs-w-time", weights.timeliness, D.weights.timeliness);
+
+    fillEnemyTracks(b.enemy_tracks);
+  }
+
+  /**
+   * 미리보기 전용 JSON — mission_brief + enemy_tracks(E) + mettc(T_time/C 참고 필드).
+   * /gcs/run 전송 body 는 collectBrief()(+raw) 그대로이며 이 확장 필드는 포함하지 않는다.
+   */
+  function collectPreview() {
+    const preview = collectBrief();
+    preview.enemy_tracks = collectEnemyTracks();
+    preview.mettc = {
+      T_time: {
+        endurance_s: numVal($("gcs-endurance-s"), null),
+        eta_goal_s: numVal($("gcs-eta-goal-s"), null),
+      },
+      C: {
+        no_fly_zones: $("gcs-no-fly-zones").value
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        civil_sensitivity: $("gcs-civil-sensitivity").value,
+      },
+    };
+    return preview;
   }
 
   function updatePreview() {
-    $("gcs-json-preview").textContent = JSON.stringify(collectBrief(), null, 2);
+    $("gcs-json-preview").textContent = JSON.stringify(collectPreview(), null, 2);
   }
 
   // ── 시나리오 프리셋 / raw 바인딩 ─────────────────────────────
@@ -301,6 +408,8 @@
     return assembleFromSetMission(tag)
       .then((body) => {
         fillForm(body.draft_brief || {});
+        // set_mission 번들의 enemy_tracks 로 E 테이블 프리필(없으면 예시 유지).
+        fillEnemyTracks(body.enemy_tracks);
         gcs.correlationId = body.correlation_id || null;
         markActivePreset("01:" + tag);
         updatePreview();
@@ -483,6 +592,10 @@
     $("gcs-form").addEventListener("submit", (e) => e.preventDefault());
     $("gcs-wp-add").addEventListener("click", () => {
       addWpRow(null);
+      updatePreview();
+    });
+    $("gcs-enemy-add").addEventListener("click", () => {
+      addEnemyRow(null);
       updatePreview();
     });
     $("gcs-reset").addEventListener("click", () => {

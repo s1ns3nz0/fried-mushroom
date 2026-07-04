@@ -1,13 +1,12 @@
+<!DOCTYPE html>
 <!--
-  D4D 대시보드 UI — 그리드 레이아웃 (topbar + 2fr:1fr 그리드, Maven 다크 스킨).
-  대시보드는 판단하지 않는다 — uav 상태·로그·mock 결정 로그를 표시(관측)만 한다.
-  실시간 로그는 로그수집기 WS /logs 에서 브라우저가 직접 수신한다.
-  배치: 상단 topbar(브랜드/소티/phase/연결상태) ·
-  좌측 main(상단: 지도+고도 프로파일 | 우측: 신호 11채널+UAV 기체 신호) ·
-  우측 side(AI 결정 로그 + 시스템 로그). 페이지는 스크롤하지 않고 내부 리스트만 스크롤.
+  D4D 대시보드 UI — 그리드 레이아웃 (topbar + 1fr:1fr 그리드, Maven 다크 스킨).
+  대시보드는 판단하지 않는다 — uav 상태·mock 결정 로그를 표시(관측)만 한다.
+  배치: 상단 topbar(브랜드/소티/phase/라이브 연결상태) ·
+  좌측 main(지도+신호 11채널 오버레이 | 하단 고도 프로파일) ·
+  우측 side(AI 결정 모델 — 현재 결정 플로우 5블록 + 결정 이력). 페이지는 스크롤하지 않고 내부만 스크롤.
   Canvas placeholder 렌더는 app.js(drawMap/drawProfile/renderSignals),
-  AI 결정 패널은 mock 시나리오 이벤트(app.js pushDecision)로 구동,
-  시스템 로그 패널은 app.js(로그 스트림 클라이언트)에서 담당.
+  AI 결정 패널은 mock 시나리오 이벤트(app.js pushDecision)로 구동.
 -->
 
 <meta charset="utf-8" />
@@ -24,77 +23,164 @@
   </nav>
   <span id="phase-chip" class="chip">—</span>
   <span class="topbar-spacer"></span>
-  <span id="conn-status" class="status status-off">disconnected</span>
+  <span id="conn-status" class="status status-off">라이브 끊김</span>
+  <button type="button" id="debug-toggle" class="chip" aria-pressed="false">DEBUG</button>
   <span class="chip">관측 전용</span>
 </header>
 
 <div id="view-observation" class="view">
 <div id="grid">
   <div id="col-main">
-    <div id="main-upper">
-      <div id="main-left">
-        <!-- 지도: top-down 지형 + 경로 + 드론/적 + 시야각 + 복귀경로 -->
-        <section class="panel" id="panel-map">
-          <div class="fp-head">
-            <h2>지도 / 경로</h2>
-            <div id="speed-control" class="speed-control" role="group" aria-label="배속">
-              <button type="button" class="speed-btn active" data-scale="1">×1</button>
-              <button type="button" class="speed-btn" data-scale="2">×2</button>
-              <button type="button" class="speed-btn" data-scale="4">×4</button>
-              <button type="button" class="speed-btn" data-scale="8">×8</button>
-            </div>
+    <!-- 지도: top-down 지형 + 경로 + 드론/적 + 시야각 + 복귀경로 + 신호 오버레이 -->
+    <section class="panel" id="panel-map">
+      <div class="fp-head">
+        <h2>지도 / 경로</h2>
+        <span id="sim-mode-chip" class="chip">시뮬</span>
+        <div class="sim-controls">
+          <button type="button" id="playpause-btn" class="sim-btn" aria-pressed="true" title="일시중지">⏸</button>
+          <div class="speed-stepper" role="group" aria-label="배속">
+            <button type="button" id="speed-dec" class="sim-btn" aria-label="배속 감소">−</button>
+            <span id="speed-val" class="speed-val">1×</span>
+            <button type="button" id="speed-inc" class="sim-btn" aria-label="배속 증가">+</button>
           </div>
-          <div class="map-wrap">
-            <canvas id="map-canvas" width="960" height="640"></canvas>
-          </div>
-        </section>
-        <!-- 고도 프로파일 (지형 표고 + 드론 고도) -->
-        <section class="panel" id="panel-profile">
-          <div class="fp-head">
-            <h2>고도 프로파일</h2>
-            <span class="fp-meta">ALT / DIST</span>
-          </div>
-          <canvas id="profile-canvas" width="420" height="120"></canvas>
-        </section>
+          <button type="button" id="reset-btn" class="sim-btn" title="처음부터 재생">↺ 리셋</button>
+        </div>
       </div>
-      <div id="main-right">
-        <!-- 신호 (03 추상화 11채널) -->
-        <section class="panel" id="panel-signals">
-          <div class="fp-head">
-            <h2>신호 (03 추상화 11채널)</h2>
-            <span class="fp-meta">11 CH</span>
-          </div>
+      <div class="map-wrap">
+        <canvas id="map-canvas" width="960" height="640"></canvas>
+        <!-- 신호 (03 추상화 11채널) — 지도 좌상단 접이식 오버레이 -->
+        <div id="signals-overlay" class="signals-overlay">
+          <button type="button" id="signals-toggle" class="signals-overlay-head" aria-expanded="true">
+            <span>신호 11CH</span>
+            <span class="signals-caret" aria-hidden="true">▾</span>
+          </button>
           <div id="signals-list" class="signals-list"></div>
-        </section>
-        <!-- UAV 기체 신호 (FC 텔레메트리 9행) -->
-        <section class="panel" id="panel-device">
-          <div class="fp-head">
-            <h2>UAV 기체 신호</h2>
-            <span class="fp-meta">9 ROWS</span>
-          </div>
-          <div id="device-strip" class="device-strip"></div>
-        </section>
+        </div>
       </div>
-    </div>
+    </section>
+    <!-- 고도 프로파일 (지형 표고 + 드론 고도) -->
+    <section class="panel" id="panel-profile">
+      <div class="fp-head">
+        <h2>고도 프로파일</h2>
+        <span class="fp-meta">ALT / DIST</span>
+      </div>
+      <canvas id="profile-canvas" width="420" height="120"></canvas>
+    </section>
   </div>
   <div id="col-side">
-    <!-- AI 결정 로그 (mock 시나리오 이벤트 기반, 관측 전용) -->
+    <!-- AI 결정 모델 (mock 시나리오 이벤트 기반, 관측 전용) —
+         현재 결정 플로우(신호→탐지→위협→위험→대응 5블록 + 결합 화살표) + 결정 이력 -->
     <section class="panel" id="panel-decision">
       <div class="fp-head">
-        <h2>AI 결정 로그</h2>
-        <span class="fp-meta">EVT</span>
+        <h2>AI 결정 모델</h2>
+        <span id="decision-meta" class="fp-meta">—</span>
+        <!-- 🐛 디버그 로그 버튼 — position:fixed로 패널 우상단에 떠 있음(디버그 모드 ON일 때만 표시) -->
+        <button type="button" id="debug-bug-btn" aria-label="디버그 로그" title="디버그 로그" hidden>🐛</button>
       </div>
-      <ul id="decision-list"></ul>
-    </section>
-    <!-- 시스템 로그 (UAV 구동 시스템 로그 · 로그수집기 WS /logs 자동연결) -->
-    <section class="panel" id="panel-log">
-      <div class="fp-head">
-        <h2>시스템 로그</h2>
-        <span id="log-status" class="status status-off" title="disconnected"
-          ><span id="log-count">0</span></span
-        >
+      <div id="decision-body">
+        <div class="dc-flow">
+          <!-- 0. 입력 신호 · 근거 (03 abstraction 11채널 chip) -->
+          <div class="dc-step" id="dc-signals">
+            <div class="dc-tag">
+              <span class="dc-num">0</span>
+              <span class="dc-name">입력 신호 · 근거</span>
+              <span class="dc-layer">03 abstraction</span>
+            </div>
+            <div class="dc-chips" id="dc-chips"></div>
+          </div>
+
+          <div class="dc-arrow">
+            <span class="dc-line"></span>
+            <span class="dc-lbl" id="dc-combine-lbl">0개 신호 결합</span>
+            <span class="dc-car">▼</span>
+            <span class="dc-line"></span>
+          </div>
+
+          <!-- 1. 탐지 (03→04) -->
+          <div class="dc-step wait" id="dc-detect">
+            <div class="dc-tag">
+              <span class="dc-num">1</span>
+              <span class="dc-name">탐지</span>
+              <span class="dc-layer">03→04</span>
+            </div>
+            <div class="dc-line1" id="dc-detect-line">대기</div>
+            <div class="dc-sub" id="dc-detect-sub"></div>
+          </div>
+
+          <div class="dc-arrow">
+            <span class="dc-line"></span>
+            <span class="dc-lbl">신호→위협 매핑 · 국면배수</span>
+            <span class="dc-car">▼</span>
+            <span class="dc-line"></span>
+          </div>
+
+          <!-- 2. 위협 판정 (04 threat) -->
+          <div class="dc-step wait" id="dc-threat">
+            <div class="dc-tag">
+              <span class="dc-num">2</span>
+              <span class="dc-name">위협 판정</span>
+              <span class="dc-layer">04 threat</span>
+            </div>
+            <div class="dc-line1">
+              <span id="dc-threat-line">대기</span>
+              <span class="dc-badge dc-b-bad" id="dc-threat-badge" hidden></span>
+            </div>
+            <div class="dc-sub" id="dc-threat-sub"></div>
+            <div class="dc-conf" id="dc-threat-conf" hidden>
+              <span class="dc-pct" id="dc-threat-pct"></span>
+              <span class="dc-bar"><i id="dc-threat-fill"></i></span>
+            </div>
+          </div>
+
+          <div class="dc-arrow">
+            <span class="dc-line"></span>
+            <span class="dc-lbl">+ 임무맥락 · 경계태세 · 기체상태</span>
+            <span class="dc-car">▼</span>
+            <span class="dc-line"></span>
+          </div>
+
+          <!-- 3. 위험 평가 (05 risk) -->
+          <div class="dc-step wait" id="dc-assess">
+            <div class="dc-tag">
+              <span class="dc-num">3</span>
+              <span class="dc-name">위험 평가</span>
+              <span class="dc-layer">05 risk</span>
+            </div>
+            <div class="dc-line1">
+              <span id="dc-assess-line">대기</span>
+              <span class="dc-badge dc-b-warn" id="dc-assess-badge" hidden></span>
+            </div>
+            <div class="dc-sub" id="dc-assess-sub"></div>
+          </div>
+
+          <div class="dc-arrow">
+            <span class="dc-line"></span>
+            <span class="dc-lbl">+ 교전규칙 · 회피 방위 산출</span>
+            <span class="dc-car">▼</span>
+            <span class="dc-line"></span>
+          </div>
+
+          <!-- 4. 대응 결정 (06→07, 발화 시 앰버 활성 강조) -->
+          <div class="dc-step wait" id="dc-respond">
+            <div class="dc-tag">
+              <span class="dc-num">4</span>
+              <span class="dc-name">대응 결정</span>
+              <span class="dc-layer">06→07</span>
+            </div>
+            <div class="dc-action">
+              <span class="dc-play">▶</span>
+              <span class="dc-txt" id="dc-respond-txt">대기</span>
+            </div>
+            <div class="dc-sub" id="dc-respond-sub"></div>
+          </div>
+        </div>
+
+        <!-- 결정 이력 — 완료된 조우(최신순, 최대 6건) -->
+        <div class="dc-hist">
+          <h3>결정 이력</h3>
+          <div id="decision-history"></div>
+        </div>
       </div>
-      <ul id="log-list"></ul>
     </section>
   </div>
 </div>
@@ -123,8 +209,8 @@
       </div>
       <form id="gcs-form" class="gcs-scroll">
         <p class="gcs-note">
-          GCS layer 01 미구현 — 운용자가 임무 브리핑을 직접 구성해 파이프라인에 전달합니다
-          (관측 전용, 판단은 온보드).
+          정식 METT+TC 6요소. 온보드 파이프라인은 이 중 M(자세·가중치)/T_terrain(코리더)/T_troops(기체)만
+          소비하고, E(적)은 신호발생기 적 배치·경로 회피로 흐른다.
         </p>
 
         <fieldset class="gcs-section">
@@ -142,41 +228,46 @@
               </select>
             </label>
           </div>
-        </fieldset>
-
-        <fieldset class="gcs-section">
-          <legend>E · 자세 (Posture)</legend>
           <div class="gcs-field-grid">
-            <label>watchcon
+            <label>posture.watchcon
               <input type="number" id="gcs-watchcon" min="1" max="5" step="1" />
             </label>
-            <label>defcon
+            <label>posture.defcon
               <input type="number" id="gcs-defcon" min="1" max="5" step="1" />
             </label>
-            <label>infocon
+            <label>posture.infocon
               <input type="number" id="gcs-infocon" min="1" max="5" step="1" />
             </label>
           </div>
-        </fieldset>
-
-        <fieldset class="gcs-section">
-          <legend>T · 가용전력 · 기체 프로필 (drone_profile)</legend>
           <div class="gcs-field-grid">
-            <label>battery_pct
-              <input type="number" id="gcs-battery-pct" min="0" max="100" step="1" />
+            <label>weights.stealth
+              <input type="number" id="gcs-w-stealth" min="0" max="1" step="0.05" />
             </label>
-            <label>armament (쉼표 구분)
-              <input type="text" id="gcs-armament" placeholder="예: agm_light, flare" />
+            <label>weights.survival
+              <input type="number" id="gcs-w-survival" min="0" max="1" step="0.05" />
             </label>
-            <label class="gcs-check">
-              <input type="checkbox" id="gcs-spare-asset" />
-              spare_asset_available
+            <label>weights.info_value
+              <input type="number" id="gcs-w-info" min="0" max="1" step="0.05" />
+            </label>
+            <label>weights.timeliness
+              <input type="number" id="gcs-w-time" min="0" max="1" step="0.05" />
             </label>
           </div>
         </fieldset>
 
         <fieldset class="gcs-section">
-          <legend>T · 지형/코리더 (corridor)</legend>
+          <legend>E · 적 (Enemy)</legend>
+          <table id="gcs-enemy-table">
+            <thead>
+              <tr><th>id</th><th>kind</th><th>lat</th><th>lon</th><th>radius_m</th><th>conf</th><th></th></tr>
+            </thead>
+            <tbody id="gcs-enemy-body"></tbody>
+          </table>
+          <button type="button" id="gcs-enemy-add" class="gcs-btn">+ 적 트랙</button>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>T · 지형 (Terrain) — corridor</legend>
           <table id="gcs-wp-table">
             <thead>
               <tr><th>id</th><th>lat</th><th>lon</th><th>alt_m</th><th></th></tr>
@@ -201,19 +292,45 @@
         </fieldset>
 
         <fieldset class="gcs-section">
-          <legend>T+C · 가중치 (weights)</legend>
+          <legend>T · 부대 (Troops) — drone_profile</legend>
           <div class="gcs-field-grid">
-            <label>stealth
-              <input type="number" id="gcs-w-stealth" min="0" max="1" step="0.05" />
+            <label>battery_pct
+              <input type="number" id="gcs-battery-pct" min="0" max="100" step="1" />
             </label>
-            <label>survival
-              <input type="number" id="gcs-w-survival" min="0" max="1" step="0.05" />
+            <label>armament (쉼표 구분)
+              <input type="text" id="gcs-armament" placeholder="예: agm_light, flare" />
             </label>
-            <label>info_value
-              <input type="number" id="gcs-w-info" min="0" max="1" step="0.05" />
+            <label class="gcs-check">
+              <input type="checkbox" id="gcs-spare-asset" />
+              spare_asset_available
             </label>
-            <label>timeliness
-              <input type="number" id="gcs-w-time" min="0" max="1" step="0.05" />
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>T · 시간 (Time) (참고)</legend>
+          <div class="gcs-field-grid">
+            <label>endurance_s (참고)
+              <input type="number" id="gcs-endurance-s" min="0" step="any" placeholder="예: 5400" />
+            </label>
+            <label>eta_goal_s (참고)
+              <input type="number" id="gcs-eta-goal-s" min="0" step="any" placeholder="예: 1800" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>C · 민간 (Civil) (참고)</legend>
+          <div class="gcs-field-grid">
+            <label>no_fly_zones (쉼표 구분, 참고)
+              <input type="text" id="gcs-no-fly-zones" placeholder="예: nfz-hospital, nfz-school" />
+            </label>
+            <label>civil_sensitivity (참고)
+              <select id="gcs-civil-sensitivity">
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+              </select>
             </label>
           </div>
         </fieldset>
@@ -243,6 +360,15 @@
     </div>
   </div>
 </div>
+
+<!-- 디버그 로그 오버레이 — 최신 tick의 레이어별 input/output JSON (app.js renderDebugLog 구동) -->
+<aside id="debug-log" hidden aria-label="디버그 로그">
+  <div class="debug-log-head">
+    <h2>디버그 로그 · 레이어별 I/O</h2>
+    <span class="fp-meta">LATEST TICK</span>
+  </div>
+  <div id="debug-log-body"></div>
+</aside>
 
 <script src="/static/render.js"></script>
 <script src="/static/app.js"></script>

@@ -46,7 +46,7 @@
   const VIEWSHED_COLOR_DEFAULT = [60, 130, 255, Math.round(0.44 * 255)];
 
   // 적 탐지 footprint 튜닝 상수.
-  const ENEMY_HEIGHT_OFFSET = 10; // m, 적 고도 가정치(지형고도 + 10m)
+  const ENEMY_HEIGHT_OFFSET = 25; // m, enemy sensor mast height (ground + 25m): sees over micro-terrain, still blocked by ridges
   const FOOTPRINT_COLOR_DEFAULT = [235, 45, 45, Math.round(0.34 * 255)];
 
   function terrainHeightAt(u16, W, hmin, hmax, x, y) {
@@ -505,6 +505,173 @@
     ctx.strokeStyle = SYM_FRIENDLY_STROKE;
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    ctx.restore();
+  };
+
+  /**
+   * Objective tactical graphic — 2525/APP-6 "OBJ" style control measure:
+   * bold circle outline with an inscribed X (corner-to-corner within the
+   * circle), neutral/friendly-intent green, tiny mono "OBJ" label below.
+   * Reads as a military objective, not a gunsight (no outer crosshair ticks).
+   */
+  D4DRender.drawObjective = function (ctx, x, y, size) {
+    const OBJ_COLOR = '#4CC38A';
+    ctx.save();
+
+    // Bold circle outline.
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.strokeStyle = OBJ_COLOR;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    // Inscribed X (objective marker), slightly inset from the rim.
+    const k = size * 0.55;
+    ctx.beginPath();
+    ctx.moveTo(x - k, y - k);
+    ctx.lineTo(x + k, y + k);
+    ctx.moveTo(x - k, y + k);
+    ctx.lineTo(x + k, y - k);
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    // Mono label below the graphic.
+    ctx.font = '600 9px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = OBJ_COLOR;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('OBJ', x, y + size + 3);
+    ctx.restore();
+  };
+
+  /**
+   * Start/home point — friendly "home base" marker: 2525 friendly ground
+   * rectangle frame (crystal blue, subtle fill) with an inscribed flag
+   * glyph (pole + pennant), tiny mono "SP" label below.
+   */
+  D4DRender.drawStartPoint = function (ctx, x, y, size) {
+    const w = size * 1.6;
+    const h = size * 1.1;
+    ctx.save();
+
+    // Friendly rectangle frame.
+    ctx.beginPath();
+    ctx.rect(x - w / 2, y - h / 2, w, h);
+    ctx.fillStyle = SYM_FRIENDLY_FILL;
+    ctx.fill();
+    ctx.strokeStyle = SYM_FRIENDLY_STROKE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Flag glyph: pole + solid pennant.
+    const poleX = x - w * 0.14;
+    const topY = y - h * 0.32;
+    const botY = y + h * 0.34;
+    ctx.beginPath();
+    ctx.moveTo(poleX, topY);
+    ctx.lineTo(poleX, botY);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(poleX, topY);
+    ctx.lineTo(poleX + w * 0.30, topY + h * 0.16);
+    ctx.lineTo(poleX, topY + h * 0.32);
+    ctx.closePath();
+    ctx.fillStyle = SYM_FRIENDLY_STROKE;
+    ctx.fill();
+
+    // Mono label below the frame.
+    ctx.font = '600 9px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = SYM_FRIENDLY_STROKE;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('SP', x, y + h / 2 + 3);
+    ctx.restore();
+  };
+
+  // Threat-category symbol colors — kind→category→symbol mapping (app.js dispatches):
+  //   T3/T4 (physical enemy ground unit)          → drawHostileGround (red diamond, #F0555D)
+  //   T1/T2/T5 (remote EW: GPS spoof/cyber/laser) → drawEwThreat (violet hexagon + lightning, #C97BF0)
+  //   T7 (navigation terrain hazard / CFIT)       → drawTerrainHazard (amber warning triangle, #E5A93D)
+  const SYM_EW_STROKE = '#C97BF0';
+  const SYM_EW_FILL = 'rgba(201,123,240,0.18)';
+  const SYM_HAZARD_STROKE = '#E5A93D';
+  const SYM_HAZARD_FILL = 'rgba(229,169,61,0.15)';
+
+  /**
+   * Remote electronic-warfare threat (T1 GPS spoofing / T2 cyber / T5 laser)
+   * — NOT a hostile ground unit: violet hexagon outline with a solid
+   * lightning-bolt glyph inside (jamming/EW emitter marker).
+   */
+  D4DRender.drawEwThreat = function (ctx, x, y, size) {
+    ctx.save();
+
+    // Hexagon frame (pointy-top).
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      const hx = x + Math.cos(a) * size;
+      const hy = y + Math.sin(a) * size;
+      if (i) ctx.lineTo(hx, hy);
+      else ctx.moveTo(hx, hy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = SYM_EW_FILL;
+    ctx.fill();
+    ctx.strokeStyle = SYM_EW_STROKE;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Lightning-bolt glyph (solid fill).
+    const s = size;
+    ctx.beginPath();
+    ctx.moveTo(x + s * 0.18, y - s * 0.55);
+    ctx.lineTo(x - s * 0.28, y + s * 0.08);
+    ctx.lineTo(x + s * 0.02, y + s * 0.08);
+    ctx.lineTo(x - s * 0.18, y + s * 0.55);
+    ctx.lineTo(x + s * 0.30, y - s * 0.10);
+    ctx.lineTo(x, y - s * 0.10);
+    ctx.closePath();
+    ctx.fillStyle = SYM_EW_STROKE;
+    ctx.fill();
+
+    ctx.restore();
+  };
+
+  /**
+   * Navigation terrain hazard (T7 terrain collision / CFIT) — NOT an enemy:
+   * amber warning triangle outline with an exclamation glyph inside
+   * (obstacle/CFIT caution marker).
+   */
+  D4DRender.drawTerrainHazard = function (ctx, x, y, size) {
+    ctx.save();
+
+    // Warning triangle frame.
+    ctx.beginPath();
+    ctx.moveTo(x, y - size);
+    ctx.lineTo(x + size * 0.95, y + size * 0.75);
+    ctx.lineTo(x - size * 0.95, y + size * 0.75);
+    ctx.closePath();
+    ctx.fillStyle = SYM_HAZARD_FILL;
+    ctx.fill();
+    ctx.strokeStyle = SYM_HAZARD_STROKE;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Exclamation glyph: bar + dot.
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.40);
+    ctx.lineTo(x, y + size * 0.16);
+    ctx.strokeStyle = SYM_HAZARD_STROKE;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y + size * 0.46, Math.max(1.2, size * 0.14), 0, Math.PI * 2);
+    ctx.fillStyle = SYM_HAZARD_STROKE;
+    ctx.fill();
 
     ctx.restore();
   };

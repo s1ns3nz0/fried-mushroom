@@ -90,6 +90,33 @@ python3 -m onboard examples/raw_t3.json examples/mission_brief_strike.json > exa
 
 값이 이상하면 상위 layer 로 돌아가 로직을 고친다.
 
+## GCS 종단 배선 — `set_mission_*.json`
+
+`set_mission_{recon,strike,t3}.json` 은 지상통제센터 AI(layer 01) 입력 fixture
+(지시서 원문 + C4I + 운용자 등록값). GCS CLI 가 승인 게이트를 거쳐 온보드
+MissionBrief 를 산출하므로, 손편집 브리핑 없이 지시서→비행지시 전 구간이 이어진다:
+
+```bash
+# 지시서 → GCS 01 (운용자 승인) → mission_brief → 온보드 파이프라인
+python3 -m gcs examples/set_mission_t3.json --approve --out /tmp/brief_t3.json
+python3 -m onboard examples/raw_t3.json /tmp/brief_t3.json
+```
+
+`set_mission_t3.json` 의 GCS 산출 브리핑은 `mission_brief_t3.json` 골든과 완전 일치한다
+(회귀 잠금: `tests/integration/test_gcs_to_onboard.py`). `--approve` 없이 실행하면
+`pending_approval` 페이로드(신호 카드 + 경고)만 출력한다 — AI 는 후보만, 최종 결정은 사람.
+
+운용자가 AI 초안을 필드단위로 확정/수정하려면 `--override K=<json>`(반복 가능, `--approve` 필수):
+
+```bash
+python3 -m gcs examples/set_mission_t3.json --approve \
+  --override 'posture={"watchcon":2,"defcon":2,"infocon":3}'
+# → mission_brief.posture 반영 + applied_overrides 감사기록
+```
+
+허용 필드는 `mission_context/posture/drone_profile/corridor/weights` 뿐이다(`sortie_id`·온보드-소유
+필드는 거부 — 레이어 계약/SCC-1).
+
 ## mission_brief 필드 참고
 
 - `mission_context` : `"정찰"|"타격"|"호송"|"수송"` — 05 BASE_RATE 조회 키

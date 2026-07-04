@@ -63,16 +63,63 @@ def assemble_draft(inputs: dict) -> dict:
     }
 
 
-def finalize(draft: dict, approved: bool, ts_ms: int) -> dict:
-    """운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_state 확정, 미승인 pending."""
-    if approved:
+# 운용자가 승인 시 수정 가능한 GCS-소유 결정필드 → 기대 타입 (sortie_id=식별자·온보드-소유 제외).
+# 타입 검증으로 형태가 틀린 오버라이드(예: posture=정수)가 하류 crash 를 내지 않게 한다.
+_OVERRIDABLE_FIELDS: dict[str, type | tuple[type, ...]] = {
+    "mission_context": str,
+    "posture": dict,
+    "drone_profile": dict,
+    "corridor": dict,
+    "weights": dict,
+}
+# dict 필드는 replace 아닌 merge — 부분 오버라이드(예: posture={"defcon":2})가 나머지 키를
+# 떨어뜨려 불완전 브리핑을 만들지 않게 한다 (codex P2).
+_MERGE_FIELDS = frozenset({"posture", "drone_profile", "corridor", "weights"})
+# mission_context 유효값 (온보드 MISSION_CONTEXTS 미러 — 레이어 경계상 onboard 상수 import 금지).
+# 미러 드리프트 방지: 값 추가 시 shared/constants.MISSION_CONTEXTS 와 동기.
+_VALID_MISSION_CONTEXTS = frozenset({"정찰", "타격", "호송", "수송"})
+
+
+def finalize(draft: dict, approved: bool, ts_ms: int, overrides: dict | None = None) -> dict:
+    """운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_state 확정, 미승인 pending.
+
+    overrides: 운용자가 승인 시 수정하는 결정필드 {field: value} (AI 초안을 사람이 필드단위 확정).
+    _OVERRIDABLE_FIELDS 로 제한 — 미지/식별자/온보드-소유 필드 주입 금지(SCC-1·레이어 계약).
+    적용 내역은 applied_overrides({field: {from, to}}) 로 감사기록. 원본 draft 는 변형하지 않는다.
+    """
+    if overrides and not approved:
+        raise ValueError("overrides require approved=True (미승인 브리핑엔 확정필드가 없음)")
+    if not approved:
         return {
-            "mission_brief": draft["draft_brief"],
-            "mettc_state": draft.get("mettc_state"),
-            "approved_ts_ms": ts_ms,
+            "status": "pending_approval",
+            "signal_cards": draft["signal_cards"],
+            "warnings": draft["warnings"],
         }
-    return {
-        "status": "pending_approval",
-        "signal_cards": draft["signal_cards"],
-        "warnings": draft["warnings"],
+
+    brief = dict(draft["draft_brief"])
+    applied: dict = {}
+    for field, value in (overrides or {}).items():
+        if field not in _OVERRIDABLE_FIELDS:
+            raise ValueError(f"override 불가 필드: {field!r} (허용: {sorted(_OVERRIDABLE_FIELDS)})")
+        if not isinstance(value, _OVERRIDABLE_FIELDS[field]):
+            raise ValueError(
+                f"override {field!r} 타입 오류: {_OVERRIDABLE_FIELDS[field].__name__} 기대, {type(value).__name__} 받음")
+        if field == "mission_context" and value not in _VALID_MISSION_CONTEXTS:
+            raise ValueError(f"override mission_context 무효: {value!r} (유효: {sorted(_VALID_MISSION_CONTEXTS)})")
+        old = brief.get(field)
+        # dict 필드는 기존 완전값에 병합 → 부분 오버라이드가 키를 떨어뜨리지 않음.
+        new = {**old, **value} if field in _MERGE_FIELDS and isinstance(old, dict) else value
+        applied[field] = {"from": old, "to": new}
+        brief[field] = new
+
+    result = {
+        "mission_brief": brief,
+        "approved_ts_ms": ts_ms,
     }
+    if applied:
+        # 오버라이드된 브리핑이 정본 — AI 초안 mettc_state 는 해당 필드에서 불일치하므로 omit
+        # (Codex P2: stale state 노출 방지). 감사기록은 applied_overrides 로 보존.
+        result["applied_overrides"] = applied
+    else:
+        result["mettc_state"] = draft.get("mettc_state")
+    return result

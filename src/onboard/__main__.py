@@ -17,7 +17,9 @@ import json
 import sys
 from pathlib import Path
 
+from onboard.layer_02_sensor.schema import REQUIRED_KEYS as RAW_REQUIRED_KEYS
 from onboard.run import run_cycle
+from onboard.shared.schemas import MissionBrief
 
 _USAGE = (
     "usage: python -m onboard <raw.json> <mission_brief.json> "
@@ -50,9 +52,51 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) < 2:
         print(_USAGE, file=sys.stderr)
         return 2
+    if len(args) > 2:
+        print(f"error: 인자 과다 — positional 인자는 2개 (raw, brief). 받음: {len(args)}개\n{_USAGE}",
+              file=sys.stderr)
+        return 2
 
-    raw = json.loads(Path(args[0]).read_text(encoding="utf-8"))
-    mission_brief = json.loads(Path(args[1]).read_text(encoding="utf-8"))
+    try:
+        raw_text = Path(args[0]).read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: raw 파일 읽기 실패: {exc}", file=sys.stderr)
+        return 2
+    try:
+        raw = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        print(f"error: raw JSON 파싱 실패 ({args[0]}): {exc}", file=sys.stderr)
+        return 2
+    # 진입점 raw 스키마 검증 — 필수 키 누락이 파이프라인 내부 KeyError 로 새지 않게 (#214).
+    if not isinstance(raw, dict):
+        print(f"error: raw 는 객체(dict)여야 함 ({args[0]}): {type(raw).__name__} 받음", file=sys.stderr)
+        return 2
+    missing_raw = sorted(k for k in RAW_REQUIRED_KEYS if k not in raw)
+    if missing_raw:
+        print(f"error: raw 필수 키 누락 ({args[0]}): {', '.join(missing_raw)}", file=sys.stderr)
+        return 2
+
+    try:
+        brief_text = Path(args[1]).read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: mission_brief 파일 읽기 실패: {exc}", file=sys.stderr)
+        return 2
+    try:
+        mission_brief = json.loads(brief_text)
+    except json.JSONDecodeError as exc:
+        print(f"error: mission_brief JSON 파싱 실패 ({args[1]}): {exc}", file=sys.stderr)
+        return 2
+
+    # 진입점 스키마 검증 — 필수 키 누락이 파이프라인 내부 KeyError(스택트레이스)로 새지 않게
+    # 명확한 메시지 + 비-0 exit 로 그레이스풀 실패시킨다 (#209). 파이프라인 로직·상수 무변경.
+    if not isinstance(mission_brief, dict):
+        print(f"error: mission_brief 는 객체(dict)여야 함 ({args[1]}): {type(mission_brief).__name__} 받음",
+              file=sys.stderr)
+        return 2
+    missing = sorted(k for k in MissionBrief.__required_keys__ if k not in mission_brief)
+    if missing:
+        print(f"error: mission_brief 필수 키 누락 ({args[1]}): {', '.join(missing)}", file=sys.stderr)
+        return 2
 
     previous_qualities: dict | None = None
     if prev_qualities_path is not None:

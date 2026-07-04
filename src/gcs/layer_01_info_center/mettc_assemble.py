@@ -58,6 +58,15 @@ def assemble_mettc(set_mission: dict, c4i: dict, signals: list[dict]) -> dict:
     corridor = _corridor_from_inputs(set_mission)
     bases = _bases_from_inputs(set_mission)
 
+    # uav_mission: 부분입력(purpose 등 누락)도 수용 — 제공값 우선, 빠진 키는 초기값 규약으로
+    # 채운다. purpose 누락 시 operator mission_context 로 폴백(B-1 §5.3 투영 계약 — 폴백 없으면
+    # project_onboard_brief 가 mission_context=None 인 무효 브리핑 산출, codex P2).
+    uav_mission = dict(set_mission.get("uav_mission") or {})
+    uav_mission.setdefault("name", set_mission["sortie_id"])
+    uav_mission["purpose"] = uav_mission.get("purpose") or set_mission["mission_context"]
+    uav_mission.setdefault("type", None)
+    uav_mission.setdefault("goal", None)
+
     # E.tracks — C4I 트랙 + 출처 태깅 + 지상 시점 초기 필드 (B-1 §5.1/§5.2).
     tracks = []
     for t in c4i.get("enemy_tracks") or []:
@@ -80,10 +89,7 @@ def assemble_mettc(set_mission: dict, c4i: dict, signals: list[dict]) -> dict:
             "posture": dict(set_mission["posture"]),
             "higher_intent": set_mission.get("higher_intent"),
             "unit_mission": set_mission.get("unit_mission"),
-            "uav_mission": dict(set_mission.get("uav_mission")
-                                or {"name": set_mission["sortie_id"],
-                                    "purpose": set_mission["mission_context"],
-                                    "type": None, "goal": None}),
+            "uav_mission": uav_mission,
             "weights": dict(set_mission["weights"]),
         },
         "E": {"tracks": tracks},
