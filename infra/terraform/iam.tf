@@ -23,18 +23,15 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # F-02(#232): sub 를 특정 subject 로 고정 — 와일드카드(:*) 제거로 PR/fork/타 브랜치 assume 차단.
-    # F-03: 배포 job 이 environment 를 쓰면 OIDC sub 가 :environment:<name> 형태가 되므로 함께 허용.
+    # F-02(#232): sub 를 main 브랜치 ref 로 고정 — 와일드카드(:*)·environment subject 제거로
+    # PR/fork/타 브랜치/workflow_dispatch 의 role assume 차단. (#271 HIGH: #270 이 추가한
+    # :environment:production subject 는 브랜치 ref 가 없어 신뢰확대 → F-02 회귀라 롤백.)
+    # 배포 job 의 environment: production 은 승인 리뷰 게이트 용도로만 유지. environment subject 를
+    # 안전하게 신뢰하려면 github provider 로 deployment_branch_policy(main) 코드화 선행 필요(별도).
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      # F-03: environment subject 도 허용. 단 environment 사용 시 sub 가 브랜치 ref 를 잃으므로,
-      # **브랜치 제한은 GitHub production environment 의 deployment branch rule(main 한정, repo-admin)**
-      # 로 강제한다 — IAM 의 ref 클레임 조건은 GitHub OIDC 에서 신뢰성이 없어(누락 시 전면 deny) 미사용.
-      values = [
-        "repo:${var.github_org}/${var.github_repo}:ref:${var.github_deploy_ref}",
-        "repo:${var.github_org}/${var.github_repo}:environment:${var.github_deploy_environment}",
-      ]
+      values   = ["repo:${var.github_org}/${var.github_repo}:ref:${var.github_deploy_ref}"]
     }
   }
 }

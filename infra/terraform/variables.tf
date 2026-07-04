@@ -89,13 +89,9 @@ variable "github_repo" {
   default     = "fried-mushroom" # F-14(#232): 실제 repo 로 정정
 }
 
-# F-03(#232): 배포 job 의 GitHub environment 이름. environment 사용 시 OIDC sub 가
-# repo:ORG/REPO:environment:<이름> 형태가 되므로 IAM 신뢰정책이 이 subject 도 허용해야 함.
-variable "github_deploy_environment" {
-  description = "배포 워크플로 job 의 GitHub environment 이름(승인 게이트). deploy-*.yml 과 일치해야 함"
-  type        = string
-  default     = "production"
-}
+# (#271: github_deploy_environment 변수 제거 — #270 이 이를 OIDC :environment: subject 신뢰에
+#  썼으나 F-02 회귀라 롤백. environment subject 를 안전 신뢰하려면 github provider 로
+#  deployment_branch_policy(main) 코드화하는 별도 라운드에서 재도입.)
 
 # F-02(DevSecOps 감사 #232): OIDC 배포 role 을 assume 할 수 있는 git ref 를 최소범위로 제한.
 # 기본 main 브랜치 push 만 — PR/fork/타 브랜치의 role assume 를 차단(#208 노출 role 남용 방지).
