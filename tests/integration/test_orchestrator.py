@@ -197,6 +197,21 @@ class TestLayerWiring:
         assert seen["ctx"]["optimal_terrain_bearing_deg"] == pytest.approx(38.35, abs=0.5)
         assert seen["ctx"]["lowest_exposure_bearing_deg"] == pytest.approx(128.35, abs=0.5)
 
+    def test_terrain_bearing_rounded_for_cross_python_portability(self) -> None:
+        # atan2/cos 의 마지막 ULP 는 libm(파이썬/플랫폼)마다 달라, 풀정밀 float 를 골든에
+        # 박으면 CI(3.11)와 로컬(3.13)이 어긋난다(main red 원인). 출력을 6자리로 반올림해
+        # 이식성을 확보한다 — 0.000001° ≈ 0.1m 로 정밀도 손실은 무의미.
+        from onboard.run import _compute_terrain_bearings
+
+        out = _compute_terrain_bearings({
+            "corridor": {"waypoints": [
+                {"id": "wp1", "lat": 37.7, "lon": 127.2, "alt_m": 60},
+                {"id": "wp2", "lat": 37.72, "lon": 127.22, "alt_m": 60},
+            ]}
+        })
+        for k in ("optimal_terrain_bearing_deg", "lowest_exposure_bearing_deg"):
+            assert out[k] == round(out[k], 6), f"{k}={out[k]!r} 6자리 초과 float tail (비이식)"
+
     def test_terrain_bearing_fallback_when_no_waypoints(self, monkeypatch) -> None:
         seen: dict = {}
 
