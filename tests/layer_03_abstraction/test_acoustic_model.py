@@ -55,12 +55,14 @@ def test_model_returns_none_when_unavailable(monkeypatch):
 
 
 def test_acoustic_event_falls_back_when_model_unavailable(monkeypatch):
-    # opt-in + 실파형이나 YAMNet 미설치 → stub 폴백(크래시 0, 계약 유지).
+    # opt-in + 실파형이나 YAMNet 미가용 → stub 폴백(크래시 0, 계약 유지).
+    # _load_yamnet 를 None 으로 stub — 오프라인·결정론(실 TF Hub 다운로드 방지, codex P2).
     monkeypatch.setenv("ONBOARD_PERCEPTION_MODEL", "1")
+    monkeypatch.setattr(acoustic_model, "_load_yamnet", lambda: None)
     raw = build_normal_envelope("s", 0, 0)
     raw["acoustic"] = _acoustic_with_wave()  # ambiguous 유도(peak 80)
     out = acoustic_event.run(raw)
-    assert out["payload"]["detection_stage"] in ("threshold_only", "yamnet_secondary")
+    assert out["payload"]["detection_stage"] == "threshold_only"  # 모델 미가용 → 폴백 확정
     assert "event_type" in out["payload"]
 
 
