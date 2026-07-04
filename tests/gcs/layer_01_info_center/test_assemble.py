@@ -11,7 +11,7 @@ def _inputs(**over):
         "directive_text": "적 저격조 확인됨",  # brief 에는 안 들어감
         "mission_context": "정찰",
         "posture": {"watchcon": 3, "defcon": 3, "infocon": 4},
-        "drone_profile": {"spare_available": True, "armament": [], "battery_pct": 65},
+        "drone_profile": {"spare_asset_available": True, "armament": [], "battery_pct": 65},
         "corridor": {"waypoints": [], "bases": {}},
         "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
         "c4i": {"enemy_situation": []},  # brief 에는 안 들어감
