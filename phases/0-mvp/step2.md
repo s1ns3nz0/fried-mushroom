@@ -81,7 +81,8 @@ health.battery = {"voltage_v": 25.0, "current_a": 30.0, "pct": 78, "temp_c": 35}
 
 - t3: `mission_context="정찰"`, `posture.watchcon=3, defcon=3`, `drone_profile.spare_asset_available=False`, `drone_profile.armament=[]` (무장 없음), `weights={stealth:0.4, survival:0.2, info_value:0.3, timeliness:0.1}`
 - t4: `mission_context="호송"`, `posture.watchcon=2, defcon=2`, `drone_profile.spare_asset_available=True`, `armament=[]`
-- t7: `mission_context="타격"`, `posture.watchcon=3, defcon=3`, `drone_profile.spare_asset_available=True`, `armament=[{expendable: True, type: "leaflet"}]` (WEAPON_DROP 조건부 실행 테스트용)
+- t7: `mission_context="수송"`, `posture.watchcon=4, defcon=4, infocon=4`, `drone_profile.spare_asset_available=True`, `armament=[]` (T7=지형충돌/CFIT, NAVIGATION 위협 — 적대행위 아님. ADR-005/#11 결정)
+- strike (WEAPON_DROP 조건부 실행 테스트용): `mission_context="타격"`, `drone_profile.armament=[{expendable: True, type: "leaflet"}]` → `examples/mission_brief_strike.json` (Lead 제공, #11 결정). t7 을 오염시키지 않는다.
 
 ### 5) 테스트
 
@@ -97,7 +98,7 @@ health.battery = {"voltage_v": 25.0, "current_a": 30.0, "pct": 78, "temp_c": 35}
 `tests/layer_02_sensor/test_mission_brief.py`:
 
 - 세 브리핑 파일이 유효한 JSON이며 `mission_context`가 `MISSION_CONTEXTS` 상수 안에 있다
-- t7 브리핑의 `drone_profile.armament[0].expendable is True`
+- strike 브리핑(`mission_brief_strike.json`)의 `drone_profile.armament[0].expendable is True` (WEAPON_DROP 테스트용)
 
 ## Acceptance Criteria
 
