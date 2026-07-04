@@ -179,3 +179,65 @@ def test_retrieve_top_k_bounds_large_corpus(store):
     ]
     store.ingest_episode(episode)
     assert len(store.retrieve(top_k=5)) == 5
+
+
+# ── posture 근접매칭 (라운드 2, docs/RAG-corpus.md §6-1) ──────────────────────
+
+
+def _near_episode(mission_id, posture):
+    ep = _episode()
+    ep["mission_id"] = mission_id
+    ep["posture"] = posture
+    ep["threat_judgments"] = [
+        {"threat_event": "T3", "confidence": 0.5, "kill_chain_stage": "초기"}
+    ]
+    return ep
+
+
+def test_retrieve_posture_tolerance_matches_within_pm_one(store):
+    store.ingest_episode(_near_episode("m-a", {"watchcon": 3, "defcon": 3, "infocon": 4}))
+    store.ingest_episode(_near_episode("m-b", {"watchcon": 2, "defcon": 4, "infocon": 3}))  # 각 ±1
+    store.ingest_episode(_near_episode("m-c", {"watchcon": 1, "defcon": 3, "infocon": 4}))  # watchcon 차 2
+    hits = store.retrieve(
+        posture={"watchcon": 3, "defcon": 3, "infocon": 4}, posture_tolerance=1
+    )
+    assert {r["mission_id"] for r in hits} == {"m-a", "m-b"}
+
+
+def test_retrieve_posture_tolerance_zero_is_subset_value_match(store):
+    store.ingest_episode(_near_episode("m-a", {"watchcon": 3, "defcon": 3, "infocon": 4}))
+    store.ingest_episode(_near_episode("m-b", {"watchcon": 3, "defcon": 3, "infocon": 5}))
+    # 질의에 없는 키는 무시 → defcon만 근접비교
+    hits = store.retrieve(posture={"defcon": 3}, posture_tolerance=0)
+    assert {r["mission_id"] for r in hits} == {"m-a", "m-b"}
+
+
+def test_retrieve_posture_tolerance_missing_query_key_excludes_record(store):
+    store.ingest_episode(_near_episode("m-a", {"watchcon": 3, "defcon": 3}))  # infocon 결여
+    hits = store.retrieve(
+        posture={"watchcon": 3, "defcon": 3, "infocon": 4}, posture_tolerance=1
+    )
+    assert hits == []
+
+
+def test_retrieve_posture_exact_default_unaffected_by_round2(store):
+    store.ingest_episode(_near_episode("m-a", {"watchcon": 3, "defcon": 3, "infocon": 4}))
+    store.ingest_episode(_near_episode("m-b", {"watchcon": 2, "defcon": 4, "infocon": 3}))
+    hits = store.retrieve(posture={"watchcon": 3, "defcon": 3, "infocon": 4})
+    assert {r["mission_id"] for r in hits} == {"m-a"}  # 정확일치만
+
+
+def test_retrieve_posture_tolerance_respects_top_k_after_filter(store):
+    for i in range(5):
+        store.ingest_episode(_near_episode(f"m-{i}", {"watchcon": 3, "defcon": 3, "infocon": 4}))
+    hits = store.retrieve(
+        posture={"watchcon": 3, "defcon": 3, "infocon": 4},
+        posture_tolerance=1,
+        top_k=2,
+    )
+    assert len(hits) == 2
+
+
+def test_retrieve_negative_posture_tolerance_raises(store):
+    with pytest.raises(ValueError):
+        store.retrieve(posture={"defcon": 3}, posture_tolerance=-1)

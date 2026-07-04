@@ -30,13 +30,50 @@ def aggregate_terrain_composition(gps_track: list[dict[str, Any]]) -> dict[str, 
     raise NotImplementedError
 
 
-def aggregate_threat_events(threat_modeling_log: list[dict[str, Any]]) -> list[str]:
+def aggregate_threat_judgments(
+    threat_modeling_log: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """threat_modeling_log → 위협별(threat_event) 판정 집계 (confidence 보존).
+
+    입력 항목: {ts, threat_event, confidence, kill_chain_stage} 시계열.
+    같은 threat_event가 여러 번 등장하면 **최신(ts 최대) 판정이 이긴다** — 킬체인
+    후기 단계·최종 확신도 보존(예: 초기→후기 발전 시 후기 판정 채택). threat_event
+    누락 항목은 건너뛴다(회수 키 성립 안 함). 반환 순서 = 위협 첫 등장 순.
+    산출 항목: {threat_event, confidence, kill_chain_stage, ts}.
+    → 계약: docs/RAG-corpus.md §2-2, §3-1.
+    """
+    judgments: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for entry in threat_modeling_log or []:
+        threat_event = entry.get("threat_event")
+        if not threat_event:
+            continue  # 위협 식별 불가 → 회수 키 성립 안 함
+        if threat_event not in judgments:
+            order.append(threat_event)
+        existing = judgments.get(threat_event)
+        if existing is None or _ts_key(entry.get("ts")) >= _ts_key(existing["ts"]):
+            judgments[threat_event] = {
+                "threat_event": threat_event,
+                "confidence": entry.get("confidence"),
+                "kill_chain_stage": entry.get("kill_chain_stage"),
+                "ts": entry.get("ts"),
+            }
+    return [judgments[te] for te in order]
+
+
+def aggregate_threat_events(
+    threat_modeling_log: list[dict[str, Any]] | None,
+) -> list[str]:
     """threat_modeling_log에서 등장한 threat_event 집합을 추출.
 
-    예: ["T3", "T1"] (중복 제거, 등장 순/빈도순).
+    예: ["T3", "T1"] (중복 제거, 첫 등장 순). aggregate_threat_judgments에서 파생.
     """
-    # TODO: threat_event 유니크 추출.
-    raise NotImplementedError
+    return [j["threat_event"] for j in aggregate_threat_judgments(threat_modeling_log)]
+
+
+def _ts_key(ts: Any) -> float:
+    """ts 비교 키 — None은 최소값으로 취급(실 ts가 항상 이김)."""
+    return ts if ts is not None else float("-inf")
 
 
 def aggregate_outcome(raw_log: dict[str, Any]) -> str:
@@ -65,12 +102,14 @@ def build_episode_index(raw_log: dict[str, Any], raw_log_ref: str) -> dict[str, 
     embedding은 별도(로컬 sentence-transformer) — store 편입 단계에서 채움.
     → 스키마: docs/architecture/ground/02-learning-rag.md (episode_index)
     """
-    # TODO: 아래 필드 채워 반환. corridor_region은 mettc/corridor에서 파생.
+    # TODO: 나머지 필드 채워 반환. corridor_region은 mettc/corridor에서 파생.
+    threat_judgments = aggregate_threat_judgments(raw_log.get("threat_modeling_log"))
     return {
         "mission_id": raw_log.get("mission_id"),
         "raw_log_ref": raw_log_ref,
         "corridor_region": None,        # TODO: corridor → region 코드(예: "KR-hill-07")
-        "threat_events": None,          # TODO: aggregate_threat_events
+        "threat_events": [j["threat_event"] for j in threat_judgments],
+        "threat_judgments": threat_judgments,  # 위협별 confidence 보존 → corpus 변환기 입력
         "outcome": None,                # TODO: aggregate_outcome
         "terrain_composition": None,    # TODO: aggregate_terrain_composition
         "narrative": None,              # TODO: draft_narrative
