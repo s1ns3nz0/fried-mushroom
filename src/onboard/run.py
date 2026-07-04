@@ -52,7 +52,11 @@ def run_cycle(
     primary = threat.get("primary")
     primary_context = primary.get("context") if primary else None
     obstacle_ttc_s = _extract_obstacle_ttc(abstraction)
-    cycle_context_07 = {**cycle_context, **({"obstacle_ttc_s": obstacle_ttc_s} if obstacle_ttc_s is not None else {})}
+    cycle_context_07 = {
+        **cycle_context,
+        **_extract_terrain_bearings(abstraction),  # 03 terrain_class 방위가 있으면 코리더 heuristic 을 덮어씀
+        **({"obstacle_ttc_s": obstacle_ttc_s} if obstacle_ttc_s is not None else {}),
+    }
     flight_plan = _run_layer("07", lambda run: run(response, primary_context, cycle_context_07))
 
     return {
@@ -90,6 +94,23 @@ def _extract_link_quality(abstraction: dict) -> float | None:
         if channel.get("channel") == "link_status":
             return channel.get("quality")
     return None
+
+
+def _extract_terrain_bearings(abstraction: dict) -> dict:
+    """terrain_class 채널 payload에서 지형 방위(non-None만) 추출. 07 cycle_context 오버라이드용.
+
+    실제 GIS/세그멘테이션이 방위를 산출하면 코리더 heuristic(_compute_terrain_bearings)보다
+    우선한다. 스텁이 None 을 주면 빈 dict 를 반환해 코리더 값을 보존한다.
+    """
+    for channel in abstraction.get("channels", []):
+        if channel.get("channel") == "terrain_class":
+            p = channel.get("payload", {})
+            return {
+                k: p[k]
+                for k in ("optimal_terrain_bearing_deg", "lowest_exposure_bearing_deg")
+                if p.get(k) is not None
+            }
+    return {}
 
 
 def _extract_obstacle_ttc(abstraction: dict) -> float | None:
