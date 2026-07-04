@@ -34,7 +34,7 @@ def _write(tmp_path):
 
 
 _BRIEF_KEYS = {"sortie_id", "mission_context", "posture", "drone_profile", "corridor", "weights"}
-_CYCLE_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state", "endurance"}
+_CYCLE_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state", "endurance", "corridor"}
 
 
 def test_approve_runs_full_01_to_07(tmp_path, capsys) -> None:
