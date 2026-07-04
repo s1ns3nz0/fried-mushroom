@@ -208,6 +208,49 @@ class TestLayerWiring:
         assert seen["ctx"]["optimal_terrain_bearing_deg"] == 0.0
         assert seen["ctx"]["lowest_exposure_bearing_deg"] == 0.0
 
+    def _inject_chain_with_abstraction(self, monkeypatch, abstraction, seen):
+        def plan_run(response, primary_context, cycle_context):
+            seen["ctx"] = cycle_context
+            return _canned_flight_plan()
+
+        _inject(monkeypatch, {
+            "onboard.layer_03_abstraction.run": lambda raw, prev: abstraction,
+            "onboard.layer_04_threat.run": lambda a, c: _canned_threat(primary=None),
+            "onboard.layer_05_risk.run": lambda *a, **k: {"candidates": []},
+            "onboard.layer_06_response.run": lambda *a, **k: _canned_response(),
+            "onboard.layer_07_planning.run": plan_run,
+        })
+
+    def test_terrain_channel_bearing_overrides_corridor(self, monkeypatch) -> None:
+        # 03 terrain_class 가 방위를 산출하면 코리더 heuristic 을 덮어쓴다 (03 우선).
+        seen: dict = {}
+        abstraction = {
+            "schema_version": "real", "id": "x", "ts": 1,
+            "channels": [{
+                "channel": "terrain_class", "state": "normal", "quality": 0.9,
+                "payload": {"optimal_terrain_bearing_deg": 111.0, "lowest_exposure_bearing_deg": 222.0},
+            }],
+        }
+        self._inject_chain_with_abstraction(monkeypatch, abstraction, seen)
+        run_cycle(_raw(), _brief())  # empty waypoints → corridor would be 0.0
+        assert seen["ctx"]["optimal_terrain_bearing_deg"] == 111.0
+        assert seen["ctx"]["lowest_exposure_bearing_deg"] == 222.0
+
+    def test_terrain_channel_bearing_none_falls_back_to_corridor(self, monkeypatch) -> None:
+        # 03 방위가 None(스텁) 이면 코리더 값이 유지된다 (None 이 corridor 를 덮지 않음).
+        seen: dict = {}
+        abstraction = {
+            "schema_version": "real", "id": "x", "ts": 1,
+            "channels": [{
+                "channel": "terrain_class", "state": "normal", "quality": 0.9,
+                "payload": {"optimal_terrain_bearing_deg": None, "lowest_exposure_bearing_deg": None},
+            }],
+        }
+        self._inject_chain_with_abstraction(monkeypatch, abstraction, seen)
+        run_cycle(_raw(), _brief())  # empty waypoints → corridor 0.0
+        assert seen["ctx"]["optimal_terrain_bearing_deg"] == 0.0
+        assert seen["ctx"]["lowest_exposure_bearing_deg"] == 0.0
+
 
 class TestCli:
     def test_main_prints_result_json_with_five_keys(self, tmp_path, capsys) -> None:
