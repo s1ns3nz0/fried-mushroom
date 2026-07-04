@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from aggregate import NARRATIVE_PENDING
+from narrative_embed import embed_narrative as _embed_narrative
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
@@ -117,6 +118,11 @@ def episode_to_corpus_records(episode: dict[str, Any]) -> list[dict[str, Any]]:
         threat_event = judgment.get("threat_event")
         if not threat_event:
             continue  # 위협 식별 불가 → 회수 키 성립 안 함
+        narrative = episode.get("narrative")
+        embedding = episode.get("embedding")
+        # narrative 있고 embedding 미생성이면 결정론 n-gram 임베딩으로 채움.
+        if narrative and embedding is None:
+            embedding = _embed_narrative(narrative)
         records.append(
             {
                 "mission_id": mission_id,
@@ -129,8 +135,8 @@ def episode_to_corpus_records(episode: dict[str, Any]) -> list[dict[str, Any]]:
                 "corridor_region": episode.get("corridor_region"),
                 "kill_chain_stage": judgment.get("kill_chain_stage"),
                 "narrative_status": episode.get("narrative_status"),
-                "narrative": episode.get("narrative"),
-                "embedding": episode.get("embedding"),
+                "narrative": narrative,
+                "embedding": embedding,
                 "ts": episode.get("ts"),
             }
         )
@@ -241,9 +247,9 @@ class CorpusStore:
 
         # 근접매칭은 SQL 문자열 동등비교로 표현 불가 → posture 외 필터로 후보 축소 후 Python 필터.
         posture_near = posture is not None and posture_tolerance is not None
-        apply_narrative_rerank = (
-            narrative_query_embedding is not None and _VEC_BACKEND_AVAILABLE
-        )
+        # 순수 파이썬 코사인 rerank 는 sqlite_vec 불필요 — query embedding 만 있으면 항상 가능.
+        # sqlite_vec 는 DB 내 벡터 인덱스(ANN) 가속용이며 rerank 와 무관하다.
+        apply_narrative_rerank = narrative_query_embedding is not None
 
         clauses: list[str] = ["(narrative_status IS NULL OR narrative_status != ?)"]
         params: list[Any] = [NARRATIVE_PENDING]
@@ -310,13 +316,14 @@ class CorpusStore:
         embedding 모델(선택 의존) 미가용 시 query 벡터가 None → retrieve()가 메타필터-only 로
         자동 하향(하위호환). 순수 advisory 회수 — 결정론 판정 무관(SCC-1).
         """
-        # 재순위 백엔드가 없으면 임베딩 자체를 건너뛴다 — 어차피 무시될 벡터를 위해
-        # 대형 모델을 로드/다운로드하지 않는다(codex P2).
-        query_vec = None
-        if _VEC_BACKEND_AVAILABLE:
-            import embedding
+        # 결정론 무-의존 임베딩(narrative_embed)을 기본으로 사용한다 — zero-dep, 항상 가능.
+        # model_name 이 명시되면 sentence-transformers 실 모델로 업그레이드(선택 의존).
+        if model_name is not None and _VEC_BACKEND_AVAILABLE:
+            import embedding as _emb_mod
 
-            query_vec = embedding.embed(query_text, model_name or embedding.DEFAULT_MODEL)
+            query_vec: list[float] | None = _emb_mod.embed(query_text, model_name)
+        else:
+            query_vec = _embed_narrative(query_text)
         return self.retrieve(
             mission_context=mission_context,
             posture=posture,

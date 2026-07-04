@@ -110,13 +110,20 @@ def test_all_waypoints_meet_min_clearance():
         )
 
 
-def test_clearance_field_reflects_dem_stub():
-    """stub DEM = 0m → clearance_m = alt_m 과 동일."""
+def test_clearance_field_reflects_real_dem():
+    """실 DEM(#341): clearance_m = alt_m - terrain_elev_m. 지형표고 필드 노출 + 여유고도
+    가 표고를 반영(계곡≈alt, 봉우리 급감)."""
+    from onboard.layer_07_planning.terrain import compute_bbox, terrain_elev_m
+
+    bbox = compute_bbox(_CTX["corridor_waypoints"])
     route = generate_route("ALTITUDE_CHANGE", 15, "LOCAL", _CTX)
     for wp in route:
-        assert wp["clearance_m"] == pytest.approx(wp["alt_m"]), (
-            "stub DEM 0m 기준으로 clearance_m == alt_m 이어야 함"
-        )
+        assert "terrain_elev_m" in wp
+        expected_elev = terrain_elev_m(wp["lat"], wp["lon"], bbox)
+        assert wp["terrain_elev_m"] == pytest.approx(expected_elev)
+        assert wp["clearance_m"] == pytest.approx(wp["alt_m"] - expected_elev)
+    # 지형 변동이 있으면 clearance 가 모두 alt 와 동일하진 않다(stub 이 아님).
+    assert any(wp["clearance_m"] != pytest.approx(wp["alt_m"]) for wp in route)
 
 
 # ---------------------------------------------------------------------------
@@ -305,9 +312,14 @@ def test_local_scope_no_bearing_offset():
         assert wp["lon"] == pytest.approx(_BEAR_WPS[i]["lon"])
 
 
-def test_bearing_offset_alt_and_clearance_unchanged():
-    """bearing offset은 위경도만 이동, alt_m/clearance_m은 보존."""
+def test_bearing_offset_preserves_alt_clearance_tracks_terrain():
+    """bearing offset은 위경도만 이동, alt_m은 보존. clearance_m 은 실 DEM(#341)이라
+    이동한 지점의 지형표고를 반영한다(= alt - terrain_elev at new lat/lon)."""
+    from onboard.layer_07_planning.terrain import compute_bbox, terrain_elev_m
+
+    bbox = compute_bbox(_BEAR_CTX["corridor_waypoints"])
     route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=45.0)
     for i, wp in enumerate(route):
         assert wp["alt_m"] == pytest.approx(_BEAR_WPS[i]["alt_m"])
-        assert wp["clearance_m"] == pytest.approx(_BEAR_WPS[i]["alt_m"])
+        assert wp["clearance_m"] == pytest.approx(
+            wp["alt_m"] - terrain_elev_m(wp["lat"], wp["lon"], bbox))
