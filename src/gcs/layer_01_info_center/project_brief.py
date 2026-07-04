@@ -22,13 +22,18 @@ def project_onboard_brief(state: dict, sortie_id: str) -> dict:
     # 을 합성하지 않고 원본 유지 (하위호환, codex P1).
     onboard = corridor.get("_onboard_corridor")
     if onboard and onboard.get("waypoints"):
+        onboard_corridor: dict = {
+            "waypoints": [dict(w) for w in onboard["waypoints"]],
+            "bases": {k: dict(v) for k, v in (onboard.get("bases") or {}).items()},
+        }
+        if corridor.get("half_width") is not None:
+            onboard_corridor["half_width"] = corridor["half_width"]
         return {
             "sortie_id": sortie_id,
             "mission_context": (m.get("uav_mission") or {}).get("purpose") or None,
             "posture": dict(m["posture"]),
             "drone_profile": dict(state["drone_profile"]),
-            "corridor": {"waypoints": [dict(w) for w in onboard["waypoints"]],
-                         "bases": {k: dict(v) for k, v in (onboard.get("bases") or {}).items()}},
+            "corridor": onboard_corridor,
             "weights": dict(m["weights"]),
         }
 
@@ -49,11 +54,15 @@ def project_onboard_brief(state: dict, sortie_id: str) -> dict:
 
     mission_context = (m.get("uav_mission") or {}).get("purpose") or None
 
+    projected_corridor: dict = {"waypoints": waypoints, "bases": bases}
+    if corridor.get("half_width") is not None:
+        projected_corridor["half_width"] = corridor["half_width"]
+
     return {
         "sortie_id": sortie_id,
         "mission_context": mission_context,
         "posture": dict(m["posture"]),
         "drone_profile": dict(state["drone_profile"]),
-        "corridor": {"waypoints": waypoints, "bases": bases},
+        "corridor": projected_corridor,
         "weights": dict(m["weights"]),
     }
