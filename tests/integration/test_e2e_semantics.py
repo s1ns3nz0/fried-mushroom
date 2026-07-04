@@ -45,6 +45,13 @@ def test_t4_physical_capture_convoy() -> None:
     assert out["response"]["payload_action"] == []
 
 
+def test_t1_gps_spoof_remote() -> None:
+    """t1(GPS 스푸핑, 정찰): T1 탐지, REMOTE 분류."""
+    out = _run("t1")
+    assert out["response"]["primary_threat_event"] == "T1"
+    assert out["response"]["threat_category"] == "REMOTE"
+
+
 def test_t7_terrain_navigation() -> None:
     """t7(지형충돌, 수송): NAVIGATION 위협으로 분류 (적대행위 아님)."""
     out = _run("t7")

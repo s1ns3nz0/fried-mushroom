@@ -13,7 +13,7 @@ import copy
 
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 
-SCHEMA_SCENARIOS: tuple[str, ...] = ("t3", "t4", "t7")
+SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t7")
 
 # imagery 에 심는 mock 객체 라벨 hint. 03 proximity_object(AI 채널) stub 이 그대로 읽어
 # class/weapon_shape/closing 을 산출한다 (step2: mock 라벨 필드를 심어둔다).
@@ -122,7 +122,41 @@ def build_scenario_envelope(scenario_id: str, seq: int, ts_ms: int) -> RawSensor
 
     env = build_normal_envelope(f"scenario-{scenario_id}", seq, ts_ms)
 
-    if scenario_id == "t3":
+    if scenario_id == "t1":
+        # GPS 스푸핑(T1): GPS 보고 위치가 IMU 관성 추정과 크게 어긋남
+        # → 03 position_consistency gps_imu_residual_m > 5.0 (anomaly).
+        # rf 광대역 이상은 rf_spectrum T1 보조 신호(SIGNAL_TO_THREAT).
+        env["navigation"]["gps"].update(
+            {"lat": 37.5006, "lon": 127.0006, "hdop": 1.9, "vdop": 2.4}
+        )  # imu est_lat/lon=37.5/127.0 → 잔차 ≈ 90m
+        env["ew"].update(
+            {
+                "gnss_confidence": 0.32,
+                "gnss_position_jump_m": 88.0,
+                "satellite_count": 5,
+                "cn0_avg_db": 27.0,
+                "rf_wideband_scan": {"wideband_anomaly": True},
+                "rf_bearing_deg": 210.0,
+            }
+        )
+        env["mission_status"]["flight_mode"] = "AUTO"
+
+    elif scenario_id == "t2":
+        # 사이버/C2 하이재킹(T2): 암호 다운그레이드(encryption_status anomaly)
+        # + 링크 무결성 손상(link_integrity: checksum_fail_rate>0.05 OR seq_gap_count>0).
+        env["c2_link"].update(
+            {
+                "encryption_mode": "NONE",
+                "downgrade_detected": True,
+                "checksum_fail_rate": 0.12,
+                "seq_gap_count": 3,
+                "packet_loss_rate": 0.08,
+                "latency_ms": 260,
+            }
+        )
+        env["mission_status"]["flight_mode"] = "AUTO"
+
+    elif scenario_id == "t3":
         # 근접 소화기: 사람+무기 형태(proximity_object T3) + 총성(acoustic_event T3),
         # declared_phase=LOITER_ROI 유도.
         env["imagery"]["object_label"] = {

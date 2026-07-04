@@ -16,7 +16,7 @@ GOLDEN_SEQ = 0
 GOLDEN_TS_MS = 1730620801200
 
 
-@pytest.mark.parametrize("scenario", ["t3", "t4", "t7"])
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t7"])
 def test_scenario_fills_required_keys(scenario):
     env = build_scenario_envelope(scenario, 0, 0)
     assert set(REQUIRED_KEYS).issubset(env.keys())
@@ -53,6 +53,23 @@ def test_t7_time_to_collision_below_threshold():
     assert ttc < 3.0
 
 
+def test_t1_gps_spoof_position_divergence():
+    # GPS 스푸핑: GPS 보고 위치가 IMU 관성 추정과 >5m 어긋남 (03 position_consistency anomaly 유발).
+    env = build_scenario_envelope("t1", 0, 0)
+    gps, imu = env["navigation"]["gps"], env["navigation"]["imu"]
+    dlat_m = abs(gps["lat"] - imu["est_lat"]) * 111_320.0
+    assert dlat_m > 5.0
+    assert env["ew"]["rf_wideband_scan"]["wideband_anomaly"] is True  # rf_spectrum T1 보조 신호
+
+
+def test_t2_cyber_link_and_encryption():
+    # 사이버/C2 하이재킹: 암호 다운그레이드 + 링크 무결성 손상 (04 T2 두 조건).
+    env = build_scenario_envelope("t2", 0, 0)
+    c2 = env["c2_link"]
+    assert c2["downgrade_detected"] is True  # encryption_status anomaly
+    assert c2["checksum_fail_rate"] > 0.05 or c2["seq_gap_count"] > 0  # link_integrity anomaly
+
+
 def test_normal_envelope_is_deterministic():
     assert build_normal_envelope("s", 0, 0) == build_normal_envelope("s", 0, 0)
 
@@ -66,7 +83,7 @@ def test_unknown_scenario_raises():
         build_scenario_envelope("t9", 0, 0)
 
 
-@pytest.mark.parametrize("scenario", ["t3", "t4", "t7"])
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t7"])
 def test_golden_fixture_matches_builder(scenario):
     fixture = EXAMPLES_DIR / f"raw_{scenario}.json"
     saved = json.loads(fixture.read_text(encoding="utf-8"))
