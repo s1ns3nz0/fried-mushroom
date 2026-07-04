@@ -9,8 +9,8 @@ requires-python = ">=3.11"
 # 활성 게이트(corpus._VEC_BACKEND_AVAILABLE). 둘 다 있어야 retrieve_semantic 이 실제 재순위한다.
 [project.optional-dependencies]
 semantic = ["sentence-transformers>=2.2", "sqlite-vec>=0.1"]
-# ml: 코퍼스 결과 예측 로지스틱 회귀(infra/log/outcome_model.py). 미설치 시 예측기 미학습으로
-# 자동 하향(SCC-1 advisory) — 코어 파이프라인은 stdlib-only 그대로.
+# ml: 코퍼스 기반 numpy 실 ML 모델(outcome_model 결과예측 / novelty_model 이례성). 미설치 시
+# 각 모델이 미학습으로 자동 하향(SCC-1 advisory) — 코어 파이프라인은 stdlib-only 그대로.
 ml = ["numpy>=1.24"]
 
 [tool.setuptools.packages.find]
