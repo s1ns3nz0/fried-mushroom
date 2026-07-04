@@ -1,0 +1,31 @@
+{
+  "sortie_id": "SUPPLY-0704-03",
+  "mission_context": "수송",
+  "posture": {
+    "watchcon": 4,
+    "defcon": 4,
+    "infocon": 4
+  },
+  "drone_profile": {
+    "armament": [],
+    "spare_asset_available": true,
+    "battery_pct": 55
+  },
+  "corridor": {
+    "waypoints": [
+      { "id": "wp1", "lat": 37.7, "lon": 127.2, "alt_m": 60 },
+      { "id": "wp2", "lat": 37.71, "lon": 127.21, "alt_m": 60 },
+      { "id": "wp3_land", "lat": 37.72, "lon": 127.22, "alt_m": 5 }
+    ],
+    "bases": {
+      "emergency": { "id": "base_emergency", "lat": 37.69, "lon": 127.2, "alt_m": 30 },
+      "alternate": { "id": "base_alternate", "lat": 37.68, "lon": 127.205, "alt_m": 30 }
+    }
+  },
+  "weights": {
+    "stealth": 0.10,
+    "survival": 0.30,
+    "info_value": 0.20,
+    "timeliness": 0.40
+  }
+}

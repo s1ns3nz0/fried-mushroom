@@ -1,0 +1,31 @@
+{
+  "sortie_id": "CONVOY-0704-02",
+  "mission_context": "호송",
+  "posture": {
+    "watchcon": 3,
+    "defcon": 3,
+    "infocon": 3
+  },
+  "drone_profile": {
+    "armament": [],
+    "spare_asset_available": false,
+    "battery_pct": 45
+  },
+  "corridor": {
+    "waypoints": [
+      { "id": "wp1", "lat": 37.6, "lon": 127.1, "alt_m": 80 },
+      { "id": "wp2", "lat": 37.61, "lon": 127.11, "alt_m": 80 },
+      { "id": "wp3", "lat": 37.62, "lon": 127.12, "alt_m": 80 }
+    ],
+    "bases": {
+      "emergency": { "id": "base_emergency", "lat": 37.59, "lon": 127.1, "alt_m": 40 },
+      "alternate": { "id": "base_alternate", "lat": 37.58, "lon": 127.105, "alt_m": 40 }
+    }
+  },
+  "weights": {
+    "stealth": 0.20,
+    "survival": 0.50,
+    "info_value": 0.15,
+    "timeliness": 0.15
+  }
+}
