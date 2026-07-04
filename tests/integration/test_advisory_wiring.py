@@ -84,7 +84,7 @@ def test_run_cycle_output_keyset_with_endurance():
     """run_cycle 결과 키셋 = 기존 6키 + endurance + corridor."""
     out = run_cycle(_raw(), _brief())
     expected = {"abstraction", "threat", "risk", "response",
-                "flight_plan", "flight_plan_state", "endurance", "corridor"}
+                "flight_plan", "flight_plan_state", "endurance", "corridor", "sensor_health"}
     assert set(out) == expected, f"키셋 불일치: {set(out)}"
 
 

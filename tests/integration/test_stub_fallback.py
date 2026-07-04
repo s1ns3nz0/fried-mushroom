@@ -12,7 +12,7 @@ import types
 from onboard.layer_02_sensor.mock_source import build_normal_envelope
 from onboard.run import _STUB_OUTPUT, run_cycle
 
-_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state", "endurance", "corridor"}
+_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state", "endurance", "corridor", "sensor_health"}
 
 
 def _raw() -> dict:

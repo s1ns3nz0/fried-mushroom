@@ -128,7 +128,7 @@ def test_run_cycle_returns_eight_keys():
     out = run_cycle(_raw(), _brief())
     expected = {
         "abstraction", "threat", "risk", "response",
-        "flight_plan", "flight_plan_state", "endurance", "corridor",
+        "flight_plan", "flight_plan_state", "endurance", "corridor", "sensor_health",
     }
     assert set(out.keys()) == expected, f"키셋 불일치: {set(out.keys())} ≠ {expected}"
 
