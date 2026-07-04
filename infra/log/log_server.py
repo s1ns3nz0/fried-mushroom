@@ -48,14 +48,21 @@ EXAMPLES_DIR = _REPO_ROOT / "examples"
 try:
     from onboard.run import run_cycle
     from pipeline_feeder import cycle_to_log_entries
-    from gcs.layer_01_info_center.run import assemble_draft
 
     _PIPELINE_IMPORT_ERROR: str | None = None
 except Exception as _exc:  # noqa: BLE001
     run_cycle = None  # type: ignore[assignment]
     cycle_to_log_entries = None  # type: ignore[assignment]
-    assemble_draft = None  # type: ignore[assignment]
     _PIPELINE_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
+
+# layer 01 import 은 별도 가드 — 실패해도 /gcs/run(온보드) 은 살리고 /gcs/assemble 만 503.
+try:
+    from gcs.layer_01_info_center.run import assemble_draft
+
+    _LAYER01_IMPORT_ERROR: str | None = None
+except Exception as _exc:  # noqa: BLE001
+    assemble_draft = None  # type: ignore[assignment]
+    _LAYER01_IMPORT_ERROR = f"{type(_exc).__name__}: {_exc}"
 
 # 레이어 로그 스트림에서 다루는 레이어 값 목록(대시보드와 공유). "..."는 확장 여지.
 LAYERS = ("sensor", "abstraction", "risk_assessment", "response")
@@ -243,7 +250,7 @@ async def gcs_assemble(body: dict[str, Any]) -> dict[str, Any]:
     """{"set_mission"} → 실 layer 01 조립. draft_brief + 승인용 신호카드 + 경고 반환.
     조립 단계를 gcs 레이어 로그로 허브에 publish (correlation_id 로 후속 run 과 연결)."""
     if assemble_draft is None:
-        raise HTTPException(status_code=503, detail=f"layer 01 import 실패: {_PIPELINE_IMPORT_ERROR}")
+        raise HTTPException(status_code=503, detail=f"layer 01 import 실패: {_LAYER01_IMPORT_ERROR}")
     set_mission = body.get("set_mission")
     if not isinstance(set_mission, dict):
         raise HTTPException(status_code=400, detail='body 는 {"set_mission": {...}} 형식이어야 함')

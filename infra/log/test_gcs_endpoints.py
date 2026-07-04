@@ -143,6 +143,15 @@ def test_gcs_assemble_missing_fields_400() -> None:
         assert client.post("/gcs/assemble", json={"set_mission": {"sortie_id": "X"}}).status_code == 400
 
 
+def test_layer01_import_failure_isolated_from_gcs_run(monkeypatch) -> None:
+    # layer 01 불가(assemble_draft=None) 여도 /gcs/run(온보드) 은 살아있어야 함 (import 가드 분리).
+    monkeypatch.setattr(log_server, "assemble_draft", None)
+    with TestClient(log_server.app) as client:
+        assert client.post("/gcs/assemble", json={"set_mission": {"sortie_id": "x"}}).status_code == 503
+        scenario = client.get("/gcs/scenario/t3").json()
+        assert client.post("/gcs/run", json=scenario).status_code == 200
+
+
 def test_gcs_run_reuses_passed_correlation_id() -> None:
     with TestClient(log_server.app) as client:
         scenario = client.get("/gcs/scenario/t3").json()
