@@ -22,11 +22,12 @@ def test_sniper_confirmed_is_high_confidence_threat() -> None:
 
 
 def test_spare_absent_is_logistics_escalation() -> None:
+    # 라운드2: 재보급 신호가 별도 logistics(domain=resupply) 로 분리됨 — spare 신호만 검사.
     sigs = extract_signals("가용 예비기체 없음. 손실 시 재보급 72시간")
-    logi = _by_type(sigs, "logistics")
-    assert len(logi) == 1
-    assert logi[0]["effect"] == "severity_escalate"
-    assert logi[0]["confidence"] >= CONFIDENCE_FLOOR
+    spare = [s for s in _by_type(sigs, "logistics") if s.get("domain") is None]
+    assert len(spare) == 1
+    assert spare[0]["effect"] == "severity_escalate"
+    assert spare[0]["confidence"] >= CONFIDENCE_FLOOR
 
 
 def test_hedged_signal_below_floor_is_filtered() -> None:
@@ -36,7 +37,8 @@ def test_hedged_signal_below_floor_is_filtered() -> None:
 
 
 def test_no_keyword_yields_no_signals() -> None:
-    assert extract_signals("일반 정찰 임무. 특이사항 없음.") == []
+    # 라운드2: '정찰' 등 목적 어휘는 mission_purpose 신호가 되므로 중립 문장으로 검사.
+    assert extract_signals("특이사항 없음. 기상 양호.") == []
 
 
 def test_all_confidences_within_unit_interval_and_above_floor() -> None:
