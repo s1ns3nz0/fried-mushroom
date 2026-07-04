@@ -1,0 +1,12 @@
+{
+  "ts": 1720001000,
+  "mission_phase": { "declared": "LAND", "confidence": 0.95 },
+  "gps": { "fix": "3d", "sats": 12, "snr_db": 45, "lat": 37.485, "lon": 127.003, "alt_m": 40 },
+  "imu": { "accel_rms_mss": 0.1, "gyro_rms_dps": 0.5 },
+  "acoustic": { "rms": 0.18, "peak_db": 72, "band": "ambient" },
+  "camera": { "objects": [] },
+  "terrain": { "exposure_score": 0.3, "class": "hill" },
+  "obstacle": { "distance_m": 24.0, "closure_rate_mps": 12.0, "bearing_deg": 5.0 },
+  "link": { "rssi_dbm": -62, "state": "ok" },
+  "rf": { "noise_floor_dbm": -96, "anomaly": false }
+}

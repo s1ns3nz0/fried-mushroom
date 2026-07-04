@@ -1,0 +1,16 @@
+{
+  "ts": 1720000000,
+  "mission_phase": { "declared": "LOITER_ROI", "confidence": 0.9 },
+  "gps": { "fix": "3d", "sats": 11, "snr_db": 42, "lat": 37.51, "lon": 127.01, "alt_m": 120 },
+  "imu": { "accel_rms_mss": 0.15, "gyro_rms_dps": 0.8 },
+  "acoustic": { "rms": 0.78, "peak_db": 118, "band": "impulse" },
+  "camera": {
+    "objects": [
+      { "label": "person", "weapon_shape": true, "bbox": [312, 210, 96, 220], "score": 0.9, "bearing_deg": 35.0 }
+    ]
+  },
+  "terrain": { "exposure_score": 0.4, "class": "open_field" },
+  "obstacle": { "distance_m": 240.0, "closure_rate_mps": 2.0 },
+  "link": { "rssi_dbm": -58, "state": "ok" },
+  "rf": { "noise_floor_dbm": -95, "anomaly": false }
+}
