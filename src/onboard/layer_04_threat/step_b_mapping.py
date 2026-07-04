@@ -61,7 +61,8 @@ def _t7_obstacle(ch: ChannelOutput) -> bool:
     # 고정거리 대신 충돌예상시간(거리÷접근속도) 기준 — 기체 속도와 무관하게 일관.
     distance_m = ch["payload"].get("distance_m")
     closure_rate_mps = ch["payload"].get("closure_rate_mps", 0)
-    if distance_m is None or closure_rate_mps <= 0:
+    # 음수 거리는 물리적으로 무의미(음수 TTC → 오탐). distance<0 도 배제.
+    if distance_m is None or distance_m < 0 or closure_rate_mps <= 0:
         return False
     return distance_m / closure_rate_mps < TIME_TO_COLLISION_THRESHOLD_S
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from onboard.layer_04_threat import step_b_mapping
+from onboard.layer_04_threat.step_b_mapping import _t7_obstacle
 from onboard.shared.schemas import AbstractionOutput
 
 
@@ -66,6 +67,27 @@ class TestT7:
         assert "T7" in _threats(matched)
         names = {c["name"] for c in _by_threat(matched, "T7")["matched_channels"]}
         assert names == {"obstacle_proximity"}
+
+
+class TestT7ObstacleGuard:
+    """_t7_obstacle: 충돌예상시간(distance/closure)<임계 → T7. 물리적으로 무의미한
+    음수 거리는 음수 TTC 를 만들어 오탐(가짜 CFIT 회피)을 유발하므로 배제한다."""
+
+    def _ch(self, distance_m, closure_rate_mps):
+        return {"payload": {"distance_m": distance_m, "closure_rate_mps": closure_rate_mps}}
+
+    def test_imminent_collision_matches(self) -> None:
+        assert _t7_obstacle(self._ch(24.0, 12.0)) is True  # TTC 2.0s < 3.0
+
+    def test_far_does_not_match(self) -> None:
+        assert _t7_obstacle(self._ch(100.0, 1.0)) is False  # TTC 100s
+
+    def test_non_positive_closure_does_not_match(self) -> None:
+        assert _t7_obstacle(self._ch(24.0, 0.0)) is False
+
+    def test_negative_distance_does_not_match(self) -> None:
+        # 음수 거리 → 음수 TTC(-2.5) < 3.0 로 잘못 매칭되면 안 됨.
+        assert _t7_obstacle(self._ch(-5.0, 2.0)) is False
 
 
 class TestNormal:
