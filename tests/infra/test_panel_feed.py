@@ -1,21 +1,23 @@
-"""panel_feed 어댑터 단위 테스트 (순수 함수, 네트워크 없음).
+"""infra/log/panel_feed 어댑터 단위 테스트 (순수 함수, 네트워크 없음).
 
 실 파이프라인 출력(02 raw / 03 abstraction)을 대시보드 tick/signal 계약으로
-변환하는지 검증한다. httpx/fastapi 불필요 — panel_feed 는 표준 라이브러리만 쓴다.
+변환하는지 검증한다. panel_feed 는 표준 라이브러리만 쓰므로 httpx/fastapi 불필요.
+
+이 테스트는 루트 CI(`python -m pytest`, testpaths=["tests"])가 수집하도록 tests/
+아래에 둔다 — infra/log 의 panel_feed 는 sys.path 로 임포트한다(파이프라인 무변경).
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # panel_feed 임포트
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))  # onboard 임포트
+_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
+sys.path.insert(0, str(_INFRA_LOG))  # panel_feed 임포트 (onboard 는 pythonpath=src)
 
 from onboard.layer_02_sensor.mock_source import (  # noqa: E402
     build_normal_envelope,
     build_scenario_envelope,
 )
 from onboard.layer_03_abstraction.run import run as run03  # noqa: E402
-
 from onboard.run import run_cycle  # noqa: E402
 
 from panel_feed import (  # noqa: E402
@@ -25,6 +27,12 @@ from panel_feed import (  # noqa: E402
     envelope_to_tick,
 )
 
+_EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+
+
+def _channel(msgs, name):
+    return next(m for m in msgs if m["channel"] == name)
+
 
 # --- #106 abstraction.channels → signal ---
 
@@ -32,7 +40,6 @@ from panel_feed import (  # noqa: E402
 def test_signals_one_message_per_real_channel():
     abstraction = run03(build_normal_envelope("s", 0, 0))
     msgs = abstraction_to_signals("CID-1", 7, abstraction)
-    # 실제 11채널 전부 방출.
     assert len(msgs) == len(abstraction["channels"]) == 11
     assert {m["channel"] for m in msgs} == set(SIGNAL_CHANNEL_ORDER)
 
@@ -45,7 +52,6 @@ def test_signal_message_shape_and_passthrough():
     assert msg["seq"] == 7
     for key in ("channel", "state", "quality", "quality_delta", "payload"):
         assert key in msg
-    # 원 채널값 passthrough.
     src = abstraction["channels"][0]
     assert msg["channel"] == src["channel"]
     assert msg["state"] == src["state"]
@@ -53,12 +59,10 @@ def test_signal_message_shape_and_passthrough():
 
 
 def test_signal_reflects_t5_quality_delta_drop():
-    # terrain_class 품질 급락(직전 1.0 → 0.65) → signal.quality_delta < -0.3 (T5).
     raw = build_normal_envelope("s", 0, 0)
     raw["imagery"]["terrain_label"] = {"dominant_class": "open_field", "camera_confidence": 0.65}
     abstraction = run03(raw, previous_qualities={"terrain_class": 1.0})
-    msgs = abstraction_to_signals("CID-1", 1, abstraction)
-    tc = next(m for m in msgs if m["channel"] == "terrain_class")
+    tc = _channel(abstraction_to_signals("CID-1", 1, abstraction), "terrain_class")
     assert tc["quality"] == 0.65
     assert tc["quality_delta"] < -0.3
 
@@ -90,9 +94,7 @@ def test_tick_message_shape():
 
 
 def test_tick_carries_real_sensor_values():
-    raw = build_normal_envelope("s", 0, 0)
-    ps = envelope_to_tick("CID", 0, raw)["platform_state"]
-    # normal envelope 실측값 그대로.
+    ps = envelope_to_tick("CID", 0, build_normal_envelope("s", 0, 0))["platform_state"]
     assert ps["battery"]["pct"] == 78
     assert ps["battery"]["voltage_v"] == 25.0
     assert ps["gps"]["satellites"] == 12
@@ -103,19 +105,16 @@ def test_tick_carries_real_sensor_values():
 
 
 def test_tick_attitude_source_defined_and_derived():
-    # accel=[0,0,9.81] (수평) → roll=pitch=0, yaw=imu.heading(90).
     ps = envelope_to_tick("CID", 0, build_normal_envelope("s", 0, 0))["platform_state"]
     att = ps["attitude"]
     assert att["roll_deg"] == 0.0
     assert att["pitch_deg"] == 0.0
     assert att["yaw_deg"] == 90.0
-    assert "source" in att  # 소스 명시(수용 기준)
-    # 각속도 실측(자이로).
+    assert "source" in att
     assert ps["angular_rates"] == {"p_dps": 0.0, "q_dps": 0.0, "r_dps": 0.0}
 
 
 def test_tick_roll_pitch_from_tilted_accel():
-    # 우측 롤(가속도 y성분) → roll > 0.
     raw = build_normal_envelope("s", 0, 0)
     raw["navigation"]["imu"]["accel_ms2"] = [0.0, 4.9, 8.5]
     att = envelope_to_tick("CID", 0, raw)["platform_state"]["attitude"]
@@ -124,7 +123,6 @@ def test_tick_roll_pitch_from_tilted_accel():
 
 
 def test_tick_t1_gps_degradation_reflected():
-    # T1(GPS 스푸핑) raw → 위성 급감/HDOP 상승 실측 반영.
     ps = envelope_to_tick("CID", 0, build_scenario_envelope("t1", 0, 0))["platform_state"]
     assert ps["gps"]["satellites"] == 5
     assert ps["gps"]["hdop"] == 1.9
@@ -136,8 +134,7 @@ def test_tick_t1_gps_degradation_reflected():
 
 def _load_example(name):
     import json
-    p = Path(__file__).resolve().parents[2] / "examples" / name
-    return json.loads(p.read_text(encoding="utf-8"))
+    return json.loads((_EXAMPLES / name).read_text(encoding="utf-8"))
 
 
 def test_cycle_to_panel_messages_tick_first_then_signals():
@@ -145,7 +142,6 @@ def test_cycle_to_panel_messages_tick_first_then_signals():
     brief = _load_example("mission_brief_t3.json")
     result = run_cycle(raw, brief)
     msgs = cycle_to_panel_messages("CID-9", 4, raw, result)
-    # 첫 메시지 = tick, 이후 = 채널당 signal.
     assert msgs[0]["type"] == "tick"
     assert all(m["type"] == "signal" for m in msgs[1:])
     assert len(msgs) == 1 + len(result["abstraction"]["channels"])
