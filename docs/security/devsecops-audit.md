@@ -88,7 +88,7 @@
 | 5 | ECR `image_tag_mutability`를 `IMMUTABLE`로 전환 | F-05 |
 | 6 | `infra/log/Dockerfile` base image 다이제스트 고정 | F-06 |
 | 7 | `infra/log/requirements.txt`, `infra/dashboard/requirements.txt` 버전 핀 | F-07 |
-| 8 | ground 서비스(8400/8500/8181) 인증 방안 또는 의도적 공개 설계 문서화 | F-08 |
+| 8 | ground 서비스(8400/8500/8181) 인증 방안 또는 의도적 공개 설계 문서화 — ✅ 결정 명시됨(#275): `infra/log/README.md` "보안 / 네트워크 노출" 섹션, 데모 전용 의도적 공개 + 운영 하드닝 경로 기록 | F-08 |
 | 9 | `0990586`에 노출된 AWS 리소스(role ARN/버킷/CloudFront/인스턴스) rotation 필요 여부 AWS 측 검토 | F-09 |
 | 10 | `allowed_ssh_cidr` variable에 `0.0.0.0/0` 금지 validation 추가 | F-10 |
 | 11 | deploy 워크플로 checkout에 `persist-credentials: false` 추가 | F-11 |
