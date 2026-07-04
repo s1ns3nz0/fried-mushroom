@@ -2,7 +2,11 @@
 locals {
   ecr_registry = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com"
   ground_image = "${local.ecr_registry}/fried-mushroom-uav/ground:latest"
-  log_image    = "${local.ecr_registry}/fried-mushroom-uav/log:latest"
+  # log repo 는 IMMUTABLE(F-05/#248)이라 :latest 를 push 하지 않는다. 이 값은 최초 부트
+  # .env 플레이스홀더일 뿐이며, 첫 배포(deploy-log.yml)가 .env 의 LOG_IMAGE 를 불변
+  # :${sha} 로 영속 갱신한다(이후 재부팅 시에도 그 SHA 를 사용). 즉 :latest 는 첫 배포
+  # 전까지만의 임시값 — log 서비스는 첫 배포 후 기동된다.
+  log_image = "${local.ecr_registry}/fried-mushroom-uav/log:latest"
   compose_file = file("${path.module}/templates/docker-compose.yml.tftpl")
 }
 

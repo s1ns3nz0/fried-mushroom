@@ -217,3 +217,36 @@ def test_no_secrets_literal_fallback(wf_path: pathlib.Path) -> None:
     assert not matches, (
         f"{wf_path.name}: secrets fallback 리터럴 발견: {matches[:3]}"
     )
+
+
+# ── 4. 공급망 F-05(#248): ECR IMMUTABLE + SHA 핀 배포 (멱등·영속) ──────────────
+
+_ECR_TF = pathlib.Path(__file__).resolve().parents[2] / "infra" / "terraform" / "ecr.tf"
+_DEPLOY_LOG = _WORKFLOWS_DIR / "deploy-log.yml"
+
+
+def test_ecr_repos_are_immutable():
+    """F-05(#248): ECR image_tag_mutability=IMMUTABLE — 동일 SHA 태그 덮어쓰기 금지."""
+    text = _ECR_TF.read_text(encoding="utf-8")
+    assert 'image_tag_mutability = "IMMUTABLE"' in text, "ecr.tf IMMUTABLE 아님"
+    assert '"MUTABLE"' not in text, "ecr.tf 에 MUTABLE 잔존"
+
+
+@pytest.mark.parametrize("wf_path", _deploy_workflow_files(), ids=lambda p: p.name)
+def test_deploy_does_not_push_mutable_latest(wf_path: pathlib.Path) -> None:
+    """F-05: 이동태그 `:latest` push 금지 — IMMUTABLE repo 와 충돌·추적성 훼손."""
+    text = wf_path.read_text(encoding="utf-8")
+    assert not re.search(r"docker\s+push\s+\S*:latest", text), \
+        f"{wf_path.name}: 이동태그 :latest push 발견(SHA 태그만 push)"
+
+
+def test_deploy_log_push_is_idempotent():
+    """F-05 P2#1(#248): IMMUTABLE 재push 실패 방지 — push 전 태그 존재 확인(describe-images)."""
+    text = _DEPLOY_LOG.read_text(encoding="utf-8")
+    assert "aws ecr describe-images" in text, "멱등 가드(태그 존재 확인) 없음"
+
+
+def test_deploy_log_persists_sha_image_ref():
+    """F-05 P2#2(#248): bootstrap 죽은 :latest 대신 배포가 .env LOG_IMAGE 를 SHA 로 영속 갱신."""
+    text = _DEPLOY_LOG.read_text(encoding="utf-8")
+    assert "LOG_IMAGE=" in text and "github.sha" in text, ".env LOG_IMAGE SHA 영속 갱신 없음"

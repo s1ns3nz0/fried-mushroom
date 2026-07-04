@@ -48,9 +48,16 @@ jobs:
           IMAGE: fried-mushroom-uav/log
         run: |
           # 빌드 컨텍스트 = repo 루트 — 이미지에 src/onboard + examples/ 포함(Dockerfile 참고).
-          docker build -f infra/log/Dockerfile -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" .
-          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
-          docker push "$REGISTRY/$IMAGE:latest"
+          # F-05(#248): ECR IMMUTABLE — 이동태그 :latest 는 push 하지 않는다(재push 불가).
+          # 불변 :${sha} 만 push 하고 배포는 이 SHA 로 핀(추적성). 멱등: 동일 SHA 태그가
+          # 이미 있으면(재실행/재트리거) IMMUTABLE 재push 가 실패하므로 존재 확인 후 skip.
+          if aws ecr describe-images --repository-name "$IMAGE" \
+               --image-ids imageTag="${{ github.sha }}" >/dev/null 2>&1; then
+            echo "이미지 :${{ github.sha }} 이미 존재 — 재빌드/재push skip (IMMUTABLE 멱등)"
+          else
+            docker build -f infra/log/Dockerfile -t "$REGISTRY/$IMAGE:${{ github.sha }}" .
+            docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          fi
 
       - name: Redeploy log container on ground EC2 via SSM
         if: ${{ vars.GROUND_INSTANCE_ID != '' }}
@@ -60,4 +67,4 @@ jobs:
             --instance-ids "${{ vars.GROUND_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "deploy log collector ${{ github.sha }}" \
-            --parameters 'commands=["cd /opt/fried-mushroom-uav && aws ecr get-login-password --region '"${{ secrets.AWS_REGION }}"' | docker login --username AWS --password-stdin $(grep ECR_REGISTRY .env | cut -d= -f2) && docker compose pull log && docker compose up -d log"]'
+            --parameters 'commands=["cd /opt/fried-mushroom-uav && REG=$(grep ECR_REGISTRY .env | cut -d= -f2) && IMG=\"$REG/fried-mushroom-uav/log:'"${{ github.sha }}"'\" && ( grep -q ^LOG_IMAGE= .env && sed -i \"s#^LOG_IMAGE=.*#LOG_IMAGE=$IMG#\" .env || echo \"LOG_IMAGE=$IMG\" >> .env ) && aws ecr get-login-password --region '"${{ secrets.AWS_REGION }}"' | docker login --username AWS --password-stdin \"$REG\" && docker compose pull log && docker compose up -d log"]'
