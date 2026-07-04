@@ -7,6 +7,7 @@ import pytest
 
 from gcs.layer_01_info_center.c4i_schema import normalize_c4i
 from gcs.layer_01_info_center.mettc_assemble import assemble_mettc
+from gcs.layer_01_info_center.project_brief import project_onboard_brief
 
 _METTC_KEYS = {"M", "E", "T_terrain", "T_troops", "T_time", "C"}
 
@@ -109,3 +110,20 @@ def test_missing_required_raises() -> None:
     del sm["posture"]
     with pytest.raises((ValueError, KeyError)):
         assemble_mettc(sm, normalize_c4i({}), signals=[])
+
+
+def test_partial_uav_mission_purpose_falls_back_to_mission_context() -> None:
+    # uav_mission 이 부분입력(purpose 누락)이어도 mission_context 로 폴백해야 한다.
+    # 폴백 실패 시 project_onboard_brief 가 mission_context=None 인 무효 브리핑 생성 (codex P2).
+    sm = _set_mission(mission_context="정찰", uav_mission={"name": "recon-A"})
+    state = assemble_mettc(sm, _c4i(), signals=[])
+    assert state["mettc"]["M"]["uav_mission"]["purpose"] == "정찰"
+    brief = project_onboard_brief(state, sm["sortie_id"])
+    assert brief["mission_context"] == "정찰"
+
+
+def test_full_uav_mission_purpose_preserved() -> None:
+    # 완전입력 시 제공된 purpose 가 그대로 유지 (폴백이 덮어쓰지 않음).
+    sm = _set_mission(mission_context="정찰", uav_mission={"name": "strike-A", "purpose": "타격"})
+    state = assemble_mettc(sm, _c4i(), signals=[])
+    assert state["mettc"]["M"]["uav_mission"]["purpose"] == "타격"
