@@ -73,3 +73,30 @@ def test_corrupt_b64_returns_none():
 def test_missing_source_returns_none():
     # eo_frame 있으나 bytes/path 없음 → 실프레임 아님.
     assert resolve_frame({"eo_frame": {"kind": "eo", "fmt": "raw"}}) is None
+
+
+# --- 견고성: malformed eo_frame 은 크래시 대신 안전 파싱(#357 경화) ---
+
+
+def _b64(data=b"xxxx"):
+    import base64
+    return base64.b64encode(data).decode()
+
+
+def test_malformed_dims_do_not_crash():
+    # 비숫자/None/float-str 치수 → 크래시 없이 안전 기본값(폴백 아닌 프레임, bytes 유효).
+    for bad in ("abc", None, "4.5", [1, 2]):
+        frame = resolve_frame({"eo_frame": {"bytes_b64": _b64(), "width": bad,
+                                            "height": bad, "channels": bad}})
+        assert frame is not None
+        assert isinstance(frame["width"], int) and isinstance(frame["channels"], int)
+
+
+def test_float_str_dim_truncated():
+    frame = resolve_frame({"eo_frame": {"bytes_b64": _b64(), "width": "4.5"}})
+    assert frame["width"] == 4
+
+
+def test_non_dict_meta_does_not_crash():
+    frame = resolve_frame({"eo_frame": {"bytes_b64": _b64(), "meta": "notadict"}})
+    assert frame is not None and frame["meta"] == {}
