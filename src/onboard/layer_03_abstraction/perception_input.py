@@ -135,10 +135,11 @@ def _coerce_int(value, default: int) -> int:
     """정수 필드 → int. 비숫자/None/float-str 등 malformed 는 default(크래시 대신 그레이스풀)."""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         try:
             return int(float(value))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: 비유한 float(inf/1e309) sample_rate/channels → default.
             return default
 
 

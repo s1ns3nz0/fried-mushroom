@@ -62,7 +62,8 @@ def test_acoustic_event_falls_back_when_model_unavailable(monkeypatch):
     raw = build_normal_envelope("s", 0, 0)
     raw["acoustic"] = _acoustic_with_wave()  # ambiguous 유도(peak 80)
     out = acoustic_event.run(raw)
-    assert out["payload"]["detection_stage"] == "threshold_only"  # 모델 미가용 → 폴백 확정
+    # 실 YAMNet 미가용 → stub yamnet 2차로 폴백(실 다운로드 없이 결정론). 폴백 경로 확정.
+    assert out["payload"]["detection_stage"] == "yamnet_secondary"
     assert "event_type" in out["payload"]
 
 
@@ -103,7 +104,7 @@ def test_disabled_uses_stub_secondary(monkeypatch):
 def test_resolve_audio_malformed_does_not_crash():
     import base64
     b = base64.b64encode(b"xxxx").decode()
-    for bad in ("abc", None, "8000.5"):
+    for bad in ("abc", None, "8000.5", "inf", "1e309", float("inf")):
         clip = resolve_audio({"waveform": {"bytes_b64": b, "sample_rate": bad, "channels": bad}})
         assert clip is not None
         assert isinstance(clip["sample_rate"], int) and isinstance(clip["channels"], int)
