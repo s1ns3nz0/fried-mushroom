@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS corpus_record (
     outcome          TEXT,                      -- 실제 outcome (예: "rtb_success")
     corridor_region  TEXT,                      -- 지역 코드 (보조 필터)
     kill_chain_stage TEXT,                      -- 킬체인 단계 (보조)
+    narrative_status TEXT,                      -- 'pending' | 'human_confirmed' | NULL (라운드 3) — 회수 pending 제외 필터 키
+    narrative        TEXT,                      -- narrative 원문 (라운드 3, 벡터 하이브리드 참고)
+    embedding        TEXT,                      -- narrative 임베딩 벡터, JSON 배열 직렬화 (라운드 3)
     ts               INTEGER,                   -- 집계/편입 시각 (epoch)
     UNIQUE (mission_id, threat_event)           -- 재집계 멱등 (ON CONFLICT DO UPDATE)
 );
@@ -55,3 +58,5 @@ CREATE TABLE IF NOT EXISTS corpus_record (
 -- 회수 1단계 메타필터 인덱스 (mission_context / threat_event → 후보 축소).
 CREATE INDEX IF NOT EXISTS idx_corpus_context ON corpus_record (mission_context);
 CREATE INDEX IF NOT EXISTS idx_corpus_threat ON corpus_record (threat_event);
+-- pending 제외 회수 필터 인덱스 (라운드 3, docs/RAG-corpus.md §6-2).
+CREATE INDEX IF NOT EXISTS idx_corpus_narrative_status ON corpus_record (narrative_status);
