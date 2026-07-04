@@ -45,8 +45,29 @@ _ENEMY_DETECT_RADIUS_M = 400.0
 _EVENT_WINDOW = 3  # 팝업 위협 지속 tick 수(회피 안정화용).
 
 
+def _track_to_enemy(track: dict) -> dict:
+    """관측소 폼 E.tracks 항목 → sim 적. {id,kind,lat,lon,radius_m,confidence} → sim 계약."""
+    return {
+        "id": track.get("id", "E?"),
+        "pos": {"lat": track["lat"], "lon": track["lon"]},
+        "detect_radius_m": float(track.get("radius_m") or _ENEMY_DETECT_RADIUS_M),
+        "kind": track.get("kind"),            # 표시/위협유형(선택)
+        "confidence": track.get("confidence"),
+    }
+
+
 def place_enemies(mission_brief: dict, seed: int) -> list[dict]:
-    """seed 결정론: 경로 진행도 s(≈0.4~0.6)에 적 1기 사전 배치."""
+    """적 배치 — 관측소 폼 `enemy_tracks`(E.tracks, #151 F3)가 있으면 그 위치를 쓰고,
+    없으면 seed 결정론 폴백(경로 진행도 s≈0.4~0.6 에 적 1기).
+
+    E.tracks 항목: {id, kind(T1..T7), lat, lon, radius_m, confidence}. lat/lon 있는
+    항목만 채택(불완전 항목은 스킵).
+    """
+    tracks = mission_brief.get("enemy_tracks")
+    if isinstance(tracks, list) and tracks:
+        return [_track_to_enemy(t) for t in tracks
+                if isinstance(t, dict) and "lat" in t and "lon" in t]
+
     wps = mission_brief.get("corridor", {}).get("waypoints", [])
     if len(wps) < 2:
         return []
