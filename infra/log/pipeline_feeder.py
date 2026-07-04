@@ -149,9 +149,9 @@ def cycle_to_log_entries(correlation_id: str, result: dict) -> list[dict]:
 
 def post_entries(entries, collector_url: str = DEFAULT_COLLECTOR_URL, *, client=None) -> int:
     """entry 들을 collector 에 POST. 2xx 건수 반환 (연결 실패는 stderr 보고 후 계속)."""
-    import httpx  # lazy — 테스트 환경에서 미설치 시 임포트 에러 방지
     owns_client = client is None
     if owns_client:
+        import httpx  # lazy — client 미제공 시에만 임포트 (CI 미설치 환경 대응)
         client = httpx.Client(timeout=3.0)
     ok = 0
     try:
