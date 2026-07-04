@@ -22,10 +22,10 @@ seed = 동일 적·이벤트·궤적·판정(재현성).
 
 | 출처 | 형상 |
 |---|---|
-| 관측소 폼 (`gcs.js`) | `{ id, kind, lat, lon, radius_m, confidence }` — 위치 top-level `lat`/`lon` |
-| C4I / `assemble_mettc` (B-1 §5.1) | `{ track_id, kind, pos: [lat, lon], confidence, label, ... }` — 위치 `pos` 리스트(또는 `{lat,lon}`) |
+| 관측소 폼 (`gcs.js`) | `{ id, kind, lat, lon, radius_m, confidence }` — 위치 top-level `lat`/`lon`, 반경 `radius_m` |
+| C4I / `assemble_mettc` (B-1 §5.1) | `{ track_id, kind, pos: [lat, lon], radius, confidence, label, ... }` — 위치 `pos` 리스트(또는 `{lat,lon}`), 반경 `radius` |
 
-- id = `id` ‖ `track_id`. 반경 = `radius_m` (없으면 기본 400m). `kind`/`confidence` 보존(표시용).
+- id = `id` ‖ `track_id`. 반경 = `radius_m` ‖ `radius` (없으면 기본 400m). `kind`/`confidence` 보존(표시용).
 - 위치 해석 불가 항목은 스킵. **유효 변환이 0개면 조용히 0기로 두지 않고 seed 폴백**(적 없는 시뮬 방지).
 
 ## `POST /tick` payload 스키마 (정본)

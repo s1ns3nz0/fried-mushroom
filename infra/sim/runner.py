@@ -61,12 +61,13 @@ def _track_pos(track: dict) -> tuple[float, float] | None:
 
 
 def _track_to_enemy(track: dict, latlon: tuple[float, float]) -> dict:
-    """E.tracks 항목 → sim 적 계약. id 는 `id` 또는 C4I `track_id`. radius 없으면 기본."""
+    """E.tracks 항목 → sim 적 계약. id 는 `id` 또는 C4I `track_id`. 반경은 폼 `radius_m`
+    또는 C4I/B-1 정본 `radius`(둘 다 없으면 기본)."""
     lat, lon = latlon
     return {
         "id": track.get("id") or track.get("track_id") or "E?",
         "pos": {"lat": lat, "lon": lon},
-        "detect_radius_m": float(track.get("radius_m") or _ENEMY_DETECT_RADIUS_M),
+        "detect_radius_m": float(track.get("radius_m") or track.get("radius") or _ENEMY_DETECT_RADIUS_M),
         "kind": track.get("kind"),            # 표시/위협유형(선택)
         "confidence": track.get("confidence"),
     }

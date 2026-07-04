@@ -184,3 +184,20 @@ def test_place_enemies_all_malformed_falls_back_to_seed():
     brief = {**_BRIEF, "enemy_tracks": [{"kind": "humint", "label": "위치없음"}, {"foo": 1}]}
     enemies = place_enemies(brief, seed=42)
     assert len(enemies) == 1 and enemies[0]["id"] == "E1"  # seed 폴백
+
+
+def test_place_enemies_accepts_c4i_radius_field():
+    # C4I/B-1 정본 형상은 radius_m 이 아니라 radius (예: docs/D4D/B-1.md {..radius:40}) (#218).
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [
+        {"track_id": "t1", "kind": "humint", "pos": [37.53, 127.03], "radius": 250, "confidence": 0.8},
+    ]}
+    assert place_enemies(brief, seed=42)[0]["detect_radius_m"] == 250  # 400 고정이면 버그
+
+
+def test_place_enemies_radius_m_takes_precedence():
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [
+        {"id": "e1", "lat": 37.53, "lon": 127.03, "radius_m": 300, "radius": 999},
+    ]}
+    assert place_enemies(brief, seed=42)[0]["detect_radius_m"] == 300  # 폼 radius_m 우선
