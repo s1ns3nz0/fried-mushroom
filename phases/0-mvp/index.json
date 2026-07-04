@@ -2,7 +2,7 @@
   "project": "D4D",
   "phase": "0-mvp",
   "steps": [
-    { "step": 0, "name": "project-setup", "status": "pending" },
+    { "step": 0, "name": "project-setup", "status": "completed", "summary": "Python 3.11+ pyproject.toml, d4d_pipeline/ 및 tests/ 디렉토리 skeleton + __init__.py, smoke test 통과" },
     { "step": 1, "name": "shared-schemas-constants", "status": "pending" },
     { "step": 2, "name": "layer-02-mock-sensor", "status": "pending" },
     { "step": 3, "name": "layer-03-deterministic-channels", "status": "pending" },
