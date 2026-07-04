@@ -34,7 +34,11 @@ RESULT_SCHEMA = {
 
 
 def _raw() -> dict:
-    return {"ts": 1720000000, "gps": {"fix": "3d"}, "acoustic": {"rms": 0.1}}
+    # 실제 layer_03 이 배선되면 정본 RawSensorEnvelope 를 소비하므로 유효 envelope 을 넘긴다
+    # (이슈 #18: 양진수 결정 A — toy raw 로는 layer_03 이 KeyError).
+    from onboard.layer_02_sensor.mock_source import build_normal_envelope
+
+    return build_normal_envelope("TEST", 0, 0)
 
 
 def _brief() -> dict:
