@@ -1,17 +1,19 @@
-"""onboard.run orchestrator 하니스 통합 테스트 (TDD).
+"""onboard.run run_cycle 오케스트레이터 하니스 통합 테스트 (TDD).
 
-레이어 02~07 이 아직 미구현이므로 orchestrator 는 passthrough 로 체이닝하고,
+step9.md 의 run_cycle 계약을 따른다. 레이어 03~07 이 아직 미구현이므로
+orchestrator 는 passthrough(스키마 적합 canned)로 체이닝하고,
 실제 run() 이 생기면 자동 배선(try-import)된다.
+구조·배선·인자 스레딩만 검증한다(종단 골든/시맨틱은 실제 레이어 구현 후 step9).
 """
 
 import importlib
 import json
-import pathlib
 import types
 
 import pytest
 
-from onboard.run import main, run_pipeline
+from onboard import __main__ as cli
+from onboard.run import run_cycle
 from onboard.shared.schemas import (
     AbstractionOutput,
     FlightPlanOutput,
@@ -22,118 +24,193 @@ from onboard.shared.schemas import (
 
 from tests.helpers.contracts import assert_json_serializable, assert_matches_schema
 
-LAYER_SCHEMA = {
-    "03": AbstractionOutput,
-    "04": ThreatModelingOutput,
-    "05": RiskAssessmentOutput,
-    "06": ResponseOutput,
-    "07": FlightPlanOutput,
+RESULT_SCHEMA = {
+    "abstraction": AbstractionOutput,
+    "threat": ThreatModelingOutput,
+    "risk": RiskAssessmentOutput,
+    "response": ResponseOutput,
+    "flight_plan": FlightPlanOutput,
 }
 
-EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 
-CHAIN = ("02", "03", "04", "05", "06", "07")
+def _raw() -> dict:
+    return {"ts": 1720000000, "gps": {"fix": "3d"}, "acoustic": {"rms": 0.1}}
 
 
 def _brief() -> dict:
-    return json.loads((EXAMPLES / "mission_brief_t3.json").read_text(encoding="utf-8"))
-
-
-def _scenario(n_frames: int = 1) -> dict:
     return {
-        "mission_brief": _brief(),
-        "sensor_frames": [{"frame": i, "raw": {"gps": "ok"}} for i in range(n_frames)],
+        "sortie_id": "TEST-01",
+        "mission_context": "정찰",
+        "posture": {"watchcon": 3, "defcon": 3, "infocon": 4},
+        "drone_profile": {"armament": [], "spare_asset_available": True, "battery_pct": 65},
+        "corridor": {"waypoints": [], "bases": {}},
+        "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
     }
 
 
-class TestRunPipeline:
-    def test_single_frame_yields_one_cycle_with_all_layers(self) -> None:
-        results = run_pipeline(_scenario(1))
-        assert len(results) == 1
-        assert set(results[0]["layers"]) == set(CHAIN)
-
-    def test_passthrough_outputs_match_layer_schema(self) -> None:
-        cycle = run_pipeline(_scenario(1))[0]
-        for layer, schema in LAYER_SCHEMA.items():
-            assert_matches_schema(cycle["layers"][layer], schema)
-            assert_json_serializable(cycle["layers"][layer])
-
-    def test_multi_frame_yields_cycle_per_frame(self) -> None:
-        results = run_pipeline(_scenario(3))
-        assert [r["cycle"] for r in results] == [0, 1, 2]
-
-    def test_shipped_scenario_t3_runs_and_conforms(self) -> None:
-        scenario = json.loads(
-            (EXAMPLES / "scenario_t3.json").read_text(encoding="utf-8")
-        )
-        results = run_pipeline(scenario)
-        assert len(results) == 2  # 2 sensor_frames
-        for cycle in results:
-            for layer, schema in LAYER_SCHEMA.items():
-                assert_matches_schema(cycle["layers"][layer], schema)
-
-
-def _inject_layer(monkeypatch, module_name: str, run_fn) -> None:
-    """monkeypatch: 해당 레이어 모듈이 run() 을 갖는 것처럼 import 를 가로챈다."""
-    fake = types.ModuleType(module_name)
-    fake.run = run_fn
+def _inject(monkeypatch, mapping: dict) -> None:
+    """monkeypatch: mapping(모듈명→run 함수) 의 모듈이 run() 을 갖는 것처럼 import 가로채기."""
     real_import = importlib.import_module
+    fakes = {}
+    for name, fn in mapping.items():
+        mod = types.ModuleType(name)
+        mod.run = fn
+        fakes[name] = mod
 
     def fake_import(name, *args, **kwargs):
-        if name == module_name:
-            return fake
+        if name in fakes:
+            return fakes[name]
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(importlib, "import_module", fake_import)
 
 
+class TestRunCycleShape:
+    def test_returns_five_named_layer_outputs(self) -> None:
+        result = run_cycle(_raw(), _brief())
+        assert set(result) == set(RESULT_SCHEMA)
+
+    def test_passthrough_outputs_match_layer_schema(self) -> None:
+        result = run_cycle(_raw(), _brief())
+        for key, schema in RESULT_SCHEMA.items():
+            assert_matches_schema(result[key], schema)
+            assert_json_serializable(result[key])
+
+
 class TestLayerWiring:
-    def test_real_layer_run_used_when_present(self, monkeypatch) -> None:
+    def test_real_layer03_run_used_with_raw_and_previous_qualities(self, monkeypatch) -> None:
+        seen: dict = {}
         sentinel = {"schema_version": "real", "id": "x", "ts": 1, "channels": []}
 
-        def real_run(input, *, mission_brief, previous_state):
+        def abstraction_run(raw, previous_qualities):
+            seen["raw"] = raw
+            seen["prev_q"] = previous_qualities
             return sentinel
 
-        _inject_layer(monkeypatch, "onboard.layer_03_abstraction.run", real_run)
-        cycle = run_pipeline(_scenario(1))[0]
-        assert cycle["layers"]["03"] is sentinel
+        _inject(monkeypatch, {"onboard.layer_03_abstraction.run": abstraction_run})
+        prev_q = {"gps": 0.9}
+        result = run_cycle(_raw(), _brief(), previous_qualities=prev_q)
+        assert result["abstraction"] is sentinel
+        assert seen["raw"] == _raw()
+        assert seen["prev_q"] == prev_q
 
-    def test_previous_state_carries_prior_cycle_outputs(self, monkeypatch) -> None:
-        seen: list[dict] = []
+    def test_mission_brief_passed_to_layer06(self, monkeypatch) -> None:
+        seen: dict = {}
 
-        def spy(input, *, mission_brief, previous_state):
-            seen.append(previous_state)
-            return {"schema_version": "s", "id": "i", "ts": 0, "channels": []}
+        def response_run(risk, mission_brief):
+            seen["brief"] = mission_brief
+            return _canned_response()
 
-        _inject_layer(monkeypatch, "onboard.layer_03_abstraction.run", spy)
-        results = run_pipeline(_scenario(2))
-        assert seen[0] == {}  # cycle 0: 이전 상태 없음
-        assert seen[1] == results[0]["layers"]  # cycle 1: cycle 0 출력 전부
+        _inject(monkeypatch, {"onboard.layer_06_response.run": response_run})
+        run_cycle(_raw(), _brief())
+        assert seen["brief"] == _brief()
 
-    def test_mission_brief_passed_readonly_to_layers(self, monkeypatch) -> None:
-        seen: list[dict] = []
+    def test_cycle_context_defaults_and_reaches_layer04(self, monkeypatch) -> None:
+        seen: dict = {}
 
-        def spy(input, *, mission_brief, previous_state):
-            seen.append(mission_brief)
-            return {"declared_phase": "x", "mission_phase_confidence": 0.0,
-                    "candidates": [], "primary": None, "background_exposure_score": 0.0}
+        def threat_run(abstraction, cycle_context):
+            seen["ctx"] = cycle_context
+            return _canned_threat(primary=None)
 
-        _inject_layer(monkeypatch, "onboard.layer_04_threat.run", spy)
-        run_pipeline(_scenario(1))
-        assert seen[0] == _brief()
+        _inject(monkeypatch, {"onboard.layer_04_threat.run": threat_run})
+        run_cycle(_raw(), _brief())
+        assert "optimal_terrain_bearing_deg" in seen["ctx"]
+        assert "lowest_exposure_bearing_deg" in seen["ctx"]
+
+    def test_link_quality_extracted_from_abstraction_to_layer05(self, monkeypatch) -> None:
+        seen: dict = {}
+
+        def abstraction_run(raw, previous_qualities):
+            return {
+                "schema_version": "s", "id": "i", "ts": 0,
+                "channels": [{
+                    "channel": "link_status", "state": "anomaly",
+                    "quality": 0.7, "quality_delta": 0.0, "payload": {"rssi_dbm": -95},
+                }],
+            }
+
+        def risk_run(threat, mission_brief, *, link_quality):
+            seen["link_q"] = link_quality
+            return {"candidates": []}
+
+        _inject(monkeypatch, {
+            "onboard.layer_03_abstraction.run": abstraction_run,
+            "onboard.layer_05_risk.run": risk_run,
+        })
+        run_cycle(_raw(), _brief())
+        assert seen["link_q"] == 0.7
+
+    def test_primary_context_threaded_to_layer07(self, monkeypatch) -> None:
+        seen: dict = {}
+        ctx = {"bearing_deg": 35.0, "bearing_source": "acoustic_event"}
+
+        def threat_run(abstraction, cycle_context):
+            return _canned_threat(primary={"threat_event": "T3", "context": ctx})
+
+        def plan_run(response, primary_context, cycle_context):
+            seen["primary_context"] = primary_context
+            return _canned_flight_plan()
+
+        _inject(monkeypatch, {
+            "onboard.layer_04_threat.run": threat_run,
+            "onboard.layer_07_planning.run": plan_run,
+        })
+        run_cycle(_raw(), _brief())
+        assert seen["primary_context"] == ctx
+
+    def test_primary_context_none_when_no_primary(self, monkeypatch) -> None:
+        seen: dict = {}
+
+        def plan_run(response, primary_context, cycle_context):
+            seen["primary_context"] = primary_context
+            return _canned_flight_plan()
+
+        # 04 는 passthrough(primary=None) → 07 primary_context 는 None
+        _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
+        run_cycle(_raw(), _brief())
+        assert seen["primary_context"] is None
 
 
-class TestMainCli:
-    def test_main_writes_jsonl_and_prints_final(self, tmp_path, capsys) -> None:
-        scn = tmp_path / "scn.json"
-        scn.write_text(json.dumps(_scenario(2)), encoding="utf-8")
-        log = tmp_path / "out.jsonl"
+class TestCli:
+    def test_main_prints_result_json_with_five_keys(self, tmp_path, capsys) -> None:
+        raw_p = tmp_path / "raw.json"
+        brief_p = tmp_path / "brief.json"
+        raw_p.write_text(json.dumps(_raw()), encoding="utf-8")
+        brief_p.write_text(json.dumps(_brief()), encoding="utf-8")
 
-        rc = main([str(scn), "--log", str(log)])
+        rc = cli.main([str(raw_p), str(brief_p)])
 
         assert rc == 0
-        lines = log.read_text(encoding="utf-8").strip().splitlines()
-        assert len(lines) == 2 * len(CHAIN)  # 2 사이클 × 6 레이어
-        first = json.loads(lines[0])
-        assert first["cycle"] == 0 and first["layer"] == "02"
-        assert "replan_scope" in capsys.readouterr().out  # 최종 07 출력
+        printed = json.loads(capsys.readouterr().out)
+        assert set(printed) == set(RESULT_SCHEMA)
+
+    def test_main_usage_error_without_args(self, capsys) -> None:
+        rc = cli.main([])
+        assert rc == 2
+        assert "usage" in capsys.readouterr().err
+
+
+# --- canned 참고 구조 (실제 레이어 미구현 시 passthrough 가 내는 최소 형태) ---
+
+
+def _canned_threat(primary) -> dict:
+    return {
+        "declared_phase": "unknown", "mission_phase_confidence": 0.0,
+        "candidates": [], "primary": primary, "background_exposure_score": 0.0,
+    }
+
+
+def _canned_response() -> dict:
+    return {
+        "primary_threat_event": None, "rac": "Low", "kill_chain_stage": None,
+        "threat_category": None, "flight_action": "CONTINUE", "comms_level": "NORMAL",
+        "payload_action": [], "nav_mode": None, "special_action": None,
+        "secondary_threats": [], "ai_reliability": "normal",
+    }
+
+
+def _canned_flight_plan() -> dict:
+    return {
+        "flight_action": "CONTINUE", "target_bearing_deg": None,
+        "altitude_delta_m": 0, "replan_scope": "NONE", "reroute_anchor": None,
+    }

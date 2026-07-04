@@ -31,3 +31,6 @@ infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*
 infra/terraform/tfplan
 infra/terraform/terraform.tfvars
+
+# 파이프라인 실행 로그 (유즈사이트 책임)
+.d4d_logs/
