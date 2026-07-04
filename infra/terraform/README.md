@@ -59,16 +59,16 @@ terraform init -backend=false && terraform validate
 | `GROUND_INSTANCE_ID` | 지상 EC2 ID | `terraform output ground_instance_id` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | (옵션) CloudFront ID | CloudFront 활성 시 |
 
-> `github_org`/`github_repo` 변수가 OIDC assume 조건(`repo:ORG/REPO:*`)을 만든다.
-> 다른 repo에서는 이 role을 assume할 수 없다.
+> `github_org`/`github_repo` 변수가 OIDC assume 조건(`repo:ORG/REPO:ref:refs/heads/main`)을 만든다
+> (F-02: main 브랜치만). 다른 repo/브랜치에서는 이 role을 assume할 수 없다.
 
 ## 워크플로 (`.github/workflows/`)
-- `terraform.yml` — PR: fmt+validate+plan / main push: apply
-- `deploy-dashboard.yml` — `infra/dashboard/**` 변경 → S3 sync (+CloudFront invalidation)
-- `deploy-uav.yml` — `uav/**` 변경 → ECR push → SSM으로 온보드 컨테이너 재기동(cpus=2/mem 4g)
-- `deploy-ground.yml` — `ground/**`·`infra/log/**` 변경 → ECR push → SSM으로 compose pull/up
+- `ci.yml` — 전체 pytest + strict-markers (PR·push)
+- `codeql.yml` — 정적 보안 분석
+- `deploy-dashboard.yml` — `infra/dashboard/**` 변경 → S3 sync (+CloudFront invalidation). `DEPLOY_ENABLED` 게이트
+- `deploy-log.yml` — `infra/log/**` 변경 → ECR push → SSM으로 지상 compose pull/up. `DEPLOY_ENABLED` 게이트
 
-모든 워크플로는 OIDC(`aws-actions/configure-aws-credentials@v4`)로 role을 assume — **하드코딩 키 없음.**
+모든 배포 워크플로는 OIDC(`aws-actions/configure-aws-credentials`, SHA 고정)로 role을 assume — **하드코딩 키 없음.** 체크아웃은 `persist-credentials: false`(F-11).
 
 ## 주의 (private 계정)
 - `apply`는 실제 과금 리소스(EC2 2대, S3, ECR, 옵션 CloudFront)를 생성한다.

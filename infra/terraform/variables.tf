@@ -78,15 +78,15 @@ variable "dashboard_zone_name" {
 }
 
 variable "github_org" {
-  description = "GitHub OIDC assume 대상 org/owner (예: hobeen-kim)"
+  description = "GitHub OIDC assume 대상 org/owner — CI/배포가 도는 실제 repo owner"
   type        = string
-  default     = "hobeen-kim"
+  default     = "s1ns3nz0" # F-14(#232): 실제 repo(s1ns3nz0/fried-mushroom) 로 정정
 }
 
 variable "github_repo" {
-  description = "GitHub OIDC assume 대상 repo 이름"
+  description = "GitHub OIDC assume 대상 repo 이름 — CI/배포가 도는 실제 repo"
   type        = string
-  default     = "fried-mushroom-uav"
+  default     = "fried-mushroom" # F-14(#232): 실제 repo 로 정정
 }
 
 # F-02(DevSecOps 감사 #232): OIDC 배포 role 을 assume 할 수 있는 git ref 를 최소범위로 제한.
