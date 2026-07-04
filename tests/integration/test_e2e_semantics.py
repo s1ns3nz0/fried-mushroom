@@ -7,8 +7,8 @@ run_cycle(raw, mission_brief) 종단 출력이 D4D 스펙의 시나리오별 의
 - t3=정찰(0.15), t4=호송(0.12) → PHYSICAL 위협도 Serious 등급.
 - DATA_WIPE/WEAPON_DROP(High+후기/중기) 경로는 타격 컨텍스트(strike)에서 검증.
 
-xfail 마커:
-- T7 고도상승: #24 (T7 CFIT MAINTAIN vs 즉시상승 스펙 판정 미완) 해소 전까지 보류.
+(#24 T7 CFIT 판정은 07 CFIT override 로 해소됨 → test_t7_terrain_navigation 이
+ALTITUDE_CHANGE + altitude_delta_m>0 을 직접 검증한다. 잔존 xfail 없음, Refs #41.)
 """
 
 import json

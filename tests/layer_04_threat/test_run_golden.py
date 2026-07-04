@@ -10,7 +10,8 @@ class TestT3Golden:
         out = run.run(abstraction_t3)
         assert out["declared_phase"] == "LOITER_ROI"
         assert out["mission_phase_confidence"] == 0.9
-        assert out["background_exposure_score"] == 0.4
+        # 실측 03 terrain_class(open_field) exposure_score=0.8 (Refs #41)
+        assert out["background_exposure_score"] == 0.8
         primary = out["primary"]
         assert primary is not None
         assert primary["threat_event"] == "T3"
@@ -32,9 +33,12 @@ class TestT4Golden:
         assert primary is not None
         assert primary["threat_event"] == "T4"
         assert primary["potential_outcome"] == "hull_loss"
-        # C-1 9절 손계산: match_count=2 (link_status 는 W_min 제외), confidence 0.758, 중기
+        # 실측 03 기준(Refs #41): match_count=2 (link_status q=0.04<Q_min & w<W_min 제외),
+        # 중기(avg_weight=0.325<0.35). confidence 유도:
+        #   log_odds = 0.4*logit(0.9)+0.25*logit(0.9) = 0.65*2.1972 = 1.4282
+        #   ai = sigmoid(1.4282) = 0.807, |0.807-det(0.9)|=0.093≤0.15 → ai, WAYPOINT 배수 없음
         assert primary["match_count"] == 2
-        assert primary["confidence"] == 0.758
+        assert primary["confidence"] == 0.807
         assert primary["kill_chain_stage"] == "중기"
 
 
@@ -53,7 +57,8 @@ class TestNormalGolden:
         out = run.run(abstraction_normal)
         assert out["candidates"] == []
         assert out["primary"] is None
-        assert out["background_exposure_score"] == 0.2
+        # 실측 03 terrain_class(open_field) exposure_score=0.8 (Refs #41)
+        assert out["background_exposure_score"] == 0.8
 
     def test_cycle_context_passthrough(self, abstraction_normal) -> None:
         ctx = {"optimal_terrain_bearing_deg": 0.0}
