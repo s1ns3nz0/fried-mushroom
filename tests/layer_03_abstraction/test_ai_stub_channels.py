@@ -43,3 +43,46 @@ def test_terrain_class_always_normal():
     for scenario in ("t3", "t4", "t7"):
         assert _channel(run(_load_raw(scenario)), "terrain_class")["state"] == "normal"
     assert _channel(run(build_normal_envelope("s", 0, 0)), "terrain_class")["state"] == "normal"
+
+
+# --- proximity_object 열화(degraded) 경로 커버리지 ---
+# 골든 시나리오(t3/t4/t7)는 전부 degraded_reason=None(고신뢰). 저시정 등으로 모델
+# 확신도가 하락하는 경로가 종단 커버리지 0 이라 유닛으로 잠근다.
+
+
+def _raw_with_object_label(**label):
+    raw = build_normal_envelope("s", 0, 0)
+    raw["imagery"]["object_label"] = label
+    return raw
+
+
+def test_proximity_degraded_reason_lowers_quality_and_surfaces_reason():
+    raw = _raw_with_object_label(
+        **{"class": "person", "closing": False, "closure_rate_mps": 0.0,
+           "weapon_shape": False, "bearing_deg": 12.0, "degraded_reason": "low_visibility"}
+    )
+    ch = _channel(run(raw), "proximity_object")
+    assert ch["quality"] == 0.55  # 저시정 → 확신도 하락 (기본 0.9 대비)
+    assert ch["payload"]["degraded_reason"] == "low_visibility"
+
+
+def test_proximity_degraded_still_anomaly_when_threat_closing():
+    # 저시정이어도 무기형태/접근 위협 판정 자체는 유지(결정론) — 확신도만 낮다.
+    raw = _raw_with_object_label(
+        **{"class": "person", "closing": True, "closure_rate_mps": 4.0,
+           "weapon_shape": False, "bearing_deg": 30.0, "degraded_reason": "sensor_noise"}
+    )
+    ch = _channel(run(raw), "proximity_object")
+    assert ch["state"] == "anomaly"
+    assert ch["quality"] == 0.55
+    assert ch["payload"]["degraded_reason"] == "sensor_noise"
+
+
+def test_proximity_no_degraded_reason_keeps_high_quality():
+    raw = _raw_with_object_label(
+        **{"class": "person", "closing": True, "closure_rate_mps": 4.0,
+           "weapon_shape": False, "bearing_deg": 30.0, "degraded_reason": None}
+    )
+    ch = _channel(run(raw), "proximity_object")
+    assert ch["quality"] == 0.9
+    assert ch["payload"]["degraded_reason"] is None
