@@ -1,0 +1,11 @@
+# 로그 수집기 — 최소 의존성.
+# raw_log 수신·저장은 표준 라이브러리(json, sqlite3, pathlib)로 충분.
+#
+# episode_index 벡터검색용(선택, 승인·검색 단계에서 활성화):
+# sqlite-vec              # SQLite 벡터확장 (episode_vec 가상테이블)
+# sentence-transformers   # 로컬 다국어 임베딩 (narrative 승인 시)
+
+# HTTP POST /raw_log 수신(main.py) + 실시간 로그수집기(log_server.py) 공통 의존성:
+fastapi
+uvicorn[standard]
+pydantic

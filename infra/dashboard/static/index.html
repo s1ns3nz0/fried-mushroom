@@ -1,0 +1,93 @@
+<!--
+  D4D 대시보드 UI — 2x2 그리드 (지도 / 고도 / 신호 / 실시간 로그).
+  대시보드는 판단하지 않는다 — uav 상태·로그를 표시(관측)만 한다.
+  실시간 로그는 로그수집기 WS /logs 에서 브라우저가 직접 수신한다.
+  Canvas placeholder 렌더는 app.js(drawMap/drawProfile/drawSignals),
+  로그 패널은 app.js(로그 스트림 클라이언트)에서 담당.
+-->
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>D4D Dashboard</title>
+<link rel="stylesheet" href="/static/style.css" />
+
+<header id="topbar">
+  <span class="brand">D4D · Onboard AI 관측</span>
+  <span id="conn-status" class="status status-off">disconnected</span>
+</header>
+
+<main id="grid">
+  <!-- 좌상: top-down 지도 (지형 + 경로 + 드론 + 위협) — placeholder -->
+  <section class="panel" id="panel-map">
+    <h2>지도 (Map)</h2>
+    <canvas id="map-canvas" width="480" height="360"></canvas>
+  </section>
+
+  <!-- 우상: 고도 프로파일 (지형 표고 + 드론 고도) — placeholder -->
+  <section class="panel" id="panel-profile">
+    <h2>고도 (Elevation)</h2>
+    <canvas id="profile-canvas" width="480" height="360"></canvas>
+  </section>
+
+  <!-- 좌하: 11 의미 채널 신호 (state/quality) — placeholder -->
+  <section class="panel" id="panel-signals">
+    <h2>신호 (Signals · C2 11채널)</h2>
+    <canvas id="signals-canvas" width="480" height="360"></canvas>
+  </section>
+
+  <!-- 우하: 실시간 로그 (로그수집기 WS /logs) -->
+  <section class="panel" id="panel-log">
+    <h2>실시간 로그 (Log Stream · WS /logs)</h2>
+
+    <!-- 연결 설정 -->
+    <div class="log-controls">
+      <div class="ctl-row">
+        <input
+          id="log-ws-url"
+          type="text"
+          class="ctl-input"
+          placeholder="ws://localhost:8500/logs"
+          spellcheck="false"
+        />
+        <button id="log-connect-btn" class="ctl-btn" type="button">연결</button>
+      </div>
+
+      <!-- 필터 -->
+      <div class="ctl-row">
+        <select id="filter-level" class="ctl-select" title="level 필터">
+          <option value="">level: 전체</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+        <input
+          id="filter-layer"
+          type="text"
+          class="ctl-input"
+          placeholder="layer 검색"
+          spellcheck="false"
+        />
+        <input
+          id="filter-cid"
+          type="text"
+          class="ctl-input"
+          placeholder="correlation_id 검색"
+          spellcheck="false"
+        />
+      </div>
+
+      <!-- mock (개발용) -->
+      <div class="ctl-row">
+        <button id="mock-inject-btn" class="ctl-btn" type="button">mock 주입</button>
+        <label class="ctl-check">
+          <input id="mock-auto" type="checkbox" /> mock 자동생성
+        </label>
+        <button id="log-clear-btn" class="ctl-btn ctl-btn-ghost" type="button">지우기</button>
+        <span id="log-count" class="ctl-meta">0</span>
+      </div>
+    </div>
+
+    <ul id="log-list"></ul>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
