@@ -50,8 +50,10 @@ def test_evasion_resolves_not_latched() -> None:
     frames = run_from_directive(_directive(), seed=_SEED, ticks=_TICKS)
     phases = [f["world"]["phase"] for f in frames]
     first_evade = phases.index("EVADE")
-    after = phases[first_evade:]
-    assert any(p in ("TRANSIT", "ARRIVED") for p in after), "EVADE 진입 후 phase 가 복귀해야 함(래치 금지)"
+    first_arrived = phases.index("ARRIVED")
+    # 첫 EVADE 와 첫 ARRIVED 사이에 정상 국면(TRANSIT)이 있어야 = 위협 해소 후 비행 중 복귀.
+    # ARRIVED 를 복귀로 인정하면 임무 끝까지 EVADE 래치돼도 통과하므로 제외(래치를 실제로 잡음).
+    assert "TRANSIT" in phases[first_evade:first_arrived], "EVADE 후 도착 전 정상 국면 복귀 필요(래치 금지)"
 
 
 def test_closed_loop_is_deterministic() -> None:
