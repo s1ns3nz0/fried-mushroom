@@ -164,8 +164,8 @@
     "primary": null,
     "background_exposure_score": 0.8,
     "cycle_context": {
-      "optimal_terrain_bearing_deg": 38.42310679336931,
-      "lowest_exposure_bearing_deg": 128.4231067933693
+      "optimal_terrain_bearing_deg": 38.423107,
+      "lowest_exposure_bearing_deg": 128.423107
     }
   },
   "risk": {
