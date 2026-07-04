@@ -95,6 +95,7 @@ class TestFlightPlanOutput:
             "replan_scope",
             "reroute_anchor",
             "route",
+            "speed_mode",
         }
         assert expected == set(hints.keys())
 

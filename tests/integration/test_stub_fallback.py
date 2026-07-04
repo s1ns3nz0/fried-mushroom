@@ -12,7 +12,7 @@ import types
 from onboard.layer_02_sensor.mock_source import build_normal_envelope
 from onboard.run import _STUB_OUTPUT, run_cycle
 
-_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan"}
+_KEYS = {"abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state"}
 
 
 def _raw() -> dict:
@@ -67,3 +67,33 @@ def test_layer07_fallback_stub_includes_route_field() -> None:
     stub = _STUB_OUTPUT["07"]()
     assert "route" in stub, "07 fallback stub 에 route 필드 누락 — 스키마 위반"
     assert stub["route"] == [], f"route 는 빈 리스트여야 함, 실제: {stub['route']}"
+
+
+def test_layer07_fallback_stub_includes_speed_mode_field() -> None:
+    """07 fallback stub 이 FlightPlanOutput required 필드 speed_mode 를 포함해야 한다."""
+    stub = _STUB_OUTPUT["07"]()
+    assert "speed_mode" in stub, "07 fallback stub 에 speed_mode 필드 누락 — 스키마 위반"
+    assert stub["speed_mode"] == "NORMAL", f"MAINTAIN 기준 NORMAL 이어야 함, 실제: {stub['speed_mode']}"
+
+
+def test_layer07_fallback_stub_reroute_anchor_is_mission_corridor_resume() -> None:
+    """07 fallback stub 은 MAINTAIN 모양이므로 reroute_anchor=mission_corridor_resume 이어야 한다(신규 확정)."""
+    stub = _STUB_OUTPUT["07"]()
+    assert stub["reroute_anchor"] == "mission_corridor_resume"
+
+
+def test_missing_layer07_module_falls_back_with_flight_plan_state(monkeypatch) -> None:
+    """07 자체가 fallback 되어도 flight_plan_state 는 항상 존재해야 한다(디바운스 상태 채널, 신규)."""
+    real = importlib.import_module
+
+    def fake(name, *a, **k):
+        if name == "onboard.layer_07_planning.run":
+            raise ModuleNotFoundError(name)
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(importlib, "import_module", fake)
+    out = run_cycle(_raw(), _brief())
+
+    assert set(out) == _KEYS
+    assert out["flight_plan"] == _STUB_OUTPUT["07"]()
+    assert "committed_flight_action" in out["flight_plan_state"]

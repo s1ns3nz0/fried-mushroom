@@ -246,6 +246,15 @@
         "alt_m": 135.0,
         "clearance_m": 135.0
       }
-    ]
+    ],
+    "speed_mode": "NORMAL"
+  },
+  "flight_plan_state": {
+    "committed_rac_order": 2,
+    "committed_flight_action": "ALTITUDE_CHANGE",
+    "committed_primary_threat_event": "T3",
+    "committed_kill_chain_stage": "후기",
+    "candidate_rac_order": null,
+    "candidate_streak": 0
   }
 }

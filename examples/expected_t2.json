@@ -240,6 +240,15 @@
         "alt_m": 140.0,
         "clearance_m": 140.0
       }
-    ]
+    ],
+    "speed_mode": "MAX"
+  },
+  "flight_plan_state": {
+    "committed_rac_order": 1,
+    "committed_flight_action": "REROUTE",
+    "committed_primary_threat_event": "T2",
+    "committed_kill_chain_stage": "후기",
+    "candidate_rac_order": null,
+    "candidate_streak": 0
   }
 }

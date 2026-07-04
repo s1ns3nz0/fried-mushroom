@@ -32,6 +32,18 @@ RESULT_SCHEMA = {
     "flight_plan": FlightPlanOutput,
 }
 
+# run_cycle 반환 dict 의 전체 top-level 키(스키마 검증 대상 5개 + 07 디바운스 상태 채널 1개).
+# flight_plan_state 는 FlightPlanOutput 스키마에 속하지 않는 별도 채널(ADR-004 07 한정 예외).
+RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state"]
+RESULT_KEYS = set(RESULT_KEYS_ORDERED)
+
+
+def _canned_flight_plan_tuple(*_args, **_kwargs):
+    return _canned_flight_plan(), {
+        "committed_rac_order": 4, "committed_flight_action": "MAINTAIN",
+        "candidate_rac_order": None, "candidate_streak": 0,
+    }
+
 
 def _raw() -> dict:
     # 실제 layer_03 이 배선되면 정본 RawSensorEnvelope 를 소비하므로 유효 envelope 을 넘긴다
@@ -72,7 +84,7 @@ def _inject(monkeypatch, mapping: dict) -> None:
 class TestRunCycleShape:
     def test_returns_five_named_layer_outputs(self) -> None:
         result = run_cycle(_raw(), _brief())
-        assert set(result) == set(RESULT_SCHEMA)
+        assert set(result) == RESULT_KEYS
 
     def test_passthrough_outputs_match_layer_schema(self) -> None:
         result = run_cycle(_raw(), _brief())
@@ -151,9 +163,9 @@ class TestLayerWiring:
         def threat_run(abstraction, cycle_context):
             return _canned_threat(primary={"threat_event": "T3", "context": ctx})
 
-        def plan_run(response, primary_context, cycle_context):
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
             seen["primary_context"] = primary_context
-            return _canned_flight_plan()
+            return _canned_flight_plan_tuple()
 
         _inject(monkeypatch, {
             "onboard.layer_04_threat.run": threat_run,
@@ -165,9 +177,9 @@ class TestLayerWiring:
     def test_primary_context_none_when_no_primary(self, monkeypatch) -> None:
         seen: dict = {}
 
-        def plan_run(response, primary_context, cycle_context):
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
             seen["primary_context"] = primary_context
-            return _canned_flight_plan()
+            return _canned_flight_plan_tuple()
 
         # 04 는 passthrough(primary=None) → 07 primary_context 는 None
         _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
@@ -177,9 +189,9 @@ class TestLayerWiring:
     def test_terrain_bearing_derived_from_corridor_waypoints(self, monkeypatch) -> None:
         seen: dict = {}
 
-        def plan_run(response, primary_context, cycle_context):
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
             seen["ctx"] = cycle_context
-            return _canned_flight_plan()
+            return _canned_flight_plan_tuple()
 
         _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
         brief = {
@@ -215,19 +227,46 @@ class TestLayerWiring:
     def test_terrain_bearing_fallback_when_no_waypoints(self, monkeypatch) -> None:
         seen: dict = {}
 
-        def plan_run(response, primary_context, cycle_context):
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
             seen["ctx"] = cycle_context
-            return _canned_flight_plan()
+            return _canned_flight_plan_tuple()
 
         _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
         run_cycle(_raw(), _brief())  # _brief() has empty waypoints
         assert seen["ctx"]["optimal_terrain_bearing_deg"] == 0.0
         assert seen["ctx"]["lowest_exposure_bearing_deg"] == 0.0
 
-    def _inject_chain_with_abstraction(self, monkeypatch, abstraction, seen):
-        def plan_run(response, primary_context, cycle_context):
+    def test_mission_brief_weights_threaded_to_layer07(self, monkeypatch) -> None:
+        """(신규) mission_brief.weights가 07 cycle_context에 실려가는지 — speed_mode 조정용."""
+        seen: dict = {}
+
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
             seen["ctx"] = cycle_context
-            return _canned_flight_plan()
+            return _canned_flight_plan_tuple()
+
+        _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
+        brief = {**_brief(), "weights": {"stealth": 0.5, "survival": 0.1,
+                                          "info_value": 0.3, "timeliness": 0.1}}
+        run_cycle(_raw(), brief)
+        assert seen["ctx"]["weights"] == brief["weights"]
+
+    def test_mission_brief_missing_weights_defaults_to_empty_dict(self, monkeypatch) -> None:
+        """weights 키가 mission_brief에 없어도 07 cycle_context에는 빈 dict로 안전하게 전달."""
+        seen: dict = {}
+
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
+            seen["ctx"] = cycle_context
+            return _canned_flight_plan_tuple()
+
+        _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
+        brief = {k: v for k, v in _brief().items() if k != "weights"}
+        run_cycle(_raw(), brief)
+        assert seen["ctx"]["weights"] == {}
+
+    def _inject_chain_with_abstraction(self, monkeypatch, abstraction, seen):
+        def plan_run(response, primary_context, cycle_context, debounce_state=None):
+            seen["ctx"] = cycle_context
+            return _canned_flight_plan_tuple()
 
         _inject(monkeypatch, {
             "onboard.layer_03_abstraction.run": lambda raw, prev: abstraction,
@@ -269,7 +308,7 @@ class TestLayerWiring:
 
 
 class TestCli:
-    def test_main_prints_result_json_with_five_keys(self, tmp_path, capsys) -> None:
+    def test_main_prints_result_json_with_six_keys(self, tmp_path, capsys) -> None:
         raw_p = tmp_path / "raw.json"
         brief_p = tmp_path / "brief.json"
         raw_p.write_text(json.dumps(_raw()), encoding="utf-8")
@@ -279,7 +318,7 @@ class TestCli:
 
         assert rc == 0
         printed = json.loads(capsys.readouterr().out)
-        assert set(printed) == set(RESULT_SCHEMA)
+        assert set(printed) == RESULT_KEYS
 
     def test_main_usage_error_without_args(self, capsys) -> None:
         rc = cli.main([])
@@ -302,10 +341,10 @@ class TestCli:
         assert rc == 0
 
         # stdout 결과는 여전히 출력 (로그는 부수 채널).
-        assert set(json.loads(capsys.readouterr().out)) == set(RESULT_SCHEMA)
+        assert set(json.loads(capsys.readouterr().out)) == RESULT_KEYS
 
         lines = [json.loads(x) for x in log_p.read_text(encoding="utf-8").splitlines()]
-        assert [ln["layer"] for ln in lines] == list(RESULT_SCHEMA)
+        assert [ln["layer"] for ln in lines] == RESULT_KEYS_ORDERED
         assert all(ln["seq"] == 7 for ln in lines)
         assert all(set(ln) == {"seq", "layer", "output"} for ln in lines)
         # 각 라인 output 이 비어있지 않은 레이어 dict.
@@ -319,7 +358,7 @@ class TestCli:
         cli.main([str(raw_p), str(brief_p), "--log", str(log_p)])
 
         lines = log_p.read_text(encoding="utf-8").splitlines()
-        assert len(lines) == 2 * len(RESULT_SCHEMA)  # append, not truncate
+        assert len(lines) == 2 * len(RESULT_KEYS_ORDERED)  # append, not truncate
 
 
 # --- canned 참고 구조 (실제 레이어 미구현 시 passthrough 가 내는 최소 형태) ---

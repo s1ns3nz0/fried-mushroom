@@ -258,6 +258,15 @@
         "alt_m": 50.0,
         "clearance_m": 50.0
       }
-    ]
+    ],
+    "speed_mode": "NORMAL"
+  },
+  "flight_plan_state": {
+    "committed_rac_order": 3,
+    "committed_flight_action": "MAINTAIN",
+    "committed_primary_threat_event": "T7",
+    "committed_kill_chain_stage": "중기",
+    "candidate_rac_order": null,
+    "candidate_streak": 0
   }
 }

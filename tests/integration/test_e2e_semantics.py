@@ -68,7 +68,7 @@ def test_t1_gps_spoof_remote() -> None:
     assert out["response"]["comms_level"] == "L1"
     assert out["response"]["nav_mode"] is None
     assert out["flight_plan"]["replan_scope"] == "NONE"
-    assert out["flight_plan"]["reroute_anchor"] is None  # MAINTAIN → 재계획 없으므로 anchor 불필요
+    assert out["flight_plan"]["reroute_anchor"] == "mission_corridor_resume"  # MAINTAIN → 미션시퀀서 복귀 신호(신규 확정)
 
 
 def test_t5_laser_optical_remote() -> None:
@@ -93,7 +93,7 @@ def test_t5_laser_optical_remote() -> None:
     assert out["response"]["nav_mode"] is None
     assert out["response"]["payload_action"] == []
     assert out["flight_plan"]["replan_scope"] == "NONE"
-    assert out["flight_plan"]["reroute_anchor"] is None
+    assert out["flight_plan"]["reroute_anchor"] == "mission_corridor_resume"
 
 
 def test_t2_cyber_hijack_remote() -> None:

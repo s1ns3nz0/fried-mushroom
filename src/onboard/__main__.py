@@ -1,9 +1,13 @@
-"""CLI 엔트리포인트: `python -m onboard <raw.json> <mission_brief.json> [--log <path>] [--prev-qualities <path>]`.
+"""CLI 엔트리포인트: `python -m onboard <raw.json> <mission_brief.json> [--log <path>]
+[--prev-qualities <path>] [--flight-plan-state <path>]`.
 
 한 사이클 실행 결과(run_cycle 반환 dict)를 stdout 에 JSON 으로 출력한다.
 `--log <path>` 지정 시 사이클 로그(레이어당 1줄 JSON Lines)를 해당 파일에 append 한다.
 `--prev-qualities <path>` 지정 시 직전 사이클 채널 quality 맵(JSON)을 previous_qualities 로 주입한다.
   → quality_delta 실계산 가능 → T5(레이저/광학 교란) 종단 탐지 언블록 (#83).
+`--flight-plan-state <path>` 지정 시 직전 사이클 07 디바운스 상태(JSON)를
+  previous_flight_plan_state 로 주입한다 → RAC 완화(de-escalation) 디바운스 이어감(신규).
+  결과의 `flight_plan_state` 키를 다음 호출에 그대로 다시 넘기면 된다(extract_flight_plan_state 와 동일 값).
 오케스트레이터는 순수 유지 — 로깅은 CLI(유즈사이트) 책임 (ARCHITECTURE 상태 관리).
 """
 
@@ -15,7 +19,10 @@ from pathlib import Path
 
 from onboard.run import run_cycle
 
-_USAGE = "usage: python -m onboard <raw.json> <mission_brief.json> [--log <path>] [--prev-qualities <path>]"
+_USAGE = (
+    "usage: python -m onboard <raw.json> <mission_brief.json> "
+    "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>]"
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -23,8 +30,9 @@ def main(argv: list[str] | None = None) -> int:
 
     log_path: str | None = None
     prev_qualities_path: str | None = None
+    flight_plan_state_path: str | None = None
 
-    for flag in ("--log", "--prev-qualities"):
+    for flag in ("--log", "--prev-qualities", "--flight-plan-state"):
         if flag in args:
             i = args.index(flag)
             if i + 1 >= len(args):
@@ -33,8 +41,10 @@ def main(argv: list[str] | None = None) -> int:
             val = args[i + 1]
             if flag == "--log":
                 log_path = val
-            else:
+            elif flag == "--prev-qualities":
                 prev_qualities_path = val
+            else:
+                flight_plan_state_path = val
             args = args[:i] + args[i + 2:]
 
     if len(args) < 2:
@@ -52,7 +62,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: --prev-qualities: {exc}", file=sys.stderr)
             return 2
 
-    result = run_cycle(raw, mission_brief, previous_qualities=previous_qualities)
+    previous_flight_plan_state: dict | None = None
+    if flight_plan_state_path is not None:
+        try:
+            previous_flight_plan_state = json.loads(
+                Path(flight_plan_state_path).read_text(encoding="utf-8")
+            )
+        except (FileNotFoundError, OSError) as exc:
+            print(f"error: --flight-plan-state: {exc}", file=sys.stderr)
+            return 2
+
+    result = run_cycle(
+        raw,
+        mission_brief,
+        previous_qualities=previous_qualities,
+        previous_flight_plan_state=previous_flight_plan_state,
+    )
 
     if log_path is not None:
         _append_cycle_log(log_path, raw.get("seq"), result)

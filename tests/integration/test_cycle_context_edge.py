@@ -86,28 +86,23 @@ def test_cycle_context_partial_null_optimal_overrides_corridor(monkeypatch):
     def patched_run_layer(num, invoke):
         if num == "03":
             return _make_abstraction_with_terrain(111.0, None)
-        if num == "07":
-            def capture_invoke(run_fn):
-                def wrapped(response, primary_context, ctx):
-                    captured["ctx"] = ctx
-                    return {
-                        "flight_action": "MAINTAIN",
-                        "target_bearing_deg": None,
-                        "altitude_delta_m": 0,
-                        "replan_scope": "NONE",
-                        "reroute_anchor": None,
-                    }
-                return wrapped(run_fn)
-            return invoke(lambda resp, pc, ctx: (captured.update({"ctx": ctx}) or {
-                "flight_action": "MAINTAIN",
-                "target_bearing_deg": None,
-                "altitude_delta_m": 0,
-                "replan_scope": "NONE",
-                "reroute_anchor": None,
-            }))
         return original_run_layer(num, invoke)
 
+    def patched_run_layer_07(response, primary_context, cycle_context_07, debounce_state):
+        captured["ctx"] = cycle_context_07
+        return {
+            "flight_action": "MAINTAIN",
+            "target_bearing_deg": None,
+            "altitude_delta_m": 0,
+            "replan_scope": "NONE",
+            "reroute_anchor": None,
+            "route": [],
+            "speed_mode": "NORMAL",
+        }, {"committed_rac_order": 4, "committed_flight_action": "MAINTAIN",
+            "candidate_rac_order": None, "candidate_streak": 0}
+
     monkeypatch.setattr(run_mod, "_run_layer", patched_run_layer)
+    monkeypatch.setattr(run_mod, "_run_layer_07", patched_run_layer_07)
 
     mb = _load("mission_brief_t3.json")
     run_cycle(_load("raw_t3.json"), mb)
@@ -127,17 +122,23 @@ def test_cycle_context_partial_null_lowest_overrides_corridor(monkeypatch):
     def patched_run_layer(num, invoke):
         if num == "03":
             return _make_abstraction_with_terrain(None, 222.0)
-        if num == "07":
-            return invoke(lambda resp, pc, ctx: (captured.update({"ctx": ctx}) or {
-                "flight_action": "MAINTAIN",
-                "target_bearing_deg": None,
-                "altitude_delta_m": 0,
-                "replan_scope": "NONE",
-                "reroute_anchor": None,
-            }))
         return original_run_layer(num, invoke)
 
+    def patched_run_layer_07(response, primary_context, cycle_context_07, debounce_state):
+        captured["ctx"] = cycle_context_07
+        return {
+            "flight_action": "MAINTAIN",
+            "target_bearing_deg": None,
+            "altitude_delta_m": 0,
+            "replan_scope": "NONE",
+            "reroute_anchor": None,
+            "route": [],
+            "speed_mode": "NORMAL",
+        }, {"committed_rac_order": 4, "committed_flight_action": "MAINTAIN",
+            "candidate_rac_order": None, "candidate_streak": 0}
+
     monkeypatch.setattr(run_mod, "_run_layer", patched_run_layer)
+    monkeypatch.setattr(run_mod, "_run_layer_07", patched_run_layer_07)
 
     mb = _load("mission_brief_t3.json")
     run_cycle(_load("raw_t3.json"), mb)
@@ -157,7 +158,7 @@ def test_obstacle_ttc_none_no_cfit_override():
         "lowest_exposure_bearing_deg": 270.0,
         "obstacle_ttc_s": None,
     }
-    out = plan_run(response, None, ctx)
+    out, _ = plan_run(response, None, ctx)
     assert out["flight_action"] == "MAINTAIN"
     assert out["altitude_delta_m"] == 0
     assert out["replan_scope"] == "NONE"
@@ -170,7 +171,7 @@ def test_obstacle_ttc_key_absent_no_cfit_override():
         "optimal_terrain_bearing_deg": 180.0,
         "lowest_exposure_bearing_deg": 270.0,
     }
-    out = plan_run(response, None, ctx)
+    out, _ = plan_run(response, None, ctx)
     assert out["flight_action"] == "MAINTAIN"
     assert out["altitude_delta_m"] == 0
     assert out["replan_scope"] == "NONE"
@@ -181,7 +182,7 @@ def test_obstacle_ttc_key_absent_no_cfit_override():
 def test_07_navigation_missing_optimal_bearing_key():
     """NAVIGATION + cycle_context에 optimal_terrain_bearing_deg 키 없음 → target_bearing_deg=None."""
     response = _make_response("REROUTE", "NAVIGATION")
-    out = plan_run(response, None, {})
+    out, _ = plan_run(response, None, {})
     assert out["target_bearing_deg"] is None
     assert out["replan_scope"] == "FULL"
 
@@ -189,6 +190,6 @@ def test_07_navigation_missing_optimal_bearing_key():
 def test_07_physical_missing_lowest_bearing_key():
     """PHYSICAL + bearing=None + cycle_context에 lowest_exposure_bearing_deg 키 없음 → target_bearing_deg=None."""
     response = _make_response("REROUTE", "PHYSICAL")
-    out = plan_run(response, None, {})
+    out, _ = plan_run(response, None, {})
     assert out["target_bearing_deg"] is None
     assert out["reroute_anchor"] == "terrain_fallback"

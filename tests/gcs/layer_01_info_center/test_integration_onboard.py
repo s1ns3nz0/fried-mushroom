@@ -44,7 +44,9 @@ def test_layer01_brief_drives_onboard_end_to_end() -> None:
     assert set(mb) == {"sortie_id", "mission_context", "posture", "drone_profile", "corridor", "weights"}
 
     out = run_cycle(_load("raw_t3.json"), mb)  # 01 출력 → 온보드 입력
-    assert set(out) == {"abstraction", "threat", "risk", "response", "flight_plan"}
+    assert set(out) == {
+        "abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state",
+    }
     # 정찰 브리핑 + t3 센서 → T3 탐지 종단.
     assert out["response"]["primary_threat_event"] == "T3"
     assert out["response"]["threat_category"] == "PHYSICAL"
