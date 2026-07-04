@@ -50,7 +50,9 @@ def run_cycle(
 
     primary = threat.get("primary")
     primary_context = primary.get("context") if primary else None
-    flight_plan = _run_layer("07", lambda run: run(response, primary_context, cycle_context))
+    obstacle_ttc_s = _extract_obstacle_ttc(abstraction)
+    cycle_context_07 = {**cycle_context, **({"obstacle_ttc_s": obstacle_ttc_s} if obstacle_ttc_s is not None else {})}
+    flight_plan = _run_layer("07", lambda run: run(response, primary_context, cycle_context_07))
 
     return {
         "abstraction": abstraction,
@@ -71,6 +73,18 @@ def _extract_link_quality(abstraction: dict) -> float | None:
     for channel in abstraction.get("channels", []):
         if channel.get("channel") == "link_status":
             return channel.get("quality")
+    return None
+
+
+def _extract_obstacle_ttc(abstraction: dict) -> float | None:
+    """obstacle_proximity 채널 payload에서 TTC(s) 계산. 07 CFIT override 판정용."""
+    for channel in abstraction.get("channels", []):
+        if channel.get("channel") == "obstacle_proximity":
+            p = channel.get("payload", {})
+            d = p.get("distance_m")
+            v = p.get("closure_rate_mps")
+            if d is not None and v is not None and v > 0:
+                return d / v
     return None
 
 

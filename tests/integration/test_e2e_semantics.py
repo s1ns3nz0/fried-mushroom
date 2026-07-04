@@ -6,10 +6,15 @@ run_cycle(raw, mission_brief) 종단 출력이 D4D 스펙의 시나리오별 의
 주의: RAC 는 mission_context 별 base_rate 에 의존한다(05 BASE_RATE_PHYSICAL).
 - t3=정찰(0.15), t4=호송(0.12) → PHYSICAL 위협도 Serious 등급.
 - DATA_WIPE/WEAPON_DROP(High+후기/중기) 경로는 타격 컨텍스트(strike)에서 검증.
+
+xfail 마커:
+- T7 고도상승: #24 (T7 CFIT MAINTAIN vs 즉시상승 스펙 판정 미완) 해소 전까지 보류.
 """
 
 import json
 import pathlib
+
+import pytest
 
 from onboard.layer_02_sensor.mock_source import build_normal_envelope
 from onboard.run import run_cycle
@@ -37,26 +42,53 @@ def test_t3_proximity_smallarms_recon() -> None:
 
 
 def test_t4_physical_capture_convoy() -> None:
-    """t4(물리 포획, 호송): T4 탐지, PHYSICAL, Serious."""
+    """t4(물리 포획, 호송): T4 탐지, PHYSICAL, Serious → ALTITUDE_CHANGE, LOCAL."""
     out = _run("t4")
     assert out["response"]["primary_threat_event"] == "T4"
     assert out["response"]["threat_category"] == "PHYSICAL"
     assert out["response"]["rac"] == "Serious"
+    assert out["response"]["flight_action"] == "ALTITUDE_CHANGE"
     assert out["response"]["payload_action"] == []
+    assert out["flight_plan"]["altitude_delta_m"] == 15
+    assert out["flight_plan"]["replan_scope"] == "LOCAL"
 
 
 def test_t1_gps_spoof_remote() -> None:
-    """t1(GPS 스푸핑, 정찰): T1 탐지, REMOTE 분류."""
+    """t1(GPS 스푸핑, 정찰): T1 탐지, REMOTE, Medium → MAINTAIN + last_known_good_position."""
     out = _run("t1")
     assert out["response"]["primary_threat_event"] == "T1"
     assert out["response"]["threat_category"] == "REMOTE"
+    assert out["response"]["rac"] == "Medium"
+    assert out["response"]["flight_action"] == "MAINTAIN"
+    assert out["response"]["comms_level"] == "L1"
+    assert out["response"]["nav_mode"] is None
+    assert out["flight_plan"]["replan_scope"] == "NONE"
+    assert out["flight_plan"]["reroute_anchor"] is None  # MAINTAIN → 재계획 없으므로 anchor 불필요
+
+
+def test_t2_cyber_hijack_remote() -> None:
+    """t2(C2 하이재킹): T2 탐지, REMOTE, High → REROUTE + last_known_good_position (#28 수정 후 잠금)."""
+    out = _run("t2")
+    assert out["response"]["primary_threat_event"] == "T2"
+    assert out["response"]["threat_category"] == "REMOTE"
+    assert out["response"]["rac"] == "High"
+    assert out["response"]["flight_action"] == "REROUTE"
+    assert out["response"]["comms_level"] == "L2"
+    assert out["response"]["nav_mode"] is None
+    assert out["response"]["payload_action"] == []
+    assert out["flight_plan"]["replan_scope"] == "FULL"
+    assert out["flight_plan"]["reroute_anchor"] == "last_known_good_position"
 
 
 def test_t7_terrain_navigation() -> None:
-    """t7(지형충돌, 수송): NAVIGATION 위협으로 분류 (적대행위 아님)."""
+    """t7(지형충돌, 수송): NAVIGATION, 07 CFIT override → TTC<3s이므로 altitude_delta_m>0."""
     out = _run("t7")
     assert out["response"]["primary_threat_event"] == "T7"
     assert out["response"]["threat_category"] == "NAVIGATION"
+    assert out["response"]["rac"] == "Medium"
+    assert out["flight_plan"]["flight_action"] == "ALTITUDE_CHANGE"
+    assert out["flight_plan"]["altitude_delta_m"] > 0
+    assert out["flight_plan"]["replan_scope"] == "LOCAL"
 
 
 def test_strike_high_rac_triggers_payload_overrides() -> None:
