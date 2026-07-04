@@ -60,14 +60,28 @@ def model_available() -> bool:
 
 
 def _class_names(result) -> list[tuple[str, float]]:
-    """ultralytics result → [(class_name, confidence)] (내림차순). 실패 시 []."""
+    """ultralytics result → [(class_name, confidence)] (내림차순). 실패 시 [].
+
+    **detection(boxes)·classification/segmentation(probs) 둘 다 지원**(codex #368 P2):
+    proximity 는 detection(YOLO boxes), terrain 은 씬-classification/segmentation(probs)
+    모델을 쓰므로 출력 형태가 다르다. probs 가 있으면(cls/seg) 그걸 우선 읽고, 없으면 boxes.
+    """
     try:
         names = result.names
-        out = []
-        for b in result.boxes:
-            cls_id = int(b.cls[0])
-            conf = float(b.conf[0])
-            out.append((str(names.get(cls_id, cls_id)).lower(), conf))
+        probs = getattr(result, "probs", None)
+        if probs is not None:  # classification/scene-seg 모델 (terrain).
+            if hasattr(probs, "top5") and hasattr(probs, "top5conf"):
+                idxs = list(probs.top5)
+                confs = [float(c) for c in probs.top5conf.tolist()]
+            else:
+                idxs = [int(probs.top1)]
+                confs = [float(probs.top1conf)]
+            out = [(str(names.get(i, i)).lower(), c) for i, c in zip(idxs, confs)]
+            out.sort(key=lambda t: t[1], reverse=True)
+            return out
+        out = []  # detection/segmentation 모델 (proximity) — boxes.
+        for b in (result.boxes or []):
+            out.append((str(names.get(int(b.cls[0]), int(b.cls[0]))).lower(), float(b.conf[0])))
         out.sort(key=lambda t: t[1], reverse=True)
         return out
     except Exception:

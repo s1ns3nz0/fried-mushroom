@@ -125,3 +125,41 @@ def test_real_model_output_contract_when_installed():
     prox = perception_model.detect_proximity_model(frame)
     if prox is not None:
         assert set(prox.keys()) == _PROX_KEYS
+
+
+# --- codex #368 P2: _class_names 가 classification(probs)·detection(boxes) 둘 다 읽음 ---
+
+
+class _FakeProbs:
+    top5 = [7, 3]
+    class _C:
+        def tolist(self): return [0.8, 0.1]
+    top5conf = _C()
+
+
+class _FakeClsResult:
+    names = {7: "tree", 3: "road"}
+    probs = _FakeProbs()
+    boxes = None
+
+
+class _FakeBox:
+    def __init__(self, cls, conf): self.cls = [cls]; self.conf = [conf]
+
+
+class _FakeDetResult:
+    names = {0: "person", 1: "gun"}
+    probs = None
+    boxes = [_FakeBox(0, 0.9), _FakeBox(1, 0.7)]
+
+
+def test_class_names_reads_probs_for_classification():
+    from onboard.layer_03_abstraction.perception_model import _class_names
+    out = _class_names(_FakeClsResult())
+    assert out[0] == ("tree", 0.8)  # 씬-cls/seg 모델 probs → terrain 동작
+
+
+def test_class_names_reads_boxes_for_detection():
+    from onboard.layer_03_abstraction.perception_model import _class_names
+    out = _class_names(_FakeDetResult())
+    assert out[0] == ("person", 0.9)  # detection boxes → proximity 동작
