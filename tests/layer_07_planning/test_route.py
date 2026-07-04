@@ -226,3 +226,88 @@ def test_rtl_altitude_profile_rate_limited():
         assert diff <= ROUTE_MAX_CLIMB_RATE_M_PER_WP + 1e-9, (
             f"RTL 연속 고도 차이 {diff}m > 제한 {ROUTE_MAX_CLIMB_RATE_M_PER_WP}m"
         )
+
+
+# ---------------------------------------------------------------------------
+# 수평 회피 궤적 — bearing offset (issue #132)
+# ---------------------------------------------------------------------------
+
+_BEAR_WPS = [
+    {"id": "wp1", "lat": 37.500, "lon": 127.000, "alt_m": 120},
+    {"id": "wp2", "lat": 37.510, "lon": 127.010, "alt_m": 120},
+    {"id": "wp3", "lat": 37.520, "lon": 127.020, "alt_m": 120},
+]
+_BEAR_CTX = {"corridor_waypoints": _BEAR_WPS, "corridor_bases": _BASES}
+
+
+def test_reroute_bearing_offset_north():
+    """REROUTE + bearing=0°(북향) → 모든 waypoint lat 증가, lon 불변."""
+    route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=0.0)
+    assert len(route) == len(_BEAR_WPS)
+    for i, wp in enumerate(route):
+        assert wp["lat"] > _BEAR_WPS[i]["lat"], f"wp[{i}] lat이 북쪽으로 이동해야 함"
+        assert abs(wp["lon"] - _BEAR_WPS[i]["lon"]) < 1e-9, f"wp[{i}] lon이 변하면 안 됨"
+
+
+def test_reroute_bearing_offset_east():
+    """REROUTE + bearing=90°(동향) → 모든 waypoint lon 증가, lat 불변."""
+    route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=90.0)
+    assert len(route) == len(_BEAR_WPS)
+    for i, wp in enumerate(route):
+        assert abs(wp["lat"] - _BEAR_WPS[i]["lat"]) < 1e-9, f"wp[{i}] lat이 변하면 안 됨"
+        assert wp["lon"] > _BEAR_WPS[i]["lon"], f"wp[{i}] lon이 동쪽으로 이동해야 함"
+
+
+def test_altitude_change_reroute_offset_applied():
+    """ALTITUDE_CHANGE_REROUTE (FULL) + bearing → bearing offset 적용."""
+    route = generate_route(
+        "ALTITUDE_CHANGE_REROUTE", 50, "FULL", _BEAR_CTX, target_bearing_deg=90.0
+    )
+    assert len(route) == len(_BEAR_WPS)
+    for i, wp in enumerate(route):
+        assert wp["lon"] > _BEAR_WPS[i]["lon"], f"wp[{i}] lon이 동쪽으로 이동해야 함"
+
+
+def test_rtl_no_bearing_offset():
+    """RTL (LOCAL scope) + bearing 전달 → offset 미적용, 결과 동일."""
+    route_no_bearing = generate_route("RTL", 0, "LOCAL", _BEAR_CTX)
+    route_with_bearing = generate_route("RTL", 0, "LOCAL", _BEAR_CTX, target_bearing_deg=90.0)
+    assert len(route_no_bearing) == len(route_with_bearing)
+    for a, b in zip(route_no_bearing, route_with_bearing):
+        assert a["lat"] == pytest.approx(b["lat"])
+        assert a["lon"] == pytest.approx(b["lon"])
+
+
+def test_null_bearing_no_offset():
+    """target_bearing_deg=None → offset 미적용, corridor 원좌표 유지."""
+    route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=None)
+    assert len(route) == len(_BEAR_WPS)
+    for i, wp in enumerate(route):
+        assert wp["lat"] == pytest.approx(_BEAR_WPS[i]["lat"])
+        assert wp["lon"] == pytest.approx(_BEAR_WPS[i]["lon"])
+
+
+def test_bearing_offset_magnitude_north():
+    """bearing=0° 위도 이동량이 ROUTE_EVASION_OFFSET_M / EARTH_RADIUS_M 에 대응."""
+    import math
+    from onboard.shared.constants import ROUTE_EVASION_OFFSET_M
+    route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=0.0)
+    lat_diff = route[0]["lat"] - _BEAR_WPS[0]["lat"]
+    expected = math.degrees(ROUTE_EVASION_OFFSET_M / 6_371_000.0)
+    assert lat_diff == pytest.approx(expected, rel=1e-4)
+
+
+def test_local_scope_no_bearing_offset():
+    """ALTITUDE_CHANGE(LOCAL scope) + bearing → offset 미적용, lon 불변."""
+    route = generate_route("ALTITUDE_CHANGE", 15, "LOCAL", _BEAR_CTX, target_bearing_deg=90.0)
+    assert len(route) == len(_BEAR_WPS)
+    for i, wp in enumerate(route):
+        assert wp["lon"] == pytest.approx(_BEAR_WPS[i]["lon"])
+
+
+def test_bearing_offset_alt_and_clearance_unchanged():
+    """bearing offset은 위경도만 이동, alt_m/clearance_m은 보존."""
+    route = generate_route("REROUTE", 0, "FULL", _BEAR_CTX, target_bearing_deg=45.0)
+    for i, wp in enumerate(route):
+        assert wp["alt_m"] == pytest.approx(_BEAR_WPS[i]["alt_m"])
+        assert wp["clearance_m"] == pytest.approx(_BEAR_WPS[i]["alt_m"])
