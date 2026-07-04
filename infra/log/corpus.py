@@ -28,6 +28,26 @@ def _canonical_posture(posture: Any) -> str | None:
     return json.dumps(posture, sort_keys=True, ensure_ascii=False)
 
 
+def _posture_within(
+    record_posture: dict[str, Any] | None,
+    query_posture: dict[str, Any],
+    tolerance: int,
+) -> bool:
+    """레코드 posture가 질의 posture에 ±tolerance 근접하는지 판정 (docs/RAG-corpus.md §6-1).
+
+    질의 각 키에 대해 레코드가 그 키를 가지고 |record-query| ≤ tolerance 를 모두 만족해야 한다.
+    질의에 없는 키는 무시. 레코드 posture가 None이거나 질의 키를 결여하면 비매칭.
+    """
+    if record_posture is None:
+        return False
+    for key, qval in query_posture.items():
+        if key not in record_posture:
+            return False
+        if abs(record_posture[key] - qval) > tolerance:
+            return False
+    return True
+
+
 def episode_to_corpus_records(episode: dict[str, Any]) -> list[dict[str, Any]]:
     """enriched episode → 코퍼스 학습레코드 리스트.
 
@@ -116,21 +136,29 @@ class CorpusStore:
         posture: dict[str, Any] | None = None,
         threat_event: str | None = None,
         top_k: int = 20,
+        posture_tolerance: int | None = None,
     ) -> list[dict[str, Any]]:
         """메타필터 회수 (mission_context/posture/threat_event AND). 최신·고확신 우선.
 
         → 회수 계약: docs/RAG-corpus.md §6. 반환 dict는 학습레코드 스키마(posture는 dict 역직렬화).
         top_k는 0 이상이어야 한다 (음수는 SQLite `LIMIT -1`로 해석되어 전체 반환되므로 거부).
+        posture 필터는 기본 정확일치이며, posture_tolerance(정수 ≥ 0)를 주면 근접매칭한다
+        (질의 각 키에 대해 |record-query| ≤ tolerance). → 근접 규칙: docs/RAG-corpus.md §6-1.
         """
         if top_k < 0:
             raise ValueError("top_k must be non-negative")
+        if posture_tolerance is not None and posture_tolerance < 0:
+            raise ValueError("posture_tolerance must be non-negative")
+
+        # 근접매칭은 SQL 문자열 동등비교로 표현 불가 → posture 외 필터로 후보 축소 후 Python 필터.
+        posture_near = posture is not None and posture_tolerance is not None
 
         clauses: list[str] = []
         params: list[Any] = []
         if mission_context is not None:
             clauses.append("mission_context = ?")
             params.append(mission_context)
-        if posture is not None:
+        if posture is not None and not posture_near:
             clauses.append("posture = ?")
             params.append(_canonical_posture(posture))
         if threat_event is not None:
@@ -138,15 +166,25 @@ class CorpusStore:
             params.append(threat_event)
 
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(top_k)
-        rows = self._conn.execute(
+        sql = (
             "SELECT mission_id, raw_log_ref, mission_context, posture, threat_event,"
             " confidence, outcome, corridor_region, kill_chain_stage, ts"
             f" FROM corpus_record{where}"
-            " ORDER BY ts DESC, confidence DESC LIMIT ?",
-            params,
-        ).fetchall()
-        return [self._row_to_record(row) for row in rows]
+            " ORDER BY ts DESC, confidence DESC"
+        )
+        if not posture_near:
+            sql += " LIMIT ?"
+            params.append(top_k)
+
+        rows = self._conn.execute(sql, params).fetchall()
+        records = [self._row_to_record(row) for row in rows]
+        if posture_near:
+            records = [
+                r
+                for r in records
+                if _posture_within(r["posture"], posture, posture_tolerance)
+            ][:top_k]
+        return records
 
     @staticmethod
     def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:

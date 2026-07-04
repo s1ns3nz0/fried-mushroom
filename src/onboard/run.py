@@ -51,6 +51,10 @@ def run_cycle(
     cycle_context = cycle_context or _compute_terrain_bearings(mission_brief)
 
     abstraction = _run_layer("03", lambda run: run(raw, previous_qualities))
+    # 03 terrain_class 방위(non-None)가 있으면 코리더 heuristic 을 덮어써 통일한다.
+    # 04 직전에 적용해 04/05/07 이 동일 cycle_context(방위)를 보도록 한다 (04-unify, #145).
+    cycle_context = {**cycle_context, **_extract_terrain_bearings(abstraction)}
+
     threat = _run_layer("04", lambda run: run(abstraction, cycle_context))
     link_quality = _extract_link_quality(abstraction)
     risk = _run_layer("05", lambda run: run(threat, mission_brief, link_quality=link_quality))
@@ -60,8 +64,7 @@ def run_cycle(
     primary_context = primary.get("context") if primary else None
     obstacle_ttc_s = _extract_obstacle_ttc(abstraction)
     cycle_context_07 = {
-        **cycle_context,
-        **_extract_terrain_bearings(abstraction),  # 03 terrain_class 방위가 있으면 코리더 heuristic 을 덮어씀
+        **cycle_context,  # 방위 오버라이드는 03 직후 통일 적용됨(위) — 여기서 중복 제거
         **({"obstacle_ttc_s": obstacle_ttc_s} if obstacle_ttc_s is not None else {}),
         "corridor_waypoints": mission_brief.get("corridor", {}).get("waypoints", []),
         "corridor_bases": mission_brief.get("corridor", {}).get("bases", {}),
