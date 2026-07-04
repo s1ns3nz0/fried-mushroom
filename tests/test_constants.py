@@ -2,7 +2,7 @@
 
 import pytest
 
-from d4d_pipeline import constants as C
+from onboard.shared import constants as C
 
 
 # ---------------------------------------------------------------------------

@@ -1,59 +1,71 @@
 # 아키텍처
 
 ## 디렉토리 구조
+
+소스는 `src/` 아래 두 축으로 나뉜다.
+- `src/onboard/` — UAV 온보드 (MVP 스코프): layer 02..07 + shared/ + ai_stubs/
+- `src/gcs/` — 지상통제센터 AI (MVP 밖 skeleton): layer 01
+
 ```
-d4d_pipeline/
-├── __init__.py
-├── run.py                    # 종단 파이프라인 엔트리포인트 (CLI)
-├── schemas.py                # 레이어 간 공통 스키마 (TypedDict/dataclass)
-├── constants.py              # THREAT_CATALOG, POTENTIAL_OUTCOME_MAP, SEVERITY_ORDER 등 전체 공유 상수
-├── layer_02_sensor/
+src/
+├── onboard/
 │   ├── __init__.py
-│   └── mock_source.py        # mock 원시 센서 데이터 생성/로딩
-├── layer_03_abstraction/
-│   ├── __init__.py
-│   ├── run.py                # 11채널 산출 오케스트레이터
-│   ├── position_consistency.py   # GPS/IMU 잔차 계산
-│   ├── link_status.py            # RSSI/SNR 판독
-│   ├── link_integrity.py         # 체크섬/시퀀스 갭
-│   ├── encryption_status.py      # 프로토콜 모드 판독
-│   ├── rf_spectrum.py            # 광대역 이상탐지 (임계값)
-│   ├── mission_phase.py          # declared vs behavioral 대조
-│   ├── terrain_class.py          # GIS 조회 + 카메라 stub
-│   ├── proximity_object.py       # AI stub (고정 detection)
-│   ├── acoustic_event.py         # 임계값 매칭 + YAMNet stub
-│   ├── obstacle_proximity.py     # 거리/접근속도 판독
-│   └── operational_margin.py     # 5개 마진 worst-case 집계
-├── layer_04_threat/
-│   ├── __init__.py
-│   ├── run.py                # Step A→B→C→D
-│   ├── catalog.py            # THREAT_CATALOG, SIGNAL_TO_THREAT, PHASE_THREAT_MULTIPLIER, CHANNEL_WEIGHTS
-│   ├── step_a_phase.py       # 임무 국면 확인
-│   ├── step_b_mapping.py     # 신호→위협 매핑 (T4 다중채널 특수처리 포함)
-│   ├── step_c_confidence.py  # 확신도·킬체인단계 산출 (결정론적 + AI 강화판)
-│   └── step_d_outcome.py     # potential_outcome 매핑
-├── layer_05_risk/
-│   ├── __init__.py
-│   ├── run.py
-│   ├── likelihood.py         # base_rate 조회 + posture_shift
-│   ├── severity.py           # potential_outcome + spare_asset override
-│   ├── rac_matrix.py         # 6×4 매트릭스 (immutable)
-│   └── compound.py           # continuous_L/S, urgency_score, cross-check
-├── layer_06_response/
-│   ├── __init__.py
-│   ├── run.py
-│   ├── flight_comms.py       # (RAC, kill_chain_stage, threat_category) 조회
-│   └── payload_nav.py        # threat_event별 payload_action/nav_mode
-├── layer_07_planning/
-│   ├── __init__.py
-│   ├── run.py
-│   ├── bearing.py            # threat_category별 방향 결정
-│   └── altitude.py           # flight_action별 고도 조정량
-└── ai_stubs/
+│   ├── run.py                    # 온보드 파이프라인 엔트리포인트 (CLI)
+│   ├── shared/
+│   │   ├── __init__.py
+│   │   ├── schemas.py            # 레이어 간 공통 스키마 (TypedDict/dataclass)
+│   │   └── constants.py          # THREAT_CATALOG, POTENTIAL_OUTCOME_MAP, SEVERITY_ORDER, RAC_MATRIX 등
+│   ├── layer_02_sensor/
+│   │   ├── __init__.py
+│   │   └── mock_source.py        # mock 원시 센서 데이터 생성/로딩
+│   ├── layer_03_abstraction/
+│   │   ├── __init__.py
+│   │   ├── run.py                # 11채널 산출 오케스트레이터
+│   │   ├── position_consistency.py   # GPS/IMU 잔차 계산
+│   │   ├── link_status.py            # RSSI/SNR 판독
+│   │   ├── link_integrity.py         # 체크섬/시퀀스 갭
+│   │   ├── encryption_status.py      # 프로토콜 모드 판독
+│   │   ├── rf_spectrum.py            # 광대역 이상탐지 (임계값)
+│   │   ├── mission_phase.py          # declared vs behavioral 대조
+│   │   ├── terrain_class.py          # GIS 조회 + 카메라 stub
+│   │   ├── proximity_object.py       # AI stub (고정 detection)
+│   │   ├── acoustic_event.py         # 임계값 매칭 + YAMNet stub
+│   │   ├── obstacle_proximity.py     # 거리/접근속도 판독
+│   │   └── operational_margin.py     # 5개 마진 worst-case 집계
+│   ├── layer_04_threat/
+│   │   ├── __init__.py
+│   │   ├── run.py                # Step A→B→C→D
+│   │   ├── catalog.py            # THREAT_CATALOG, SIGNAL_TO_THREAT, PHASE_THREAT_MULTIPLIER, CHANNEL_WEIGHTS
+│   │   ├── step_a_phase.py       # 임무 국면 확인
+│   │   ├── step_b_mapping.py     # 신호→위협 매핑 (T4 다중채널 특수처리 포함)
+│   │   ├── step_c_confidence.py  # 확신도·킬체인단계 산출 (결정론적 + AI 강화판)
+│   │   └── step_d_outcome.py     # potential_outcome 매핑
+│   ├── layer_05_risk/
+│   │   ├── __init__.py
+│   │   ├── run.py
+│   │   ├── likelihood.py         # base_rate 조회 + posture_shift
+│   │   ├── severity.py           # potential_outcome + spare_asset override
+│   │   ├── rac_matrix.py         # 6×4 매트릭스 (immutable)
+│   │   └── compound.py           # continuous_L/S, urgency_score, cross-check
+│   ├── layer_06_response/
+│   │   ├── __init__.py
+│   │   ├── run.py
+│   │   ├── flight_comms.py       # (RAC, kill_chain_stage, threat_category) 조회
+│   │   └── payload_nav.py        # threat_event별 payload_action/nav_mode
+│   ├── layer_07_planning/
+│   │   ├── __init__.py
+│   │   ├── run.py
+│   │   ├── bearing.py            # threat_category별 방향 결정
+│   │   └── altitude.py           # flight_action별 고도 조정량
+│   └── ai_stubs/
+│       ├── __init__.py
+│       ├── yolo_stub.py          # proximity_object AI 채널용
+│       ├── segmentation_stub.py  # terrain_class 카메라 보조용
+│       └── yamnet_stub.py        # acoustic_event 2차 판정용
+└── gcs/
     ├── __init__.py
-    ├── yolo_stub.py          # proximity_object AI 채널용
-    ├── segmentation_stub.py  # terrain_class 카메라 보조용
-    └── yamnet_stub.py        # acoustic_event 2차 판정용
+    └── layer_01_info_center/     # MVP 밖 skeleton (지상 정보 센터 AI)
+        └── __init__.py
 
 examples/
 ├── scenario_t3.json          # 근접 소화기 시나리오 (골든 종단)
@@ -69,10 +81,12 @@ tests/
 └── integration/              # 종단 골든 케이스
 ```
 
+pytest 는 `pythonpath = ["src"]` (pyproject.toml) 설정으로 `src/` 를 자동 추가한다. 따라서 test import 는 `from onboard.shared import constants` 형태이다.
+
 ## 패턴
-- **레이어 = 순수 함수**: 각 `layer_XX_*/run.py`는 `run(input: dict, ...) -> dict`. 부수효과 없음. 로깅은 호출자(`d4d_pipeline/run.py`)가 담당.
+- **레이어 = 순수 함수**: 각 `src/onboard/layer_XX_*/run.py`는 `run(input: dict, ...) -> dict`. 부수효과 없음. 로깅은 호출자(`src/onboard/run.py`)가 담당.
 - **결정론적 + AI 강화판 이중 트랙**: 결정론이 산출한 값에 병렬로 AI 값을 계산하고 교차검증. 불일치 시 결정론 값으로 폴백하되 AI 계산 결과는 `ai_*` 필드로 나란히 보존해 지상국에 통보.
-- **레이어 간 계약은 스키마로**: `d4d_pipeline/schemas.py`에 각 레이어의 입/출력 타입을 TypedDict로 선언. 런타임 검증(pydantic 등)은 후순위.
+- **레이어 간 계약은 스키마로**: `src/onboard/shared/schemas.py`에 각 레이어의 입/출력 타입을 TypedDict로 선언. 런타임 검증(pydantic 등)은 후순위.
 - **AI stub은 별도 모듈**: `ai_stubs/`의 함수를 03 채널이 호출. 나중에 실제 모델로 교체해도 03 채널 코드는 그대로.
 
 ## 데이터 흐름

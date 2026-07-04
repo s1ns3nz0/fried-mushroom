@@ -8,20 +8,20 @@
 - `/docs/PRD.md` (성공 기준 — t3 시나리오 종단 골든)
 - `/docs/ARCHITECTURE.md` (데이터 흐름, 상태 관리)
 - `/docs/ADR.md`
-- `/d4d_pipeline/schemas.py`
+- `/src/onboard/shared/schemas.py`
 - 각 레이어 `run.py`:
-  - `/d4d_pipeline/layer_03_abstraction/run.py`
-  - `/d4d_pipeline/layer_04_threat/run.py`
-  - `/d4d_pipeline/layer_05_risk/run.py`
-  - `/d4d_pipeline/layer_06_response/run.py`
-  - `/d4d_pipeline/layer_07_planning/run.py`
+  - `/src/onboard/layer_03_abstraction/run.py`
+  - `/src/onboard/layer_04_threat/run.py`
+  - `/src/onboard/layer_05_risk/run.py`
+  - `/src/onboard/layer_06_response/run.py`
+  - `/src/onboard/layer_07_planning/run.py`
 - `/examples/raw_t3.json`, `raw_t4.json`, `raw_t7.json`, `mission_brief_t3.json`, `_t4.json`, `_t7.json`
 
 ## 작업
 
 전체 파이프라인을 하나의 CLI로 엮고, 세 시나리오의 종단 골든 JSON을 만든 뒤 통합 회귀 테스트를 붙인다.
 
-### 1) `d4d_pipeline/run.py`
+### 1) `src/onboard/run.py`
 
 ```python
 def run_cycle(raw: RawSensorEnvelope,
@@ -81,7 +81,7 @@ step 5에서 이 로직이 누락됐다면 여기서 추가한다. 추가만 하
 
 ### 2) CLI 엔트리포인트
 
-`d4d_pipeline/__main__.py`:
+`src/onboard/__main__.py`:
 
 ```python
 import json, sys
@@ -90,7 +90,7 @@ from .run import run_cycle
 
 def main() -> int:
     if len(sys.argv) < 3:
-        print("usage: python -m d4d_pipeline <raw.json> <mission_brief.json>", file=sys.stderr)
+        print("usage: python -m onboard <raw.json> <mission_brief.json>", file=sys.stderr)
         return 2
     raw = json.loads(Path(sys.argv[1]).read_text())
     mb = json.loads(Path(sys.argv[2]).read_text())
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
 `examples/expected_t3.json`, `expected_t4.json`, `expected_t7.json` — `run_cycle` 실행 결과를 JSON dump 해서 저장한다. 각 파일에는 위 반환 dict의 5개 최상위 키가 다 들어간다.
 
-파일은 처음 만들 때 `python -m d4d_pipeline examples/raw_t3.json examples/mission_brief_t3.json > examples/expected_t3.json` 로 생성한 뒤, 사람이 눈으로 확인해 문서와 어긋나지 않는 부분만 커밋한다.
+파일은 처음 만들 때 `python -m onboard examples/raw_t3.json examples/mission_brief_t3.json > examples/expected_t3.json` 로 생성한 뒤, 사람이 눈으로 확인해 문서와 어긋나지 않는 부분만 커밋한다.
 
 ### 4) 통합 테스트
 
@@ -115,7 +115,7 @@ if __name__ == "__main__":
 ```python
 import json
 from pathlib import Path
-from d4d_pipeline.run import run_cycle
+from onboard.run import run_cycle
 
 _ROOT = Path(__file__).parents[2]
 
@@ -152,7 +152,7 @@ def test_scenario_matches_golden(scenario: str) -> None:
 
 ```bash
 python3 -m pytest -v
-python3 -m d4d_pipeline examples/raw_t3.json examples/mission_brief_t3.json > /tmp/actual_t3.json
+python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json > /tmp/actual_t3.json
 diff /tmp/actual_t3.json examples/expected_t3.json
 ```
 

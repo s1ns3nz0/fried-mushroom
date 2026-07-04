@@ -7,8 +7,8 @@
 - `/CLAUDE.md`
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md` (ADR-005)
-- `/d4d_pipeline/schemas.py` (Step 1 산출물, `MissionBrief` 참고)
-- `/d4d_pipeline/constants.py` (Step 1 산출물)
+- `/src/onboard/shared/schemas.py` (Step 1 산출물, `MissionBrief` 참고)
+- `/src/onboard/shared/constants.py` (Step 1 산출물)
 
 D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
@@ -21,7 +21,7 @@ D4D 원문 문서 (레포 내 `/docs/D4D/`):
 
 원시 센서 데이터를 생성하는 mock 소스와 3개 골든 시나리오 fixture를 만든다. 03 채널이 접근할 필드명을 확정하는 자리이기도 하다.
 
-### 1) `d4d_pipeline/layer_02_sensor/schema.py`
+### 1) `src/onboard/layer_02_sensor/schema.py`
 
 원시 센서 envelope TypedDict. 카테고리별 dict로 nesting.
 
@@ -45,7 +45,7 @@ class RawSensorEnvelope(TypedDict):
 
 카테고리와 하위 필드는 `02. UAV Sensor Layer.md`와 `03. Sensor Abstraction Layer.md`의 "02 → 03 매핑" 표 교집합에서 필요한 것만 담는다. 문서에 없는 새 카테고리를 만들지 마라.
 
-### 2) `d4d_pipeline/layer_02_sensor/mock_source.py`
+### 2) `src/onboard/layer_02_sensor/mock_source.py`
 
 ```python
 def build_normal_envelope(sortie_id: str, seq: int, ts_ms: int) -> RawSensorEnvelope:

@@ -2,8 +2,8 @@
   "project": "D4D",
   "phase": "0-mvp",
   "steps": [
-    { "step": 0, "name": "project-setup", "status": "completed", "summary": "Python 3.11+ pyproject.toml, d4d_pipeline/ 및 tests/ 디렉토리 skeleton + __init__.py, smoke test 통과" },
-    { "step": 1, "name": "shared-schemas-constants", "status": "completed", "summary": "d4d_pipeline/schemas.py (TypedDict I/O), d4d_pipeline/constants.py (D4D 문서 표 하드코딩, RAC_MATRIX MappingProxyType read-only), tests/test_constants.py + test_schemas.py 총 45개 통과" },
+    { "step": 0, "name": "project-setup", "status": "completed", "summary": "Python 3.11+ pyproject.toml, src/onboard/ 및 tests/ 디렉토리 skeleton + __init__.py, smoke test 통과" },
+    { "step": 1, "name": "shared-schemas-constants", "status": "completed", "summary": "src/onboard/shared/schemas.py (TypedDict I/O), src/onboard/shared/constants.py (D4D 문서 표 하드코딩, RAC_MATRIX MappingProxyType read-only), tests/test_constants.py + test_schemas.py 총 45개 통과" },
     { "step": 2, "name": "layer-02-mock-sensor", "status": "pending" },
     { "step": 3, "name": "layer-03-deterministic-channels", "status": "pending" },
     { "step": 4, "name": "layer-03-ai-stub-channels", "status": "pending" },

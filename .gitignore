@@ -3,6 +3,8 @@ node_modules/
 out/
 next-env.d.ts
 tsconfig.tsbuildinfo
+package-lock.json
+package.json
 
 # phase execution outputs
 phases/**/phase*-output.json
