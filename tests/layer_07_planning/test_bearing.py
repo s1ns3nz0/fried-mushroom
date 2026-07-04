@@ -15,11 +15,28 @@ def test_physical_no_bearing_fallback():
 
 
 def test_remote_with_bearing():
-    assert compute_bearing("REMOTE", 45.0, {}) == (225.0, "threat_reverse(channel)")
+    bearing, anchor = compute_bearing("REMOTE", 45.0, {})
+    assert bearing == 225.0
+    assert anchor == "threat_reverse(channel)"
+
+
+def test_remote_with_bearing_wraparound():
+    bearing, anchor = compute_bearing("REMOTE", 270.0, {})
+    assert bearing == 90.0
+    assert anchor == "threat_reverse(channel)"
 
 
 def test_remote_no_bearing():
-    assert compute_bearing("REMOTE", None, {}) == (None, "last_known_good_position")
+    bearing, anchor = compute_bearing("REMOTE", None, {})
+    assert bearing is None
+    assert anchor == "last_known_good_position"
+
+
+def test_remote_no_bearing_ctx_ignored():
+    ctx = {"lowest_exposure_bearing_deg": 90, "optimal_terrain_bearing_deg": 180}
+    bearing, anchor = compute_bearing("REMOTE", None, ctx)
+    assert bearing is None
+    assert anchor == "last_known_good_position"
 
 
 def test_navigation():

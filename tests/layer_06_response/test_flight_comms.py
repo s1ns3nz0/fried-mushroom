@@ -19,6 +19,16 @@ def test_high_late_remote():
     assert resolve("High", "후기", "REMOTE") == ("REROUTE", "L2", None)
 
 
+def test_high_mid_remote():
+    assert resolve("High", "중기", "REMOTE") == ("REROUTE", "L2", None)
+
+
+def test_high_early_remote():
+    assert resolve("High", "초기", "REMOTE") == (
+        "POSTURE_ELEVATE", "L1", "INCREASE_ASSESSMENT_FREQUENCY"
+    )
+
+
 def test_high_late_navigation():
     assert resolve("High", "후기", "NAVIGATION") == ("ALTITUDE_CHANGE_REROUTE", "L2", None)
 
