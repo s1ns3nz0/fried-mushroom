@@ -56,3 +56,28 @@ def test_degenerate_bbox_no_div_zero():
     # 단일점/동일좌표 bbox 도 예외 없이 처리.
     b = compute_bbox([{"lat": 37.5, "lon": 127.0}, {"lat": 37.5, "lon": 127.0}])
     assert isinstance(terrain_elev_m(37.5, 127.0, b), float)
+
+
+# ── compute_bbox degenerate/부분좌표 방어 ──────────────────────────────────
+
+
+def test_compute_bbox_empty_returns_zero():
+    assert compute_bbox([]) == {"lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0}
+
+
+def test_compute_bbox_all_missing_coords_returns_zero():
+    assert compute_bbox([{"alt_m": 100}, {"lat": None, "lon": None}]) == {
+        "lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0
+    }
+
+
+def test_compute_bbox_partial_waypoint_does_not_stretch():
+    # {"lat": 99}(lon 결측)은 페어 필터로 제외 — 정상 점들의 bbox 를 왜곡하지 않는다.
+    wps = [{"lat": 1.0, "lon": 1.0}, {"lat": 2.0, "lon": 2.0}, {"lat": 99.0}]
+    bbox = compute_bbox(wps)
+    assert bbox == {"lat_min": 1.0, "lat_max": 2.0, "lon_min": 1.0, "lon_max": 2.0}
+
+
+def test_compute_bbox_valid_pairs_unchanged():
+    wps = [{"lat": 1.0, "lon": 3.0}, {"lat": 2.0, "lon": 5.0}]
+    assert compute_bbox(wps) == {"lat_min": 1.0, "lat_max": 2.0, "lon_min": 3.0, "lon_max": 5.0}
