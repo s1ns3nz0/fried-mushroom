@@ -12,7 +12,7 @@ uav_instance_type    = "t3.medium" # 2 vCPU / 4GB (amd64)
 ground_instance_type = "t3.small"
 
 # SSH 허용 CIDR — 본인 IP로 좁힐 것 (예: "203.0.113.10/32")
-allowed_ssh_cidr = "0.0.0.0/0"
+allowed_ssh_cidr = "203.0.113.4/32" # 본인 공인 IP/32 로 교체 (0.0.0.0/0 금지 — F-10)
 
 # 노출 포트
 ground_app_port = 8400
