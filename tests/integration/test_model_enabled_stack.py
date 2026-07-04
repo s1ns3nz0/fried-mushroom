@@ -282,30 +282,46 @@ def test_scc1_narrative_embed_does_not_change_rac():
 # ── 6. 폴백 정합: 선택 의존 미설치 시 동일 계약 ─────────────────────────────
 
 
-def test_fallback_parity_full_stack_without_sentence_transformers(monkeypatch):
-    """sentence_transformers 미설치 상태(모든 모델 None)에서도 전스택이 동일 계약으로 완주."""
-    import embedding as emb_mod
-    monkeypatch.setattr(emb_mod, "_load", lambda name: None)
-    monkeypatch.setattr(nlp_model, "_load", lambda name: None)
+def test_fallback_parity_full_stack_without_sentence_transformers(store, monkeypatch):
+    """sentence_transformers 미설치(NLP/embedding None) 시 전스택이 동일 계약으로 완주.
 
+    embedding 폴백 경로: _embed_narrative → None → retrieve_semantic이 메타필터-only로 하향.
+    """
+    import corpus as corpus_mod
+    monkeypatch.setattr(nlp_model, "_load", lambda name: None)
+    # _embed_narrative None → retrieve_semantic query_vec=None → 메타필터-only 하향
+    monkeypatch.setattr(corpus_mod, "_embed_narrative", lambda text: None)
+
+    # GCS 경로
     draft = assemble_draft(_gcs_inputs(use_nlp=True))
     assert "draft_brief" in draft
     assert "signal_cards" in draft
+
+    # RAG 경로 — embedding 미가용 → 메타필터-only 폴백(크래시 없음) 검증
+    store.ingest_episode(_corpus_episode("m-fall", "저격조 T3 확인됨."))
+    results = store.retrieve_semantic("저격 T3", mission_context="정찰", threat_event="T3")
+    assert isinstance(results, list)
+
+    # 온보드 경로
     brief = draft["draft_brief"]
     out = run_cycle(_onboard_raw(), brief)
     assert "risk" in out
 
 
 def test_fallback_parity_corpus_meta_filter_only(store, monkeypatch):
-    """embedding 미가용 시 corpus.retrieve 가 메타필터-only 로 하향(크래시 없음)."""
-    store.ingest_episode(_corpus_episode("m-fall", "저격조 T3 확인됨."))
+    """embedding 미가용 시 corpus.retrieve_semantic 이 메타필터-only 로 하향(크래시 없음).
 
-    # embed_narrative 를 None 반환으로 monkeypatch
+    인제스트 이전 패치 → ingest 시점 embedding도 None.
+    retrieve_semantic: _embed_narrative → None → query_vec=None → 메타필터-only.
+    """
     import corpus as corpus_mod
+    # 인제스트 이전 패치 — ingest 시 embedding None, query 시 embedding None
     monkeypatch.setattr(corpus_mod, "_embed_narrative", lambda text: None)
 
-    # 인제스트 후 회수
-    results = store.retrieve(mission_context="정찰", threat_event="T3")
+    store.ingest_episode(_corpus_episode("m-fall", "저격조 T3 확인됨."))
+
+    # retrieve_semantic: query_vec=None → retrieve(narrative_query_embedding=None) → 메타필터-only
+    results = store.retrieve_semantic("저격 T3", mission_context="정찰", threat_event="T3")
     assert isinstance(results, list)
 
 
