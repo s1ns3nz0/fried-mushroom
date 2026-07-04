@@ -165,6 +165,64 @@ async def health() -> dict[str, Any]:
     return {"status": "ok", "backlog": len(hub.backlog())}
 
 
+# ── 실시간 텔레메트리 스트림 — 시뮬레이터 → 대시보드 (로그 스트림과 분리) ──
+
+# 텔레메트리 전용 허브 — 로그 스트림 hub 와 완전히 분리된 인스턴스.
+stream_hub = LogHub()
+
+# 최근 수신한 init 스냅샷 — 신규 /stream 구독자에게 항상 먼저 전송.
+latest_init: dict[str, Any] | None = None
+
+# 시뮬레이터 제어 상태 — /control 로 merge 갱신.
+latest_control: dict[str, Any] = {"speed": 1.0}
+
+
+@app.post("/init")
+async def post_init(body: dict[str, Any]) -> dict[str, str]:
+    """시뮬레이터 → 스트림: 초기 상태 수신 → 저장 + 구독자 broadcast."""
+    global latest_init
+    latest_init = body
+    await stream_hub.publish({"type": "init", **body})
+    return {"status": "ok"}
+
+
+@app.post("/tick")
+async def post_tick(body: dict[str, Any]) -> dict[str, str]:
+    """시뮬레이터 → 스트림: 틱 1건 수신 → 구독자 broadcast."""
+    await stream_hub.publish({"type": "tick", **body})
+    return {"status": "ok"}
+
+
+@app.websocket("/stream")
+async def ws_stream(ws: WebSocket) -> None:
+    """스트림 → 대시보드: 접속 시 init 우선 전송 후 backlog + 실시간 push."""
+    await ws.accept()
+    if latest_init is not None:
+        await ws.send_json({"type": "init", **latest_init})
+    await stream_hub.subscribe(ws)
+    try:
+        while True:
+            # 대시보드는 수신 전용. 연결 유지를 위해 수신 대기(클라 메시지는 무시).
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stream_hub.unsubscribe(ws)
+
+
+@app.post("/control")
+async def post_control(body: dict[str, Any]) -> dict[str, Any]:
+    """대시보드 → 시뮬레이터: 제어 상태 merge 갱신."""
+    latest_control.update(body)
+    return {"status": "ok", "control": latest_control}
+
+
+@app.get("/control")
+async def get_control() -> dict[str, Any]:
+    """시뮬레이터 → 현재 제어 상태 조회."""
+    return latest_control
+
+
 # ── GCS(관측소) 탭 — mission_brief 조립·파이프라인 실행 엔드포인트 ──
 # (대시보드 정적화를 위해 infra/dashboard/main.py 에서 이전됨.)
 
