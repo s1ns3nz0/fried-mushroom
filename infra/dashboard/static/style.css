@@ -1,19 +1,30 @@
-/* D4D 대시보드 — 최소 다크 테마. 빌드도구·CDN 없음(vanilla). */
+/* D4D 대시보드 — Maven 다크 스킨 + 그리드 레이아웃. 빌드도구·CDN 없음(vanilla). */
 
 :root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --border: #30363d;
-  --fg: #c9d1d9;
-  --muted: #8b949e;
-  --accent: #58a6ff;
-  --anomaly: #f85149;
-  --degraded: #d29922;
-  --normal: #3fb950;
+  --bg: #0D0D0F;
+  --panel: #141417;
+  --surface-2: #1B1B1F;
+  --border: #26262B;
+  --border-2: #35353C;
+  --fg: #E8E7E2;
+  --muted: #98979F;
+  --accent: #F0A03C;
+  --accent-strong: #FFB95A;
+  --normal: #4CC38A;
+  --degraded: #E5A93D;
+  --anomaly: #F0555D;
+  --radius-panel: 6px;
+  --radius-chip: 999px;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
@@ -21,162 +32,562 @@ body {
   font-family: system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--fg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
+/* ── 탭 뷰 컨테이너 — 관측(#view-observation) / 관측소(#view-gcs) ── */
+
+.view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+/* ── 그리드 레이아웃 — topbar 아래 2fr:1fr, 뷰포트에 바인딩(페이지 스크롤 없음) ── */
+
+#grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+  padding: 8px;
+}
+
+#col-main,
+#col-side {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#main-upper {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+}
+
+#main-left {
+  flex: 62 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#main-right {
+  flex: 38 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── 상단 topbar — 타이틀/소티 + phase 칩 + 연결상태 ─────────── */
+
 #topbar {
+  flex: none;
+  height: 40px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 0 12px;
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
 .brand {
   font-weight: 600;
-  color: var(--accent);
-}
-
-.status {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 2px 8px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-}
-
-.status-on {
-  color: var(--normal);
-  border-color: var(--normal);
-}
-
-.status-off {
-  color: var(--muted);
-}
-
-#grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 8px;
-  padding: 8px;
-  height: calc(100vh - 42px);
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 8px;
-  overflow: auto;
-}
-
-.panel h2 {
-  margin: 0 0 8px;
   font-size: 13px;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.sortie {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.topbar-spacer {
+  flex: 1 1 auto;
+}
+
+/* ── 탭 내비게이션 (관측 / 관측소) — 디자인 토큰 pill, active = 앰버 ── */
+
+#tab-nav {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-chip);
+}
+
+.tab-btn {
+  font-family: inherit;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-}
-
-canvas {
-  width: 100%;
-  height: auto;
-  background: #010409;
-  border-radius: 4px;
-}
-
-/* ── 실시간 로그 패널 ─────────────────────────────────── */
-
-#panel-log {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.log-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 6px;
-}
-
-.ctl-row {
-  display: flex;
-  gap: 4px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.ctl-input,
-.ctl-select {
-  flex: 1 1 90px;
-  min-width: 0;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 3px 6px;
-  font-size: 11px;
-  font-family: inherit;
-}
-
-.ctl-input:focus,
-.ctl-select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.ctl-btn {
-  background: var(--accent);
-  color: #0d1117;
-  border: none;
-  border-radius: 4px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 600;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 2px 12px;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.ctl-btn:hover {
-  filter: brightness(1.1);
+.tab-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.ctl-btn-ghost {
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid var(--border);
+.tab-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.ctl-check {
-  font-size: 11px;
-  color: var(--muted);
-  display: flex;
+.chip {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--muted);
   white-space: nowrap;
 }
 
-.ctl-meta {
-  margin-left: auto;
+#phase-chip {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg);
+  padding: 3px 10px;
+  border-radius: var(--radius-chip);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+}
+
+.status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+
+.status-on::before {
+  background: var(--normal);
+}
+
+.status-off::before {
+  background: var(--muted);
+}
+
+/* ── 배속 세그먼트 컨트롤 (#panel-map 헤더 우측) ──────────────── */
+
+.speed-control {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-chip);
+}
+
+.speed-btn {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.speed-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.speed-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ── 패널 공통 크롬 — 그리드/플렉스 셀 ────────────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  overflow: hidden;
+}
+
+.fp-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fp-head h2 {
+  margin: 0;
   font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.fp-meta {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.06em;
+}
+
+.fp-head .status {
+  font-size: 10px;
+  padding: 2px 8px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ── 지도 패널 — 헤더(타이틀 + 배속) + 캔버스가 남는 영역을 채움 ── */
+
+#panel-map {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.map-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  background: #0A0A0C;
+}
+
+#map-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #0A0A0C;
+}
+
+/* ── 사이드: AI 결정 로그 ─────────────────────────────────────── */
+
+#panel-decision {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#decision-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  font-family: var(--mono);
+}
+
+/* 이벤트 박스 — 탐지→평가→대응(+재계획/재개)이 하나의 조우 이벤트로 묶인다 */
+.decision-event {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--border-2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0 0 6px;
+}
+
+/* 활성(최신 열린) 이벤트 — 앰버 좌측 엣지 인디케이터 */
+.decision-event.evt-active {
+  border-left-color: var(--accent);
+}
+
+.decision-event-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.evt-id {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+}
+
+.evt-ts {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.decision-stage {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  line-height: 1.4;
+}
+
+.decision-stage .decision-badge {
+  margin-right: 0;
+}
+
+.decision-stage .log-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.stage-ts {
+  flex: none;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.decision-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  margin-right: 6px;
+  border-radius: var(--radius-chip);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--bg);
+  flex: none;
+}
+
+.badge-detect {
+  background: var(--degraded);
+}
+
+.badge-assess {
+  background: var(--anomaly);
+}
+
+.badge-respond {
+  background: var(--accent);
+}
+
+.badge-replan {
+  background: var(--muted);
+}
+
+.badge-resume {
+  background: var(--normal);
+}
+
+/* ── 메인 우측: 신호 11채널(내부 스크롤) + 기체 신호 ─────────────── */
+
+#panel-signals {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+#panel-device {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+.signals-list {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px;
+  font-family: var(--mono);
+}
+
+.sig-row {
+  display: grid;
+  grid-template-columns: minmax(70px, 106px) 8px minmax(32px, 44px) 34px 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sig-row:last-child {
+  border-bottom: none;
+}
+
+.sig-name {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sig-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.dot-normal {
+  background: var(--normal);
+}
+
+.dot-degraded {
+  background: var(--degraded);
+}
+
+.dot-anomaly {
+  background: var(--anomaly);
+}
+
+.sig-bar {
+  display: block;
+  height: 6px;
+  background: var(--border-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.sig-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.sig-qnum {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.sig-delta {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.sig-delta.delta-alert {
+  color: var(--anomaly);
+  font-weight: 600;
+}
+
+.sig-payload {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 기체 신호 — FC 텔레메트리 1행 컴팩트 리스트(자동 높이, 부족 시 내부 스크롤) */
+.device-strip {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 4px;
+}
+
+.dev-row {
+  display: grid;
+  grid-template-columns: 8px minmax(72px, 96px) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dev-row:last-child {
+  border-bottom: none;
+}
+
+.dev-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dev-value {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 사이드: 시스템 로그 ──────────────────────────────────────── */
+
+#panel-log {
+  flex: 1.15 1 0;
+  min-height: 0;
 }
 
 #log-list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 2px 4px;
   font-size: 12px;
   flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--mono);
 }
 
 .log-item {
-  padding: 3px 6px 3px 8px;
+  padding: 3px 6px;
   border-bottom: 1px solid var(--border);
-  border-left: 3px solid var(--border); /* correlation_id 색 그룹 */
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.4;
@@ -187,14 +598,28 @@ canvas {
   margin-right: 4px;
 }
 
-.log-layer {
-  color: var(--accent);
-  margin-right: 4px;
+/* SRC 태그 칩 — muted 기본 + SRC별 미묘한 색 구분 */
+.log-src {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 2px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
-.log-cid {
-  font-weight: 600;
-}
+.src-can { color: #d8b26a; }
+.src-fc { color: #7fc9a5; }
+.src-gps { color: #7ab8d9; }
+.src-imu { color: #c9b483; }
+.src-link { color: #d9a4c0; }
+.src-batt { color: #a4c983; }
+.src-gimbal { color: #c9a483; }
+.src-nav { color: #83b4c9; }
 
 .log-msg {
   color: var(--fg);
@@ -206,7 +631,7 @@ canvas {
 }
 
 .lvl-warn {
-  background: rgba(210, 153, 34, 0.08);
+  background: rgba(229, 169, 61, 0.08);
 }
 
 .lvl-warn .log-msg {
@@ -214,9 +639,339 @@ canvas {
 }
 
 .lvl-error {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(240, 85, 93, 0.1);
 }
 
 .lvl-error .log-msg {
+  color: var(--anomaly);
+}
+
+/* ── 지도 하단: 고도 프로파일 strip ───────────────────────────── */
+
+#panel-profile {
+  flex: none;
+  height: 140px;
+}
+
+#profile-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  display: block;
+  background: transparent;
+}
+
+/* ── 관측소(GCS) 뷰 — 프리셋 | 편집기 | JSON 미리보기 + 하단 액션바 ── */
+
+#gcs-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 340px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px;
+}
+
+.gcs-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.gcs-panel-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* 좌: 시나리오 프리셋 목록 */
+
+#gcs-scenario-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+}
+
+.gcs-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  font-family: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--border-2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.gcs-preset:hover {
+  border-color: var(--accent);
+}
+
+.gcs-preset.active {
+  border-left-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.gcs-preset-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+}
+
+.gcs-preset-meta {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 중앙: METT+TC 편집기 폼 */
+
+#gcs-form {
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gcs-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.gcs-section {
+  margin: 0;
+  min-width: 0;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-panel);
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gcs-section legend {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+  padding: 0 4px;
+}
+
+.gcs-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.gcs-field-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.gcs-field-grid label.gcs-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  align-self: end;
+  padding-bottom: 5px;
+}
+
+#gcs-form input[type="text"],
+#gcs-form input[type="number"],
+#gcs-form select,
+#gcs-raw-select {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  padding: 4px 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+#gcs-form input:focus-visible,
+#gcs-form select:focus-visible,
+#gcs-raw-select:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
+
+#gcs-form input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+/* 웨이포인트 테이블 + 기지 좌표 */
+
+#gcs-wp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+#gcs-wp-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 2px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+#gcs-wp-table td {
+  padding: 2px 4px 2px 0;
+}
+
+.gcs-wp-remove {
+  padding: 3px 8px;
+  line-height: 1;
+}
+
+#gcs-wp-add {
+  align-self: flex-start;
+}
+
+.gcs-bases {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.gcs-base-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.gcs-base-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* 우: mission_brief JSON 미리보기 + raw 바인딩 */
+
+#gcs-json-preview {
+  margin: 0;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre;
+  overflow: auto;
+}
+
+.gcs-raw-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#gcs-raw-bound {
+  flex: none;
+}
+
+/* 하단 액션바 + 버튼/상태 */
+
+#gcs-actionbar {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
+.gcs-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gcs-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.gcs-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.gcs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gcs-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.gcs-btn-primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: var(--bg);
+}
+
+.gcs-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gcs-status.ok {
+  color: var(--normal);
+}
+
+.gcs-status.err {
   color: var(--anomaly);
 }

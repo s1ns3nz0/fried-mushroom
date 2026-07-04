@@ -1,0 +1,5 @@
+{
+  "_comment": "정적 배포용 프론트 설정 — 프론트는 /config.json(이 파일) → /config(로컬 dev 백엔드) → 내장 기본값 순으로 조회한다. prod 배포 시 이 값들을 수집기의 공개 TLS URL(예: wss://collector.example.com/logs, https://collector.example.com)로 덮어쓴다.",
+  "log_ws_url": "ws://localhost:8500/logs",
+  "collector_http_url": "http://localhost:8500"
+}

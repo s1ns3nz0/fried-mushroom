@@ -1,0 +1,50 @@
+# ⚠️ 대시보드는 정적 자산만 배포된다. GCS 탭의 /gcs/run 백엔드는 별도 서비스(로그수집기/ground)로
+# 이관 필요 — 정적 S3에서는 동작하지 않음.
+#
+# 필요한 repo secrets/vars:
+#   secrets.AWS_ROLE_ARN            ← terraform output deploy_role_arn
+#   secrets.AWS_REGION              ← terraform var region (예: ap-northeast-2)
+#   vars.DASHBOARD_BUCKET           ← terraform output dashboard_bucket
+#   vars.CLOUDFRONT_DISTRIBUTION_ID ← (옵션) enable_cloudfront=true 시 CloudFront 배포 ID
+name: deploy-dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/dashboard/static/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync static assets to S3
+        env:
+          # terraform output dashboard_bucket 값을 repo variable로 등록
+          BUCKET: ${{ vars.DASHBOARD_BUCKET }}
+        # Split layout: JS/CSS assets go under /static/ (index.html references
+        # them as /static/...), while index.html and config.json sit at the
+        # bucket root (frontend fetches /config.json; CloudFront DefaultRootObject=index.html).
+        run: |
+          aws s3 sync infra/dashboard/static/ "s3://$BUCKET/static/" --delete --exclude "index.html" --exclude "config.json"
+          aws s3 cp infra/dashboard/static/index.html "s3://$BUCKET/index.html"
+          aws s3 cp infra/dashboard/static/config.json "s3://$BUCKET/config.json"
+
+      - name: Invalidate CloudFront cache
+        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"

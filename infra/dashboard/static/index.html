@@ -1,93 +1,249 @@
 <!--
-  D4D 대시보드 UI — 2x2 그리드 (지도 / 고도 / 신호 / 실시간 로그).
-  대시보드는 판단하지 않는다 — uav 상태·로그를 표시(관측)만 한다.
+  D4D 대시보드 UI — 그리드 레이아웃 (topbar + 2fr:1fr 그리드, Maven 다크 스킨).
+  대시보드는 판단하지 않는다 — uav 상태·로그·mock 결정 로그를 표시(관측)만 한다.
   실시간 로그는 로그수집기 WS /logs 에서 브라우저가 직접 수신한다.
-  Canvas placeholder 렌더는 app.js(drawMap/drawProfile/drawSignals),
-  로그 패널은 app.js(로그 스트림 클라이언트)에서 담당.
+  배치: 상단 topbar(브랜드/소티/phase/연결상태) ·
+  좌측 main(상단: 지도+고도 프로파일 | 우측: 신호 11채널+UAV 기체 신호) ·
+  우측 side(AI 결정 로그 + 시스템 로그). 페이지는 스크롤하지 않고 내부 리스트만 스크롤.
+  Canvas placeholder 렌더는 app.js(drawMap/drawProfile/renderSignals),
+  AI 결정 패널은 mock 시나리오 이벤트(app.js pushDecision)로 구동,
+  시스템 로그 패널은 app.js(로그 스트림 클라이언트)에서 담당.
 -->
+
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>D4D Dashboard</title>
 <link rel="stylesheet" href="/static/style.css" />
 
 <header id="topbar">
-  <span class="brand">D4D · Onboard AI 관측</span>
+  <span class="brand">D4D · UAV 관측</span>
+  <span class="sortie">SORTIE D4D-2606-A3</span>
+  <nav id="tab-nav" role="tablist" aria-label="뷰 전환">
+    <button type="button" class="tab-btn active" data-view="observation" role="tab" aria-selected="true">관측</button>
+    <button type="button" class="tab-btn" data-view="gcs" role="tab" aria-selected="false">관측소</button>
+  </nav>
+  <span id="phase-chip" class="chip">—</span>
+  <span class="topbar-spacer"></span>
   <span id="conn-status" class="status status-off">disconnected</span>
+  <span class="chip">관측 전용</span>
 </header>
 
-<main id="grid">
-  <!-- 좌상: top-down 지도 (지형 + 경로 + 드론 + 위협) — placeholder -->
-  <section class="panel" id="panel-map">
-    <h2>지도 (Map)</h2>
-    <canvas id="map-canvas" width="480" height="360"></canvas>
-  </section>
-
-  <!-- 우상: 고도 프로파일 (지형 표고 + 드론 고도) — placeholder -->
-  <section class="panel" id="panel-profile">
-    <h2>고도 (Elevation)</h2>
-    <canvas id="profile-canvas" width="480" height="360"></canvas>
-  </section>
-
-  <!-- 좌하: 11 의미 채널 신호 (state/quality) — placeholder -->
-  <section class="panel" id="panel-signals">
-    <h2>신호 (Signals · C2 11채널)</h2>
-    <canvas id="signals-canvas" width="480" height="360"></canvas>
-  </section>
-
-  <!-- 우하: 실시간 로그 (로그수집기 WS /logs) -->
-  <section class="panel" id="panel-log">
-    <h2>실시간 로그 (Log Stream · WS /logs)</h2>
-
-    <!-- 연결 설정 -->
-    <div class="log-controls">
-      <div class="ctl-row">
-        <input
-          id="log-ws-url"
-          type="text"
-          class="ctl-input"
-          placeholder="ws://localhost:8500/logs"
-          spellcheck="false"
-        />
-        <button id="log-connect-btn" class="ctl-btn" type="button">연결</button>
+<div id="view-observation" class="view">
+<div id="grid">
+  <div id="col-main">
+    <div id="main-upper">
+      <div id="main-left">
+        <!-- 지도: top-down 지형 + 경로 + 드론/적 + 시야각 + 복귀경로 -->
+        <section class="panel" id="panel-map">
+          <div class="fp-head">
+            <h2>지도 / 경로</h2>
+            <div id="speed-control" class="speed-control" role="group" aria-label="배속">
+              <button type="button" class="speed-btn active" data-scale="1">×1</button>
+              <button type="button" class="speed-btn" data-scale="2">×2</button>
+              <button type="button" class="speed-btn" data-scale="4">×4</button>
+              <button type="button" class="speed-btn" data-scale="8">×8</button>
+            </div>
+          </div>
+          <div class="map-wrap">
+            <canvas id="map-canvas" width="960" height="640"></canvas>
+          </div>
+        </section>
+        <!-- 고도 프로파일 (지형 표고 + 드론 고도) -->
+        <section class="panel" id="panel-profile">
+          <div class="fp-head">
+            <h2>고도 프로파일</h2>
+            <span class="fp-meta">ALT / DIST</span>
+          </div>
+          <canvas id="profile-canvas" width="420" height="120"></canvas>
+        </section>
       </div>
-
-      <!-- 필터 -->
-      <div class="ctl-row">
-        <select id="filter-level" class="ctl-select" title="level 필터">
-          <option value="">level: 전체</option>
-          <option value="info">info</option>
-          <option value="warn">warn</option>
-          <option value="error">error</option>
-        </select>
-        <input
-          id="filter-layer"
-          type="text"
-          class="ctl-input"
-          placeholder="layer 검색"
-          spellcheck="false"
-        />
-        <input
-          id="filter-cid"
-          type="text"
-          class="ctl-input"
-          placeholder="correlation_id 검색"
-          spellcheck="false"
-        />
-      </div>
-
-      <!-- mock (개발용) -->
-      <div class="ctl-row">
-        <button id="mock-inject-btn" class="ctl-btn" type="button">mock 주입</button>
-        <label class="ctl-check">
-          <input id="mock-auto" type="checkbox" /> mock 자동생성
-        </label>
-        <button id="log-clear-btn" class="ctl-btn ctl-btn-ghost" type="button">지우기</button>
-        <span id="log-count" class="ctl-meta">0</span>
+      <div id="main-right">
+        <!-- 신호 (03 추상화 11채널) -->
+        <section class="panel" id="panel-signals">
+          <div class="fp-head">
+            <h2>신호 (03 추상화 11채널)</h2>
+            <span class="fp-meta">11 CH</span>
+          </div>
+          <div id="signals-list" class="signals-list"></div>
+        </section>
+        <!-- UAV 기체 신호 (FC 텔레메트리 9행) -->
+        <section class="panel" id="panel-device">
+          <div class="fp-head">
+            <h2>UAV 기체 신호</h2>
+            <span class="fp-meta">9 ROWS</span>
+          </div>
+          <div id="device-strip" class="device-strip"></div>
+        </section>
       </div>
     </div>
+  </div>
+  <div id="col-side">
+    <!-- AI 결정 로그 (mock 시나리오 이벤트 기반, 관측 전용) -->
+    <section class="panel" id="panel-decision">
+      <div class="fp-head">
+        <h2>AI 결정 로그</h2>
+        <span class="fp-meta">EVT</span>
+      </div>
+      <ul id="decision-list"></ul>
+    </section>
+    <!-- 시스템 로그 (UAV 구동 시스템 로그 · 로그수집기 WS /logs 자동연결) -->
+    <section class="panel" id="panel-log">
+      <div class="fp-head">
+        <h2>시스템 로그</h2>
+        <span id="log-status" class="status status-off" title="disconnected"
+          ><span id="log-count">0</span></span
+        >
+      </div>
+      <ul id="log-list"></ul>
+    </section>
+  </div>
+</div>
+</div>
 
-    <ul id="log-list"></ul>
-  </section>
-</main>
+<!-- 관측소(GCS) 뷰 — METT+TC mission_brief 빌더 + 파이프라인 실행기 (gcs.js 구동) -->
+<div id="view-gcs" class="view" hidden>
+  <div id="gcs-layout">
+    <!-- 좌: 시나리오 프리셋 (GET /gcs/scenarios) -->
+    <section class="panel" id="gcs-presets">
+      <div class="fp-head">
+        <h2>시나리오 프리셋</h2>
+        <span class="fp-meta">EXAMPLES</span>
+      </div>
+      <div id="gcs-scenario-list" class="gcs-scroll"></div>
+      <div class="gcs-panel-foot">
+        <button type="button" id="gcs-reset" class="gcs-btn">초기화</button>
+      </div>
+    </section>
 
+    <!-- 중앙: METT+TC 임무 브리핑 편집기 -->
+    <section class="panel" id="gcs-editor">
+      <div class="fp-head">
+        <h2>METT+TC 임무 브리핑 편집기</h2>
+        <span class="fp-meta">MISSION BRIEF</span>
+      </div>
+      <form id="gcs-form" class="gcs-scroll">
+        <p class="gcs-note">
+          GCS layer 01 미구현 — 운용자가 임무 브리핑을 직접 구성해 파이프라인에 전달합니다
+          (관측 전용, 판단은 온보드).
+        </p>
+
+        <fieldset class="gcs-section">
+          <legend>M · 임무 (Mission)</legend>
+          <div class="gcs-field-grid">
+            <label>sortie_id
+              <input type="text" id="gcs-sortie-id" placeholder="GIREOGI-0704-01" />
+            </label>
+            <label>mission_context
+              <select id="gcs-mission-context">
+                <option value="정찰">정찰</option>
+                <option value="타격">타격</option>
+                <option value="호송">호송</option>
+                <option value="수송">수송</option>
+              </select>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>E · 자세 (Posture)</legend>
+          <div class="gcs-field-grid">
+            <label>watchcon
+              <input type="number" id="gcs-watchcon" min="1" max="5" step="1" />
+            </label>
+            <label>defcon
+              <input type="number" id="gcs-defcon" min="1" max="5" step="1" />
+            </label>
+            <label>infocon
+              <input type="number" id="gcs-infocon" min="1" max="5" step="1" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>T · 가용전력 · 기체 프로필 (drone_profile)</legend>
+          <div class="gcs-field-grid">
+            <label>battery_pct
+              <input type="number" id="gcs-battery-pct" min="0" max="100" step="1" />
+            </label>
+            <label>armament (쉼표 구분)
+              <input type="text" id="gcs-armament" placeholder="예: agm_light, flare" />
+            </label>
+            <label class="gcs-check">
+              <input type="checkbox" id="gcs-spare-asset" />
+              spare_asset_available
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>T · 지형/코리더 (corridor)</legend>
+          <table id="gcs-wp-table">
+            <thead>
+              <tr><th>id</th><th>lat</th><th>lon</th><th>alt_m</th><th></th></tr>
+            </thead>
+            <tbody id="gcs-wp-body"></tbody>
+          </table>
+          <button type="button" id="gcs-wp-add" class="gcs-btn">+ 웨이포인트</button>
+          <div class="gcs-bases">
+            <div class="gcs-base-row">
+              <span class="gcs-base-label">emergency</span>
+              <input type="number" id="gcs-base-em-lat" step="any" placeholder="lat" />
+              <input type="number" id="gcs-base-em-lon" step="any" placeholder="lon" />
+              <input type="number" id="gcs-base-em-alt" step="any" placeholder="alt_m" />
+            </div>
+            <div class="gcs-base-row">
+              <span class="gcs-base-label">alternate</span>
+              <input type="number" id="gcs-base-al-lat" step="any" placeholder="lat" />
+              <input type="number" id="gcs-base-al-lon" step="any" placeholder="lon" />
+              <input type="number" id="gcs-base-al-alt" step="any" placeholder="alt_m" />
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="gcs-section">
+          <legend>T+C · 가중치 (weights)</legend>
+          <div class="gcs-field-grid">
+            <label>stealth
+              <input type="number" id="gcs-w-stealth" min="0" max="1" step="0.05" />
+            </label>
+            <label>survival
+              <input type="number" id="gcs-w-survival" min="0" max="1" step="0.05" />
+            </label>
+            <label>info_value
+              <input type="number" id="gcs-w-info" min="0" max="1" step="0.05" />
+            </label>
+            <label>timeliness
+              <input type="number" id="gcs-w-time" min="0" max="1" step="0.05" />
+            </label>
+          </div>
+        </fieldset>
+      </form>
+    </section>
+
+    <!-- 우: 조립된 mission_brief JSON 미리보기 + raw 센서 입력 바인딩 -->
+    <section class="panel" id="gcs-preview-panel">
+      <div class="fp-head">
+        <h2>mission_brief JSON</h2>
+        <span class="fp-meta">LIVE</span>
+      </div>
+      <pre id="gcs-json-preview" class="gcs-scroll"></pre>
+      <div class="gcs-panel-foot">
+        <label class="gcs-raw-label">raw 센서 입력
+          <select id="gcs-raw-select"></select>
+        </label>
+        <span id="gcs-raw-bound" class="fp-meta">raw: —</span>
+      </div>
+    </section>
+
+    <!-- 하단 액션바 -->
+    <div class="panel" id="gcs-actionbar">
+      <button type="button" id="gcs-validate" class="gcs-btn">검증</button>
+      <button type="button" id="gcs-run" class="gcs-btn gcs-btn-primary">임무 전달 · 파이프라인 실행</button>
+      <span id="gcs-run-status" class="gcs-status"></span>
+    </div>
+  </div>
+</div>
+
+<script src="/static/render.js"></script>
 <script src="/static/app.js"></script>
+<script src="/static/gcs.js"></script>

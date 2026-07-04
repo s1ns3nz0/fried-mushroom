@@ -9,3 +9,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+
+# log_server.py /gcs/* 가 pipeline_feeder(cycle_to_log_entries)를 import — 모듈이
+# httpx 를 최상단에서 import 하므로 필요(온보드 파이프라인 자체는 표준 라이브러리만 사용).
+httpx

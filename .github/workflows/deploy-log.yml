@@ -1,0 +1,56 @@
+# 로그수집기(log collector) 이미지 빌드 → ECR push → 지상 EC2에 SSM으로 재기동.
+#
+# 필요한 repo secrets/vars:
+#   secrets.AWS_ROLE_ARN     ← terraform output deploy_role_arn
+#   secrets.AWS_REGION       ← terraform var region (예: ap-northeast-2)
+#   vars.GROUND_INSTANCE_ID  ← terraform output ground_instance_id
+#
+# SSM 배포 전제: 지상 EC2에 SSM agent 실행 + AmazonSSMManagedInstanceCore가 붙은
+# instance profile 부착 (infra/terraform/instance_profile.tf에서 이미 구성됨).
+name: deploy-log-collector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/log/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE: fried-mushroom-uav/log
+        run: |
+          # 빌드 컨텍스트 = repo 루트 — 이미지에 src/onboard + examples/ 포함(Dockerfile 참고).
+          docker build -f infra/log/Dockerfile -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" .
+          docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
+          docker push "$REGISTRY/$IMAGE:latest"
+
+      - name: Redeploy log container on ground EC2 via SSM
+        if: ${{ vars.GROUND_INSTANCE_ID != '' }}
+        run: |
+          # compose 경로는 terraform templates/ground_user_data.sh.tftpl의 APP_DIR과 일치해야 함.
+          aws ssm send-command \
+            --instance-ids "${{ vars.GROUND_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy log collector ${{ github.sha }}" \
+            --parameters 'commands=["cd /opt/fried-mushroom-uav && aws ecr get-login-password --region '"${{ secrets.AWS_REGION }}"' | docker login --username AWS --password-stdin $(grep ECR_REGISTRY .env | cut -d= -f2) && docker compose pull log && docker compose up -d log"]'

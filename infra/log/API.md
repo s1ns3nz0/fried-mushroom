@@ -81,7 +81,7 @@
 - 동작: 검증 → backlog 링버퍼 적재 → 모든 WS 구독자에 broadcast. `ts` 없으면 서버가 채움.
 
 ```bash
-curl -X POST http://localhost:8181/log \
+curl -X POST http://localhost:8500/log \
   -H 'Content-Type: application/json' \
   -d '{"correlation_id":"A001","layer":"sensor","log":"배터리 부족","level":"warn"}'
 # → {"status":"ok"}
