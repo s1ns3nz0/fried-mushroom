@@ -191,3 +191,48 @@ class TestSignalToThreat:
         assert len(C.T4_MULTI_CHANNEL_CONDITIONS) == 3
         channels = {e["channel"] for e in C.T4_MULTI_CHANNEL_CONDITIONS}
         assert channels == {"proximity_object", "mission_phase", "link_status"}
+
+
+# ---------------------------------------------------------------------------
+# 전 상수 불변성 스윕 (CLAUDE.md CRITICAL: 하드코딩 상수 함수 인자 오버라이드 불가)
+# ---------------------------------------------------------------------------
+
+from collections.abc import Mapping  # noqa: E402
+
+
+def _public_mapping_constants():
+    """constants 모듈의 public Mapping 상수 (name, mapping). 신규 상수 자동 포함."""
+    for name in sorted(dir(C)):
+        if name.startswith("_"):
+            continue
+        val = getattr(C, name)
+        if isinstance(val, Mapping):
+            yield name, val
+
+
+class TestAllCoreConstantsImmutable:
+    """RAC_MATRIX 뿐 아니라 모든 Mapping 상수가 read-only 여야 한다.
+
+    plain dict 상수를 실수로 추가하면(=오버라이드 가능) 이 테스트가 실패한다.
+    """
+
+    @pytest.mark.parametrize(
+        "name,mapping", list(_public_mapping_constants()), ids=lambda v: v if isinstance(v, str) else ""
+    )
+    def test_mapping_constant_is_read_only(self, name, mapping) -> None:
+        assert mapping, f"{name} 이 비어있음 — 불변성 스윕이 자명해짐"
+        key = next(iter(mapping))
+        with pytest.raises(TypeError):
+            mapping[key] = "MUTATED"  # type: ignore[index]
+
+    def test_signal_to_threat_entries_read_only(self) -> None:
+        # SIGNAL_TO_THREAT 은 MappingProxyType 의 tuple — 각 엔트리도 불변이어야 한다.
+        assert C.SIGNAL_TO_THREAT
+        for entry in C.SIGNAL_TO_THREAT:
+            with pytest.raises(TypeError):
+                entry["channel"] = "MUTATED"  # type: ignore[index]
+
+    def test_sweep_covers_known_critical_constants(self) -> None:
+        # 스윕이 실제로 핵심 상수들을 훑는지 (빈 파라미터화로 자명 통과 방지).
+        names = {name for name, _ in _public_mapping_constants()}
+        assert {"RAC_MATRIX", "PHASE_THREAT_MULTIPLIER", "BASE_RATE_PHYSICAL"} <= names
