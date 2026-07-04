@@ -88,13 +88,28 @@ def test_deterministic_trajectory_same_seed():
     assert traj(42) == traj(42)
 
 
-def test_route_avoids_feasible_enemies_e2e():
-    # E2E 관점: 시나리오 적 중 회피 가능(끝점 원 밖)한 적은 경로 전 leg 가 탐지반경 밖.
-    scen = build_scenario(_BRIEF, seed=42)
+# 회피가 실제로 일어나는(feasible) 시나리오 — E.tracks 로 끝점 밖 적 배치(반경 작게).
+_AVOID_BRIEF = {
+    **_BRIEF,
+    "enemy_tracks": [
+        # corridor 중점 근처, 반경 150m → 양 끝점(~350m)이 반경 밖 → 우회 가능.
+        {"id": "trk-1", "kind": "T3", "lat": 37.50225, "lon": 127.00225,
+         "radius_m": 150, "confidence": 0.9},
+    ],
+}
+
+
+def test_route_actually_detours_feasible_enemy_e2e():
+    # 공허(vacuous) 방지: 회피 가능 적 → 우회점이 실제 삽입되고(경로 > corridor 점수),
+    # 모든 leg 가 탐지반경 밖(E2E 레벨 회피 궤적 확인). 단위 leg P2 는 test_route 소관.
+    scen = build_scenario(_AVOID_BRIEF, seed=42)
     route = scen["route"]
-    for e in scen["enemies"]:
-        feasible = all(haversine_m(wp, e["pos"]) >= e["detect_radius_m"]
-                       for wp in (route[0], route[-1]))
-        if feasible:
-            legs = [_segment_clearance(route[i], route[i + 1], e) for i in range(len(route) - 1)]
-            assert all(c >= e["detect_radius_m"] for c in legs)
+    n_wps = len(_AVOID_BRIEF["corridor"]["waypoints"])
+    assert len(route) > n_wps, f"우회점 미삽입(직진) — 회피 미검증: {len(route)} <= {n_wps}"
+    enemy = scen["enemies"][0]
+    # 이 시나리오는 실제로 feasible 해야 한다(끝점 원 밖).
+    assert all(haversine_m(wp, enemy["pos"]) >= enemy["detect_radius_m"]
+               for wp in (route[0], route[-1]))
+    legs = [_segment_clearance(route[i], route[i + 1], enemy) for i in range(len(route) - 1)]
+    assert all(c >= enemy["detect_radius_m"] for c in legs), \
+        f"leg 이 탐지원 관통: {[round(c, 1) for c in legs]}"
