@@ -1461,7 +1461,7 @@ function drawMap() {
       if (live.satellite && typeof en.radius === "number" && en.radius > 0) {
         ctx.save();
         ctx.beginPath();
-        ctx.arc(ex, ey, en.radius * W, 0, Math.PI * 2);
+        ctx.ellipse(ex, ey, en.radius * W, en.radius * H, 0, 0, Math.PI * 2);
         ctx.setLineDash([5, 4]);
         ctx.strokeStyle = en.discovered ? "rgba(255,185,90,0.72)" : "rgba(240,85,93,0.72)";
         ctx.lineWidth = 2.5;
