@@ -8,7 +8,6 @@ run_cycle(raw, mission_brief) 종단 출력이 D4D 스펙의 시나리오별 의
 - DATA_WIPE/WEAPON_DROP(High+후기/중기) 경로는 타격 컨텍스트(strike)에서 검증.
 
 xfail 마커:
-- T2: #28 (04 Q_MIN 게이트가 사이버 채널을 드롭 → primary=None) 수정 전까지 탐지 불가.
 - T7 고도상승: #24 (T7 CFIT MAINTAIN vs 즉시상승 스펙 판정 미완) 해소 전까지 보류.
 """
 
@@ -67,12 +66,18 @@ def test_t1_gps_spoof_remote() -> None:
     assert out["flight_plan"]["reroute_anchor"] == "last_known_good_position"
 
 
-@pytest.mark.xfail(reason="issue #28: 04 Q_MIN 게이트가 T2 사이버 채널 드롭 → primary=None")
 def test_t2_cyber_hijack_remote() -> None:
-    """t2(C2 하이재킹): T2 탐지, REMOTE 분류. #28 수정 후 잠금."""
+    """t2(C2 하이재킹): T2 탐지, REMOTE, High → REROUTE + last_known_good_position (#28 수정 후 잠금)."""
     out = _run("t2")
     assert out["response"]["primary_threat_event"] == "T2"
     assert out["response"]["threat_category"] == "REMOTE"
+    assert out["response"]["rac"] == "High"
+    assert out["response"]["flight_action"] == "REROUTE"
+    assert out["response"]["comms_level"] == "L2"
+    assert out["response"]["nav_mode"] is None
+    assert out["response"]["payload_action"] == []
+    assert out["flight_plan"]["replan_scope"] == "FULL"
+    assert out["flight_plan"]["reroute_anchor"] == "last_known_good_position"
 
 
 def test_t7_terrain_navigation() -> None:
