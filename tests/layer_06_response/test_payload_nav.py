@@ -44,3 +44,11 @@ def test_t1_serious_no_nav():
 
 def test_t1_high_early_no_nav():
     assert nav_mode("T1", "High", "초기") is None
+
+
+def test_t2_high_late_no_nav_mode():
+    assert nav_mode("T2", "High", "후기") is None
+
+
+def test_t2_high_mid_no_nav_mode():
+    assert nav_mode("T2", "High", "중기") is None

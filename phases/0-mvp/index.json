@@ -9,8 +9,8 @@
     { "step": 4, "name": "layer-03-ai-stub-channels", "status": "completed", "summary": "src/onboard/ai_stubs/ (yolo_stub/segmentation_stub/yamnet_stub, ML lib import 없음), 새 채널 proximity_object·terrain_class, acoustic_event YAMNet 2차 게이팅 확장. run.py 11채널로 확장 (step4 순서 계약). tests/layer_03_abstraction 18개 통과 (t3 weapon anomaly, t4 person+closing, t7 terrain, terrain 항상 normal, YAMNet 게이팅, 11채널 순서)" },
     { "step": 5, "name": "layer-04-threat-modeling", "status": "completed", "summary": "src/onboard/layer_04_threat/ 5개 모듈(run, step_a_phase, step_b_mapping, step_c_confidence, step_d_outcome) — 하드코딩 룰 테이블(eval 금지), 결정론+AI 로그오즈 교차검증, 국면배수 cap 0.95. tests/layer_04_threat/ 25개 테스트(골든: t3 T3/0.917, t4 T4/0.758, t7 T7/0.820) 전체 통과, 총 71개 통과" },
     { "step": 6, "name": "layer-05-risk-assessment", "status": "completed", "summary": "src/onboard/layer_05_risk/ 5개 모듈(run, likelihood, severity, rac_matrix, compound) — RAC_MATRIX read-only 조회(오버라이드 불가), 결정론 RAC 지배 + continuous_L/S·ai_reliability 병렬 참고, urgency 정렬·priority_rank, 빈 후보 시 ambient_rac degrade. orchestrator 시그니처 run(threat, mission_brief, link_quality=None) 정합. tests/layer_05_risk/ 56개(D-1 손계산 골든 + matrix 불변성 + degradation) 통과, 전체 213 passed" },
-    { "step": 7, "name": "layer-06-response", "status": "pending" },
-    { "step": 8, "name": "layer-07-flight-planning", "status": "pending" },
+    { "step": 7, "name": "layer-06-response", "status": "completed", "summary": "src/onboard/layer_06_response/ — flight_comms(RAC×kill_chain_stage×threat_category 조회), payload_nav(DATA_WIPE/WEAPON_DROP/INS_ONLY 오버레이), run(1순위 실행+secondary_threats 요약). tests/layer_06_response/ 26 PASSED." },
+    { "step": 8, "name": "layer-07-flight-planning", "status": "completed", "summary": "src/onboard/layer_07_planning/ — bearing(threat_category별 target bearing), altitude(flight_action별 delta_m 상수 테이블), run(replan_scope 매핑+bearing/altitude 조합→FlightPlanOutput). tests/layer_07_planning/ 20 PASSED." },
     { "step": 9, "name": "end-to-end-orchestrator", "status": "pending" }
   ]
 }

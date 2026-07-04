@@ -85,3 +85,25 @@ def test_ai_reliability_propagated():
     risk = {"candidates": [_make_candidate("T3", "High", "후기", ai_reliability="low")]}
     out = run(risk, _BRIEF)
     assert out["ai_reliability"] == "low"
+
+
+def test_t1_high_late_remote_reroute():
+    risk = {"candidates": [_make_candidate("T1", "High", "후기")]}
+    out = run(risk, _BRIEF)
+    assert out["primary_threat_event"] == "T1"
+    assert out["threat_category"] == "REMOTE"
+    assert out["flight_action"] == "REROUTE"
+    assert out["comms_level"] == "L2"
+    assert out["nav_mode"] == "INS_ONLY"
+    assert out["payload_action"] == []
+
+
+def test_t2_high_late_remote_reroute():
+    risk = {"candidates": [_make_candidate("T2", "High", "후기")]}
+    out = run(risk, _BRIEF)
+    assert out["primary_threat_event"] == "T2"
+    assert out["threat_category"] == "REMOTE"
+    assert out["flight_action"] == "REROUTE"
+    assert out["comms_level"] == "L2"
+    assert out["nav_mode"] is None
+    assert out["payload_action"] == []

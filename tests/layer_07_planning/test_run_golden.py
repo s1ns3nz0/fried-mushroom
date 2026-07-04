@@ -71,3 +71,19 @@ def test_unknown_flight_action_raises():
     response = _make_response("INVALID")
     with pytest.raises(KeyError):
         run(response, None, _CYCLE_CTX)
+
+
+def test_remote_reroute_with_bearing_anchor():
+    response = _make_response("REROUTE", "REMOTE")
+    out = run(response, {"bearing_deg": 90.0}, _CYCLE_CTX)
+    assert out["reroute_anchor"] == "threat_reverse(channel)"
+    assert out["target_bearing_deg"] == 270.0
+    assert out["replan_scope"] == "FULL"
+
+
+def test_remote_reroute_no_bearing_anchor():
+    response = _make_response("REROUTE", "REMOTE")
+    out = run(response, None, _CYCLE_CTX)
+    assert out["reroute_anchor"] == "last_known_good_position"
+    assert out["target_bearing_deg"] is None
+    assert out["replan_scope"] == "FULL"
