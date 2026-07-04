@@ -296,6 +296,7 @@ def run_cycle_chain(
             "energy": result["endurance"],
             "comms": result["link_loss"],
             "nav": result["nav_integrity"],
+            "ew": result["ew_jamming"],
         })
         results.append(result)
         prev_q = extract_qualities(result)

@@ -105,7 +105,8 @@ def assess_failsafe(axis_reports: dict[str, Any] | None) -> dict[str, Any]:
     top_axes = [ax for ax, a in contrib.items() if _SEVERITY[a] == max_sev]
     top_axes.sort(key=lambda ax: _AXIS_PRECEDENCE.index(ax) if ax in _AXIS_PRECEDENCE else len(_AXIS_PRECEDENCE))
     action = contrib[top_axes[0]]
-    note = f"안전 3축 융합 → {action} (지배 축: {', '.join(top_axes)}, 심각도 {max_sev})."
+    n_axes = len(contrib) + len(unknown_actions)  # 실제 기여 축 수(3축 하드코딩 금지, codex P3)
+    note = f"안전 {n_axes}축 융합 → {action} (지배 축: {', '.join(top_axes)}, 심각도 {max_sev})."
     if unknown_actions:
         note += f" · 미인식 action 병기: {unknown_actions}"
     return {
