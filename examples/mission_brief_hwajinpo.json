@@ -1,0 +1,20 @@
+{
+  "sortie_id": "HWAJINPO-0705-01",
+  "mission_context": "정찰",
+  "posture": { "watchcon": 3, "defcon": 3, "infocon": 4 },
+  "drone_profile": { "armament": [], "spare_asset_available": true, "battery_pct": 80 },
+  "frame": { "lat_min": 38.251, "lat_max": 38.285, "lon_min": 128.398, "lon_max": 128.478 },
+  "corridor": {
+    "waypoints": [
+      { "id": "lp",  "lat": 38.25675, "lon": 128.42720, "alt_m": 120 },
+      { "id": "wp1", "lat": 38.26620, "lon": 128.43304, "alt_m": 120 },
+      { "id": "wp2", "lat": 38.27344, "lon": 128.44760, "alt_m": 120 },
+      { "id": "obj", "lat": 38.27990, "lon": 128.45080, "alt_m": 120 }
+    ],
+    "bases": {
+      "emergency": { "id": "base_emergency", "lat": 38.25370, "lon": 128.42600, "alt_m": 50 },
+      "alternate": { "id": "base_alternate", "lat": 38.25440, "lon": 128.42800, "alt_m": 50 }
+    }
+  },
+  "weights": { "stealth": 0.40, "survival": 0.35, "info_value": 0.20, "timeliness": 0.05 }
+}

@@ -76,6 +76,9 @@ data "aws_iam_policy_document" "deploy" {
       "ecr:UploadLayerPart",
       "ecr:BatchGetImage",
       "ecr:GetDownloadUrlForLayer",
+      # F-05(#248/#278 후속): 멱등 배포 가드(deploy-log.yml 이 push 전 태그 존재 확인).
+      # 없으면 describe 가 AccessDenied → ImageNotFound 로 오인 → immutable 재push 에러.
+      "ecr:DescribeImages",
     ]
     resources = [for r in aws_ecr_repository.this : r.arn]
   }
