@@ -1,6 +1,11 @@
 # CI — main push / PR 시 pytest 실행 (README "PR 머지 조건: CI(pytest) 통과 필수")
 # step0 이전(pyproject.toml 없음)에는 pytest만 설치해 scripts/ 테스트를 돌리고,
 # step0 이후에는 pip install -e '.[dev]' 로 전환된다.
+#
+# 공급망/최소권한 하드닝 (NIST SP 800-218 SSDF PW.4 / SP 800-204D C-SCRM):
+# - 액션은 가변 태그(@v4) 대신 커밋 SHA 로 고정 (태그 재지정/공급망 변조 방지).
+# - GITHUB_TOKEN 은 최소권한(contents: read) 으로 축소.
+# - job timeout + persist-credentials:false 로 자원/자격증명 노출 축소.
 name: ci
 
 on:
@@ -9,13 +14,19 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
