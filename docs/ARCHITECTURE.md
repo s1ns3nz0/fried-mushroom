@@ -101,6 +101,8 @@ raw sensor JSON (mock)
 
 각 화살표 = JSON-직렬화 가능한 dict 전달. 사이클 = 위 흐름 1회 완주.
 
+각 화살표의 필드 단위 계약(스키마 해설·예시 JSON)은 [`docs/contracts/README.md`](./contracts/README.md) 참고.
+
 ## 상태 관리
 - 파이프라인 자체는 stateless. 사이클 간 상태(예: `quality_delta` 계산용 이전 사이클 quality)는 호출자가 명시적으로 `previous_state` dict로 넘긴다.
 - mission_brief(임무 시작 시 확정되어 사이클 동안 불변)는 파이프라인 시작 시 한 번 로드해 모든 레이어에 read-only로 넘긴다.
