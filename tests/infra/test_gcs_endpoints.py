@@ -4,13 +4,26 @@ infra/dashboard/main.py 에서 이전된 파이프라인 실행 엔드포인트�
 - GET  /gcs/scenarios      → examples/ 의 raw_*/mission_brief_* 쌍 목록
 - GET  /gcs/scenario/{tag} → {raw, mission_brief} (태그 sanitize, 404)
 - POST /gcs/run            → run_cycle 실행 + 결과 로그를 인프로세스 hub 에 직접 publish
+
+이 테스트는 루트 CI(`python -m pytest`, testpaths=["tests"])가 수집하도록 tests/
+아래에 둔다 — infra/log 의 log_server 는 sys.path 로 임포트한다.
+fastapi/starlette 미설치 환경에서는 자동 skip.
 """
 
 from __future__ import annotations
 
-import log_server
+import sys
+from pathlib import Path
+
 import pytest
-from fastapi.testclient import TestClient
+
+_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
+sys.path.insert(0, str(_INFRA_LOG))
+
+pytest.importorskip("fastapi")
+
+import log_server  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
