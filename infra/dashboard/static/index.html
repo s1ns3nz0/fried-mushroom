@@ -24,6 +24,7 @@
   <span id="phase-chip" class="chip">—</span>
   <span class="topbar-spacer"></span>
   <span id="conn-status" class="status status-off">라이브 끊김</span>
+  <button type="button" id="debug-toggle" class="chip" aria-pressed="false">DEBUG</button>
   <span class="chip">관측 전용</span>
 </header>
 
@@ -73,6 +74,8 @@
       <div class="fp-head">
         <h2>AI 결정 모델</h2>
         <span id="decision-meta" class="fp-meta">—</span>
+        <!-- 🐛 디버그 로그 버튼 — position:fixed로 패널 우상단에 떠 있음(디버그 모드 ON일 때만 표시) -->
+        <button type="button" id="debug-bug-btn" aria-label="디버그 로그" title="디버그 로그" hidden>🐛</button>
       </div>
       <div id="decision-body">
         <div class="dc-flow">
@@ -357,6 +360,15 @@
     </div>
   </div>
 </div>
+
+<!-- 디버그 로그 오버레이 — 최신 tick의 레이어별 input/output JSON (app.js renderDebugLog 구동) -->
+<aside id="debug-log" hidden aria-label="디버그 로그">
+  <div class="debug-log-head">
+    <h2>디버그 로그 · 레이어별 I/O</h2>
+    <span class="fp-meta">LATEST TICK</span>
+  </div>
+  <div id="debug-log-body"></div>
+</aside>
 
 <script src="/static/render.js"></script>
 <script src="/static/app.js"></script>

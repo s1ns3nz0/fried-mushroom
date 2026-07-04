@@ -67,6 +67,7 @@ const live = {
   _enemyFootprintsKey: null, // terrain+enemies 시그니처 — 동일하면 rebuild 스킵.
   channels: null, // tick.channels(실 파이프라인 11채널 스냅샷) — 신호 패널 소스(없으면 mock 폴백).
   threatEvent: null, // 현재 라이브 조우의 threat_event — 변경 감지로 새 조우를 연다.
+  debug: null, // tick.debug(최신 사이클의 레이어별 input/output) — 디버그 로그 패널 소스.
 };
 
 // Canvas 2D 핸들 (지도/고도 mock 렌더 대상). 신호는 HTML 리스트(#signals-list)로 렌더.
@@ -201,6 +202,10 @@ function applyStreamTick(msg) {
   if (msg.discovered_enemies) mergeDiscoveredEnemies(msg.discovered_enemies);
   if (msg.channels) live.channels = toChannelMap(msg.channels);
   if (msg.decision) applyLiveDecision(msg.decision, msg.channels);
+  if (msg.debug) {
+    live.debug = msg.debug;
+    if (debugState.open) renderDebugLog(); // 패널이 열려 있으면 최신 tick으로 라이브 갱신.
+  }
 }
 
 /** 적 dedup 키 — kind + 좌표(반올림). discovered_enemies 는 누적 리스트라 매 tick 재도착한다. */
@@ -538,6 +543,92 @@ function handleDecisionLog(msg) {
   pushDecision(msg.type, msg.message);
 }
 
+// ── 디버그 모드 — 레이어별 input/output 로그 (관측 전용, 표시만) ──
+// DEBUG 토글(topbar) ON → 🐛 버튼(AI 결정 모델 우상단, fixed) 표시 →
+// 클릭 시 #debug-log 오버레이 토글. 열려 있는 동안 매 tick 최신 사이클의
+// live.debug.layers(5개 레이어 IN/OUT JSON)로 라이브 갱신된다.
+
+const debugState = { mode: false, open: false };
+
+const dbgEl = {
+  toggle: document.getElementById("debug-toggle"),
+  bugBtn: document.getElementById("debug-bug-btn"),
+  panel: document.getElementById("debug-log"),
+  body: document.getElementById("debug-log-body"),
+};
+
+// 레이어 블록(접이식 details)은 레이어 구성이 같으면 재사용하고 JSON 본문(<pre>)만
+// 제자리 갱신한다 — 접힘 상태/스크롤 위치가 tick마다 리셋되지 않게 한다.
+let _dbgLayersKey = null;
+const _dbgPreRefs = []; // 레이어 인덱스 순 [{ inPre, outPre }]
+
+/** #debug-log 본문 렌더 — live.debug.layers를 레이어별 IN/OUT JSON 블록으로 표시. */
+function renderDebugLog() {
+  if (!dbgEl.body || !debugState.open) return;
+  const layers = live.debug && Array.isArray(live.debug.layers) ? live.debug.layers : [];
+  if (!layers.length) {
+    _dbgLayersKey = null;
+    _dbgPreRefs.length = 0;
+    dbgEl.body.textContent = "디버그 데이터 없음 — 러너 tick 수신 대기 중";
+    return;
+  }
+  const key = layers.map((l) => l.layer).join("|");
+  if (_dbgLayersKey !== key) {
+    dbgEl.body.textContent = "";
+    _dbgPreRefs.length = 0;
+    layers.forEach((l, i) => {
+      const det = document.createElement("details");
+      det.className = "dbg-layer";
+      det.open = i === 0;
+      const sum = document.createElement("summary");
+      sum.textContent = l.layer;
+      det.appendChild(sum);
+      const refs = {};
+      ["IN", "OUT"].forEach((label) => {
+        const sec = document.createElement("div");
+        sec.className = "dbg-io";
+        const h = document.createElement("div");
+        h.className = "dbg-io-label" + (label === "OUT" ? " out" : "");
+        h.textContent = label;
+        const pre = document.createElement("pre");
+        pre.className = "dbg-json";
+        sec.append(h, pre);
+        det.appendChild(sec);
+        refs[label] = pre;
+      });
+      dbgEl.body.appendChild(det);
+      _dbgPreRefs.push({ inPre: refs.IN, outPre: refs.OUT });
+    });
+    _dbgLayersKey = key;
+  }
+  layers.forEach((l, i) => {
+    const refs = _dbgPreRefs[i];
+    if (!refs) return;
+    refs.inPre.textContent = JSON.stringify(l.input, null, 2);
+    refs.outPre.textContent = JSON.stringify(l.output, null, 2);
+  });
+}
+
+/** DEBUG 토글/🐛 버튼 바인딩 — 토글 OFF 시 버튼과 로그 패널을 함께 숨긴다. */
+function initDebugMode() {
+  if (!dbgEl.toggle || !dbgEl.bugBtn || !dbgEl.panel) return;
+  dbgEl.toggle.addEventListener("click", () => {
+    debugState.mode = !debugState.mode;
+    dbgEl.toggle.classList.toggle("active", debugState.mode);
+    dbgEl.toggle.setAttribute("aria-pressed", debugState.mode ? "true" : "false");
+    dbgEl.bugBtn.hidden = !debugState.mode;
+    if (!debugState.mode) {
+      debugState.open = false;
+      dbgEl.panel.hidden = true;
+    }
+  });
+  dbgEl.bugBtn.addEventListener("click", () => {
+    debugState.open = !debugState.open;
+    dbgEl.panel.hidden = !debugState.open;
+    if (debugState.open) renderDebugLog();
+  });
+}
+
 // ── mock 시나리오 시뮬레이터 (uav tick WS 연동 시 교체) ─────────
 // 로그 패널 mock 과 별개로, 지도/고도/신호 3칸을 구동하는 내부 mock.
 // 시나리오: 출발지 → 목표 정상 비행 → T3 조우 → RTL(복귀) 루프.
@@ -747,6 +838,32 @@ const terrainGrid = buildTerrainGrid();
 // terrainGrid.hmin/hmax에 별도 보관해 뷰셰드/footprint 고각 계산에 사용한다).
 const terrainLayer = D4DRender.buildTerrainLayer(terrainGrid.u16, terrainGrid.H, terrainGrid.W, 0, 65535);
 
+// 위협 유형별 마커 dispatch — kind→category→symbol 매핑:
+//   T3/T4 (물리 적: 소화기/포획)                → physical → drawHostileGround (적색 다이아몬드)
+//   T1/T2/T5 (원격 전자전: GPS스푸핑/사이버/레이저) → ew      → drawEwThreat (보라 육각형+번개)
+//   T7 (항법 지형위험: 지형충돌/CFIT)            → terrain  → drawTerrainHazard (앰버 경고 삼각형)
+//   미상 kind → physical 폴백. footprint 색도 같은 카테고리를 따른다.
+const THREAT_CATEGORY = { T1: "ew", T2: "ew", T5: "ew", T3: "physical", T4: "physical", T7: "terrain" };
+const FOOTPRINT_RGB = {
+  physical: [240, 85, 93],  // 적색(적 지상부대)
+  ew: [201, 123, 240],      // 보라(#C97BF0, 전자전)
+  terrain: [229, 169, 61],  // 앰버(#E5A93D, 지형위험)
+};
+
+/** kind("T3", "T3 소화기" 등)에서 Tn 토큰을 뽑아 카테고리로 변환(미상은 physical). */
+function threatCategory(kind) {
+  const m = String(kind || "").toUpperCase().match(/T\d+/);
+  return (m && THREAT_CATEGORY[m[0]]) || "physical";
+}
+
+/** 카테고리별 심볼 디스패치 — render.js 순수 헬퍼 호출. */
+function drawThreatMarker(ctx, kind, x, y, size) {
+  const cat = threatCategory(kind);
+  if (cat === "ew") D4DRender.drawEwThreat(ctx, x, y, size);
+  else if (cat === "terrain") D4DRender.drawTerrainHazard(ctx, x, y, size);
+  else D4DRender.drawHostileGround(ctx, x, y, size);
+}
+
 // 적 탐지 footprint — 적이 정적이므로 1회만 계산해 캐시한다.
 const FOOTPRINT_COLOR = [240, 85, 93, Math.round(0.32 * 255)]; // 반투명 빨강(적)
 const enemyFootprintLayer = (function () {
@@ -760,6 +877,9 @@ const enemyFootprintLayer = (function () {
   return D4DRender.buildFootprintLayer(mask, terrainGrid.H, terrainGrid.W, FOOTPRINT_COLOR);
 })();
 
+// Min footprint range (cells) so the enemy viewshed reaches ridgelines and terrain occlusion is visible.
+const ENEMY_FOOTPRINT_MIN_RANGE_CELLS = 45;
+
 /** 라이브 사전 브리핑 적의 탐지 footprint 레이어를 재구축한다.
  * 적은 정적이고 지형은 init마다 고정이므로 terrain+enemies 시그니처가 같으면 스킵
  * (매 프레임 재계산 금지 — computeEnemyFootprint 는 적당 O(rays×range)). */
@@ -770,17 +890,20 @@ function rebuildLiveEnemyFootprints() {
     return;
   }
   const key = live._terrainKey + "|" + live.enemies
-    .map((en) => [en.x, en.y, en.radius, en.briefed ? 1 : 0].join(","))
+    .map((en) => [en.x, en.y, en.radius, en.briefed ? 1 : 0, en.kind || en.type || ""].join(","))
     .join(";");
   if (live._enemyFootprintsKey === key && live._enemyFootprints) return;
   const g = live.terrain;
   live._enemyFootprints = live.enemies.map((en) => {
+    // T7 (terrain hazard, e.g. CFIT) is not an observer — no detection FOV footprint.
+    if (threatCategory(en.kind || en.type) === "terrain") return null;
     const enemyGrid = {
       center: [liveGridX(g, en.x), liveGridY(g, en.y)],
-      detect_range: (en.radius || 0.05) * (g.W - 1),
+      detect_range: Math.max((en.radius || 0.05) * (g.W - 1), ENEMY_FOOTPRINT_MIN_RANGE_CELLS),
     };
     const mask = D4DRender.computeEnemyFootprint(g.u16, g.H, g.W, g.hmin, g.hmax, enemyGrid);
-    const color = [240, 85, 93, Math.round((en.briefed ? 0.34 : 0.24) * 255)];
+    const rgb = FOOTPRINT_RGB[threatCategory(en.kind || en.type)];
+    const color = rgb.concat(Math.round((en.briefed ? 0.34 : 0.24) * 255));
     return D4DRender.buildFootprintLayer(mask, g.H, g.W, color);
   });
   live._enemyFootprintsKey = key;
@@ -1044,7 +1167,7 @@ function drawMap() {
 
   // 3.5) 라이브 사전 브리핑 적 탐지범위(footprint, 지형 반영 · 원 아님) — init 시 캐시된 레이어.
   if (live.active && live._enemyFootprints) {
-    for (const fp of live._enemyFootprints) ctx.drawImage(fp, 0, 0, W, H);
+    for (const fp of live._enemyFootprints) if (fp) ctx.drawImage(fp, 0, 0, W, H);
   }
 
   // 4) 경로(글로우 → 본선, 액티브 앰버).
@@ -1059,6 +1182,26 @@ function drawMap() {
   };
   strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.25)"; ctx.lineWidth = 6; ctx.stroke();
   strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.9)"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.restore();
+
+  // 4.5) 경로 waypoint 마커 — 중간 waypoint(1..len-2)만 그린다(0=출발 SP, 마지막=목표 OBJ
+  // 전용 심볼이 담당). 경로선 위, 적/드론 마커 아래. 다크 채움 + 경로 앰버 테두리 + 번호.
+  ctx.save();
+  ctx.font = "8px ui-monospace, Menlo, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  for (let i = 1; i < routeWps.length - 1; i++) {
+    const X = px(routeWps[i].x), Y = py(routeWps[i].y);
+    ctx.beginPath();
+    ctx.arc(X, Y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#0D0D0F";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(240,160,60,0.9)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = "rgba(240,160,60,0.75)";
+    ctx.fillText(String(i), X + 6, Y - 5);
+  }
   ctx.restore();
 
   // 5) 복귀경로(RTL 구간에서만) — mock 시나리오 전용(점선 앰버).
@@ -1086,8 +1229,8 @@ function drawMap() {
     for (const en of live.enemies) {
       const ex = px(en.x), ey = py(en.y);
       // 탐지범위는 3.5)의 지형 반영 footprint 레이어가 담당(평면 원 제거).
-      // MIL-STD-2525 hostile ground frame (render.js pure helper).
-      D4DRender.drawHostileGround(ctx, ex, ey, 8);
+      // 위협 유형별 MIL-STD-2525 계열 심볼 — kind→category 디스패치(drawThreatMarker).
+      drawThreatMarker(ctx, en.kind || en.type, ex, ey, 8);
       // 사전 첩보(briefed) 적은 라벨을 밝게 + GCS 확신도 병기(예: "T3·95%").
       // 임무 중 식별(discovered)된 popup 적은 앰버 라벨 + "신규 식별" 표기.
       const label = (en.kind || en.type) +
@@ -1104,8 +1247,8 @@ function drawMap() {
   // 6) 마커들 — 적 다이아몬드(mock 전용), 목표 OBJ, 출발지 SP, 드론.
   if (!live.active) {
     const ex = px(ENEMY.x), ey = py(ENEMY.y);
-    // MIL-STD-2525 hostile ground frame (render.js pure helper).
-    D4DRender.drawHostileGround(ctx, ex, ey, 8);
+    // 위협 유형별 심볼 — mock 적은 SCENARIO.threat(T3) → physical 다이아몬드.
+    drawThreatMarker(ctx, SCENARIO.threat, ex, ey, 8);
     if (mock.phase === "ENCOUNTER") {
       // 탐지 콜아웃 — ENCOUNTER 동안만 앰버 라벨 칩(Maven detection callout).
       const callout = "T3 소화기 · 근접";
@@ -1711,6 +1854,7 @@ function init() {
   initTabs();
   initSimControls();
   initSignalsOverlay();
+  initDebugMode();
 
   // /config 로 기본 URL 확정 후 자동 연결(수집기 미기동이면 backoff 재연결).
   loadConfig().then(() => {
