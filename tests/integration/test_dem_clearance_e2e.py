@@ -47,19 +47,25 @@ def test_low_altitude_scenario_has_reduced_clearance():
     # 저고도(t4=80m)는 t3(120m)보다 봉우리 근처 최저 clearance 가 낮다.
     r_t4, _ = _route("t4")
     r_t3, _ = _route("t3")
-    if r_t4 and r_t3:
-        assert min(wp["clearance_m"] for wp in r_t4) < min(wp["clearance_m"] for wp in r_t3) + 1e-6
+    assert r_t4 and r_t3, "t4/t3 경로 생성 실패 — 비교 불가(공허 통과 방지)"
+    assert min(wp["clearance_m"] for wp in r_t4) < min(wp["clearance_m"] for wp in r_t3) + 1e-6
 
 
 def test_segment_min_clearance_catches_subwaypoint():
     # merged segment_min_clearance: 구간 최저 clearance ≤ 끝점 최저(사이 봉우리 포착).
+    # 끝점만 검사하는 구현으로는 통과 못 하도록, 내부 봉우리로 끝점보다 **엄격히 낮은**
+    # 구간이 최소 1개 존재함을 함께 단언한다(공허 방지, codex P2).
     route, brief = _route("t3")
     bbox = compute_bbox(brief["corridor"]["waypoints"])
+    strict_interior_dip = False
     for i in range(len(route) - 1):
         p1, p2 = route[i], route[i + 1]
         seg = segment_min_clearance(p1, p2, bbox)
         end_min = min(p1["clearance_m"], p2["clearance_m"])
-        assert seg["min_clearance_m"] <= end_min + 1e-6
+        assert seg["min_clearance_m"] <= end_min + 1e-6  # 불변: 구간최저 ≤ 끝점최저
+        if seg["min_clearance_m"] < end_min - 1.0:
+            strict_interior_dip = True
+    assert strict_interior_dip, "어떤 구간도 끝점보다 낮은 내부 봉우리를 못 잡음 — 끝점만 검사?"
 
 
 def test_terrain_elev_matches_route_frame():
