@@ -87,6 +87,9 @@ def _response_log(layer_out: dict) -> tuple[str, str]:
     flight_action = layer_out.get("flight_action")
     comms_level = layer_out.get("comms_level", "-")
     log = f"06 대응 · {flight_action or '-'} comms={comms_level}"
+    payload_action = layer_out.get("payload_action") or []
+    if payload_action:
+        log += f" actions=[{','.join(payload_action)}]"
     nav_mode = layer_out.get("nav_mode")
     if nav_mode:
         log += f" nav={nav_mode}"
