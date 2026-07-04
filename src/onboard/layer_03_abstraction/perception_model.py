@@ -110,28 +110,47 @@ def detect_proximity_model(frame: PerceptionFrame) -> Optional[dict]:
 
 
 def _load_segmenter():
-    """segmentation 모델 lazy load — 미설치/실패 시 None."""
+    """지형 시맨틱 씬-segmentation 모델 lazy load — 미설치/실패 시 None.
+
+    **주의(codex #368 P2)**: COCO instance-seg(yolov8-seg)는 tree/grass/road/mountain 같은
+    지형 씬 라벨을 내지 않는다. 지형 분류에는 **ADE20K 계열 시맨틱 씬 segmentation**
+    (tree/grass/road/building/mountain/field/water …)이 필요하다. env `ONBOARD_TERRAIN_SEG_MODEL`
+    로 씬-seg 모델명을 지정(미지정/미설치 시 None → stub 폴백). 라벨이 지형클래스가 아니면
+    classify_terrain_model 이 None 을 반환해 오보 대신 폴백한다.
+    """
     if "seg" in _DETECTOR_CACHE:
         return _DETECTOR_CACHE["seg"]
+    model_name = os.environ.get("ONBOARD_TERRAIN_SEG_MODEL")
+    if not model_name:
+        return None  # 지형용 씬-seg 모델 미지정 → 폴백(COCO-seg 오분류 방지).
     try:
-        from ultralytics import YOLO  # noqa: PLC0415  (yolov8-seg 계열)
+        from ultralytics import YOLO  # noqa: PLC0415
 
-        model = YOLO("yolov8n-seg.pt")
+        model = YOLO(model_name)
     except Exception:
         return None
     _DETECTOR_CACHE["seg"] = model
     return model
 
 
-# ultralytics COCO → D4D 지형 클래스 대략 매핑(seg 결과 최빈 클래스 기반).
+# ADE20K 계열 시맨틱 씬 라벨 → D4D 지형 클래스 매핑. 여기 없는 라벨은 "지형 아님"으로 보고
+# None 반환(오보 방지). D4D 지형: open_field / forest / urban / mountain.
 _TERRAIN_MAP = {
-    "tree": "forest", "grass": "open_field", "field": "open_field",
-    "building": "urban", "house": "urban", "road": "urban", "mountain": "mountain",
+    "tree": "forest", "forest": "forest", "palm": "forest",
+    "grass": "open_field", "field": "open_field", "earth": "open_field",
+    "sand": "open_field", "dirt": "open_field", "path": "open_field",
+    "building": "urban", "house": "urban", "road": "urban", "skyscraper": "urban",
+    "wall": "urban", "sidewalk": "urban",
+    "mountain": "mountain", "rock": "mountain", "hill": "mountain",
 }
 
 
 def classify_terrain_model(frame: PerceptionFrame) -> Optional[dict]:
-    """EO 프레임 → 지형 분류(segmentation_stub 와 동일 4키). 실패/미가용 시 None."""
+    """EO 프레임 → 지형 분류(segmentation_stub 와 동일 4키). 실패/미가용/비-지형 라벨 시 None.
+
+    top 씬 라벨이 지형 클래스로 매핑되지 않으면(예: COCO 객체 라벨) None → stub 폴백해
+    지배 지형 오보(전부 open_field)를 막는다(codex #368 P2).
+    """
     arr = frame.get("array")
     if arr is None:
         return None
@@ -142,14 +161,13 @@ def classify_terrain_model(frame: PerceptionFrame) -> Optional[dict]:
         result = model(arr, verbose=False)[0]
     except Exception:
         return None
-    dets = _class_names(result)
-    if not dets:
-        return {"dominant_class": "open_field", "camera_confidence": 0.9,
-                "optimal_terrain_bearing_deg": None, "lowest_exposure_bearing_deg": None}
-    top_cls, top_conf = dets[0]
-    return {
-        "dominant_class": _TERRAIN_MAP.get(top_cls, "open_field"),
-        "camera_confidence": round(float(top_conf), 6),
-        "optimal_terrain_bearing_deg": None,   # 방위 추정은 후속(07 corridor fallback).
-        "lowest_exposure_bearing_deg": None,
-    }
+    for cls, conf in _class_names(result):  # 신뢰도순 — 첫 지형 라벨 채택.
+        mapped = _TERRAIN_MAP.get(cls)
+        if mapped is not None:
+            return {
+                "dominant_class": mapped,
+                "camera_confidence": round(float(conf), 6),
+                "optimal_terrain_bearing_deg": None,   # 방위 추정 후속(07 corridor fallback).
+                "lowest_exposure_bearing_deg": None,
+            }
+    return None  # 지형 라벨 없음 → 폴백(오보 방지).

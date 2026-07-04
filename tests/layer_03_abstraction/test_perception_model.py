@@ -1,6 +1,7 @@
 """03 perception 실모델 opt-in + graceful fallback + 파리티 (#364, ADR-002)."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -110,8 +111,15 @@ def test_terrain_channel_consumes_model_output(monkeypatch):
     assert out["payload"]["camera_mismatch"] is True
 
 
-@pytest.mark.skipif(not perception_model.model_available(), reason="perception 실모델 미설치(CI 기본 폴백)")
+@pytest.mark.skipif(
+    os.environ.get("ONBOARD_PERCEPTION_MODEL") != "1",
+    reason="실모델 경로 — ONBOARD_PERCEPTION_MODEL=1 일 때만(collection 시 YOLO 로드 방지, codex #368 P2)",
+)
 def test_real_model_output_contract_when_installed():
+    # skip 조건이 model_available() 를 부르면 collection 단계에서 YOLO 를 로드하므로(무거움),
+    # env 마커로 게이트하고 availability 는 테스트 내부에서 확인한다.
+    if not perception_model.model_available():
+        pytest.skip("perception 실모델 미설치")
     from onboard.layer_03_abstraction.perception_input import resolve_frame
     frame = resolve_frame(_raw_with_frame()["imagery"])
     prox = perception_model.detect_proximity_model(frame)
