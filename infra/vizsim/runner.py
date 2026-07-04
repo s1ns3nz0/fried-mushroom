@@ -151,6 +151,18 @@ def split_enemies(enemies: list[dict]) -> tuple[list[dict], list[dict]]:
     return briefed, popup
 
 
+def _track_lat_lon(pos) -> tuple[float, float]:
+    """Normalize an enemy_track's `pos` field to (lat, lon).
+
+    Accepts both shapes seen in the wild: the flat dashboard dict
+    {"lat":.., "lon":..} and the C4I/B-1 canonical list [lat, lon]
+    (#195/#219/#255 P2-1).
+    """
+    if isinstance(pos, (list, tuple)):
+        return pos[0], pos[1]
+    return pos["lat"], pos["lon"]
+
+
 def build_scenario(
     seed: int,
     brief: dict,
@@ -168,6 +180,14 @@ def build_scenario(
     directive. When provided they become the BRIEFED enemies at their exact
     positions and ALL seed-derived enemies become popups; when None the
     briefed/popup split stays seed-based.
+
+    Popup enemies are rebuilt on the FINAL route/events (after avoidance),
+    not the provisional rt0/evs0 — otherwise, whenever avoidance actually
+    changes the route's arc length, popup positions/`s` would stay anchored
+    to a discarded scale, desyncing from the `events` this function returns
+    and from what gets injected into World (#255 P2-2). BRIEFED enemies keep
+    their rt0/evs0-anchored positions since the returned route was generated
+    specifically to keep out of them.
     """
     bbox = route.compute_bbox(brief["corridor"]["waypoints"])
     rt0 = route.generate_route(brief)
@@ -179,7 +199,8 @@ def build_scenario(
             # flat dashboard shape (lat/lon/radius_m) + C4I/B-1 canonical shape
             # (pos/radius) both accepted (#195/#219).
             pos = trk.get("pos") or trk
-            x, y = route.to_norm(pos["lat"], pos["lon"], bbox)
+            lat, lon = _track_lat_lon(pos)
+            x, y = route.to_norm(lat, lon, bbox)
             radius_m = float(trk.get("radius_m") or trk.get("radius") or _ENEMY_DETECT_RADIUS_M)
             kind = trk.get("kind")
             briefed.append(
@@ -194,14 +215,18 @@ def build_scenario(
                     "briefed": True,
                 }
             )
-        popup = build_enemies(rt0["waypoints"], evs0)
-        all_enemies = briefed + popup
     else:
-        all_enemies = build_enemies(rt0["waypoints"], evs0, briefed_threats)
-        briefed, popup = split_enemies(all_enemies)
+        all_enemies0 = build_enemies(rt0["waypoints"], evs0, briefed_threats)
+        briefed, _popup0 = split_enemies(all_enemies0)
     rt = route.generate_route(brief, enemies=briefed)
     total_s = path.total_length(rt["waypoints"])
     evs = events_module.generate_events(seed, total_s)
+    if enemy_tracks is not None:
+        popup = build_enemies(rt["waypoints"], evs)
+    else:
+        all_final = build_enemies(rt["waypoints"], evs, briefed_threats)
+        _briefed_final, popup = split_enemies(all_final)
+    all_enemies = briefed + popup
     return {
         "bbox": bbox,
         "route": rt,
