@@ -1,0 +1,20 @@
+# Dependabot — 공급망 취약점/구버전 자동 모니터링 (NIST SP 800-204D C-SCRM / SSDF PW.4).
+# github-actions: ci.yml 이 SHA 로 고정한 액션을 신버전 릴리스 시 SHA 갱신 PR 로 올려준다
+# (고정과 최신유지를 양립). pip: 런타임 의존성이 생기면 자동 추적.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(ci)"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5

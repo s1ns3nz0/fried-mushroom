@@ -1,0 +1,34 @@
+# CodeQL 정적분석 (SAST) — NIST SP 800-218 SSDF PW.7/PW.8 (자동 취약점 탐지).
+# Python 소스를 push/PR/주간 스케줄로 스캔한다. 액션은 커밋 SHA 로 고정(공급망),
+# 권한은 이 워크플로우에 필요한 최소(security-events:write) 로만 부여한다.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # 매주 월요일 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (python)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # CodeQL 결과 업로드에 필요
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
+        with:
+          languages: python
+
+      - uses: github/codeql-action/analyze@411c4c9a36b3fca4d674f06b6396b2c6d23522c6 # v3
