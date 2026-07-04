@@ -20,7 +20,12 @@ from __future__ import annotations
 
 import math
 
-from ..shared.constants import ROUTE_MAX_CLIMB_RATE_M_PER_WP, ROUTE_MIN_CLEARANCE_M
+from ..shared.constants import (
+    EARTH_RADIUS_M,
+    ROUTE_EVASION_OFFSET_M,
+    ROUTE_MAX_CLIMB_RATE_M_PER_WP,
+    ROUTE_MIN_CLEARANCE_M,
+)
 
 
 def generate_route(
@@ -28,12 +33,16 @@ def generate_route(
     altitude_delta_m: int,
     replan_scope: str,
     cycle_context: dict,
+    target_bearing_deg: float | None = None,
 ) -> list[dict]:
-    """terrain-aware 경로 생성.
+    """terrain-aware + 회피 수평궤적이 반영된 경로 생성.
 
     cycle_context 키:
       corridor_waypoints: list[dict] — 코리더 waypoints ({lat, lon, alt_m, ...})
       corridor_bases: dict — 복귀 기지 ({emergency: {lat, lon, alt_m}, ...})
+
+    target_bearing_deg: FULL scope(REROUTE/ALTITUDE_CHANGE_REROUTE)에서만 사용.
+      None이면 offset 미적용. RTL/LOCAL scope는 무조건 미적용.
     """
     waypoints: list[dict] = cycle_context.get("corridor_waypoints") or []
     if not waypoints or replan_scope == "NONE":
@@ -41,6 +50,9 @@ def generate_route(
 
     if flight_action == "RTL":
         return _rtl_route(waypoints, cycle_context.get("corridor_bases") or {})
+
+    if replan_scope == "FULL" and target_bearing_deg is not None:
+        waypoints = _apply_bearing_offset(waypoints, target_bearing_deg)
 
     return _apply_delta(waypoints, altitude_delta_m)
 
@@ -88,6 +100,24 @@ def _apply_delta(waypoints: list[dict], delta_m: int) -> list[dict]:
         route.append({"lat": lat2, "lon": lon2, "alt_m": alt2, "clearance_m": alt2})
 
     return route
+
+
+def _apply_bearing_offset(waypoints: list[dict], bearing_deg: float) -> list[dict]:
+    """모든 waypoint를 bearing_deg 방향으로 ROUTE_EVASION_OFFSET_M 이동.
+
+    cos(lat) 경도 보정 적용 (run.py._compute_terrain_bearings 역연산 패턴).
+    alt_m/clearance_m은 보존 — 고도 처리는 이후 _apply_delta() 가 담당.
+    """
+    bearing_rad = math.radians(bearing_deg)
+    d = ROUTE_EVASION_OFFSET_M
+    result = []
+    for wp in waypoints:
+        lat = float(wp["lat"])
+        lon = float(wp["lon"])
+        d_lat = math.degrees(d * math.cos(bearing_rad) / EARTH_RADIUS_M)
+        d_lon = math.degrees(d * math.sin(bearing_rad) / (EARTH_RADIUS_M * math.cos(math.radians(lat))))
+        result.append({**wp, "lat": lat + d_lat, "lon": lon + d_lon})
+    return result
 
 
 def _rtl_route(waypoints: list[dict], bases: dict) -> list[dict]:

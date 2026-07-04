@@ -67,7 +67,7 @@ def run(
     # 무상태 파이프라인이라 "직전에 회피 중이었는지" 구분 없이 MAINTAIN이면 항상 이 값.
     final_anchor = "mission_corridor_resume" if scope == "NONE" else (b_anchor or alt_anchor)
 
-    generated_route = route_gen.generate_route(effective_action, delta, scope, cycle_context)
+    generated_route = route_gen.generate_route(effective_action, delta, scope, cycle_context, tgt_bearing)
 
     # CFIT override로 effective_action이 바뀌었으면 speed_mode도 override 이후 값을 따름
     # (altitude_delta_m과 동일한 처리 순서). CFIT는 안전 최우선(SCC-1)이라 weights를

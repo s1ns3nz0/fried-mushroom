@@ -325,6 +325,14 @@ ALTITUDE_DELTA_TERRAIN_M: Final[int] = 50
 ROUTE_MIN_CLEARANCE_M: Final[float] = 50.0
 ROUTE_MAX_CLIMB_RATE_M_PER_WP: Final[float] = 10.0
 
+# 07 Flight Planning — 수평 회피 궤적 bearing offset 상수.
+# REROUTE/ALTITUDE_CHANGE_REROUTE(FULL scope)에서 corridor waypoints를
+# target_bearing_deg 방향으로 이 거리(m)만큼 평행이동한다.
+ROUTE_EVASION_OFFSET_M: Final[float] = 100.0
+
+# 지구 반지름 (WGS-84 평균). bearing offset의 cos(lat) 경도 보정 역산에 사용.
+EARTH_RADIUS_M: Final[float] = 6_371_000.0
+
 # 07 Flight Planning — RAC 완화(de-escalation) 디바운스 사이클 수.
 # RAC_ORDER 기준 비대칭 디바운스: 악화(숫자 감소)는 즉시 반영, 완화(숫자 증가)는
 # N사이클 연속 유지될 때만 반영 (RTL↔MAINTAIN 진동 방지). 악화 방향은 SCC-1

@@ -24,7 +24,11 @@ _SRC = Path(__file__).resolve().parents[2] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from onboard.run import run_cycle  # noqa: E402
+from onboard.run import (  # noqa: E402
+    extract_flight_plan_state,
+    extract_qualities,
+    run_cycle,
+)
 
 DEFAULT_COLLECTOR_URL = "http://localhost:8500/log"
 
@@ -176,15 +180,27 @@ def run_scenarios(
     delay: float = 1.0,
     loop: bool = False,
 ) -> int:
-    """(raw, mission_brief) 쌍 목록을 사이클 단위로 실행·전송. 총 2xx 건수 반환."""
+    """(raw, mission_brief) 쌍 목록을 사이클 단위로 실행·전송. 총 2xx 건수 반환.
+
+    사이클 간 previous_qualities/flight_plan_state 를 자동 스레딩(#133) — 연속 스트림에서
+    quality_delta(T5 등)가 자연 발화하도록. 수동 --prev-qualities 주입 불필요.
+    """
     seq = 0
     passes = 0
     total_posted = 0
+    prev_q: dict | None = None
+    prev_fp: dict | None = None
     while True:
         for raw_path, brief_path in pairs:
             raw = json.loads(Path(raw_path).read_text(encoding="utf-8"))
             mission_brief = json.loads(Path(brief_path).read_text(encoding="utf-8"))
-            result = run_cycle(raw, mission_brief)
+            result = run_cycle(
+                raw, mission_brief,
+                previous_qualities=prev_q,
+                previous_flight_plan_state=prev_fp,
+            )
+            prev_q = extract_qualities(result)
+            prev_fp = extract_flight_plan_state(result)
             seq += 1
             sortie = mission_brief.get("sortie_id", "SORTIE")
             correlation_id = f"{sortie}-{seq:04d}"

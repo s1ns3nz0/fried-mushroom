@@ -167,6 +167,36 @@ def extract_flight_plan_state(result: dict) -> dict:
     return result["flight_plan_state"]
 
 
+def run_cycle_chain(
+    pairs,
+    previous_qualities: dict | None = None,
+    previous_flight_plan_state: dict | None = None,
+) -> list[dict]:
+    """(raw, mission_brief) 시퀀스를 연속 실행하며 사이클 간 상태를 자동 스레딩한다 (#133).
+
+    각 사이클 결과에서 `extract_qualities`/`extract_flight_plan_state` 를 뽑아 다음 사이클
+    previous_qualities/previous_flight_plan_state 로 자동 연결한다 — CLI `--prev-qualities`
+    수동 주입 없이도 quality_delta(T5 광학 교란 등)가 연속 스트림에서 자연 발화한다.
+
+    pairs: iterable of (raw, mission_brief). 반환: 사이클별 run_cycle 결과 리스트.
+    선택 인자로 스트림 시작 시점의 직전 상태를 주입할 수 있다(체인 이어붙이기).
+    """
+    results: list[dict] = []
+    prev_q = previous_qualities
+    prev_fp = previous_flight_plan_state
+    for raw, mission_brief in pairs:
+        result = run_cycle(
+            raw,
+            mission_brief,
+            previous_qualities=prev_q,
+            previous_flight_plan_state=prev_fp,
+        )
+        results.append(result)
+        prev_q = extract_qualities(result)
+        prev_fp = extract_flight_plan_state(result)
+    return results
+
+
 def _run_layer(num: str, invoke):
     """레이어 run() 이 있으면 invoke(run) 으로 호출, 없으면 canned passthrough."""
     run = _import_layer_run(num)
