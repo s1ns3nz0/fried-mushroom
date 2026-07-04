@@ -148,12 +148,23 @@ class TestShippedFixturesConform:
 
     @pytest.mark.parametrize(
         "name",
-        ["mission_brief_t3.json", "mission_brief_t4.json", "mission_brief_t7.json"],
+        [
+            "mission_brief_t3.json",
+            "mission_brief_t4.json",
+            "mission_brief_t7.json",
+            "mission_brief_strike.json",
+        ],
     )
     def test_mission_brief_fixture_matches_schema(self, name: str) -> None:
         obj = _load(name)
         assert_matches_schema(obj, MissionBrief)
         assert_json_serializable(obj)
+
+    def test_strike_fixture_enables_weapon_drop(self) -> None:
+        # 타격 시나리오: 소모성 무장 보유 → 06 payload_actions 가 WEAPON_DROP 부여 조건
+        obj = _load("mission_brief_strike.json")
+        assert obj["mission_context"] == "타격"
+        assert any(a.get("expendable") is True for a in obj["drone_profile"]["armament"])
 
 
 class TestAssertJsonSerializable:

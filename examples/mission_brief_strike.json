@@ -1,0 +1,21 @@
+{
+  "sortie_id": "GIREOGI-0704-STRIKE",
+  "mission_context": "타격",
+  "posture": { "watchcon": 2, "defcon": 2, "infocon": 3 },
+  "drone_profile": {
+    "armament": [{ "expendable": true, "type": "leaflet" }],
+    "spare_asset_available": true,
+    "battery_pct": 70
+  },
+  "corridor": {
+    "waypoints": [
+      { "id": "wp1", "lat": 37.6, "lon": 127.1, "alt_m": 150 },
+      { "id": "wp2", "lat": 37.61, "lon": 127.11, "alt_m": 150 }
+    ],
+    "bases": {
+      "emergency": { "id": "base_emergency", "lat": 37.59, "lon": 127.1, "alt_m": 60 },
+      "alternate": { "id": "base_alternate", "lat": 37.58, "lon": 127.105, "alt_m": 60 }
+    }
+  },
+  "weights": { "stealth": 0.25, "survival": 0.3, "info_value": 0.15, "timeliness": 0.3 }
+}
