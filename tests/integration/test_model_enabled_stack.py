@@ -352,6 +352,9 @@ def test_performance_corpus_ingest_and_retrieve_within_budget(store):
 
 def test_nlp_model_smoke_with_real_sentence_transformers():
     """sentence_transformers 설치 시 NLP 모델이 실제로 위협 신호를 보강한다."""
+    import os
+    if not os.environ.get("RUN_MODEL_SMOKE"):
+        pytest.skip("RUN_MODEL_SMOKE=1 미설정 — 오프라인/CI 환경 보호")
     pytest.importorskip("sentence_transformers")
     result = nlp_model.classify_threat("적 스나이퍼 다수 발견")
     if result is None:
@@ -364,6 +367,9 @@ def test_nlp_model_smoke_with_real_sentence_transformers():
 
 def test_embedding_smoke_with_real_sentence_transformers():
     """sentence_transformers 설치 시 embed() 가 L2-정규화 벡터를 반환한다."""
+    import os
+    if not os.environ.get("RUN_MODEL_SMOKE"):
+        pytest.skip("RUN_MODEL_SMOKE=1 미설정 — 오프라인/CI 환경 보호")
     pytest.importorskip("sentence_transformers")
     import math
     import embedding as emb_mod
