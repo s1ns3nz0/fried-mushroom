@@ -70,6 +70,69 @@ const live = {
   debug: null, // tick.debug(최신 사이클의 레이어별 input/output) — 디버그 로그 패널 소스.
 };
 
+// AI 결정 모델 설명 마법사 — 5블록(0..4)을 한 단계씩 짚어 청중에게 설명(관측 전용).
+// 각 단계 desc(stages, channels)는 decision.current.stages / live.channels 실값으로
+// 청중용 설명 문장을 만든다(값 없으면 자연스러운 폴백). CHANNEL_DEFS(라벨 맵)는 이 파일
+// 뒤쪽(신호 패널 섹션)에 정의되지만 함수 선언 호이스팅 + 호출은 런타임(스크립트 전체 평가 후)이라 안전하다.
+
+/** 0 입력 신호 — live.channels(맵 또는 배열 형태 모두 허용)에서 이상 채널을 집계. */
+function describeInputSignals(channels) {
+  const src = channels || {};
+  const list = Array.isArray(src)
+    ? src.map((c) => ({ key: c && c.channel, state: c && c.state }))
+    : Object.keys(src).map((k) => ({ key: k, state: src[k] && src[k].state }));
+  const label = (key) => {
+    const def = CHANNEL_DEFS.find((d) => d.key === key);
+    return def ? def.label : key;
+  };
+  const fired = list.filter((c) => c.key && c.state && c.state !== "normal");
+  if (!fired.length) return "모든 센서 채널이 정상입니다.";
+  const names = fired.map((c) => label(c.key));
+  return "지금 센서 " + CHANNEL_DEFS.length + "채널 중 " + names.join(", ") +
+    " 에서 이상 신호가 잡혔습니다 (총 " + fired.length + "개 · 나머지 정상).";
+}
+
+/** 1 탐지 — stages.detect 기반. */
+function describeDetectStage(stages) {
+  const d = stages && stages.detect;
+  if (!d) return "탐지 결과가 아직 없습니다.";
+  return "이 이상 신호들을 결합해 위협 가능성을 탐지했습니다: " + d.msg + " (" + d.sub + ").";
+}
+
+/** 2 위협 판정 — stages.threat 기반. */
+function describeThreatStage(stages) {
+  const t = stages && stages.threat;
+  if (!t) return "위협 판정 대기 중입니다.";
+  let s = "탐지를 위협으로 분류했습니다 — " + t.msg;
+  if (t.badge) s += " · 킬체인 " + t.badge;
+  if (typeof t.conf === "number") s += " · 신뢰도 " + Math.round(t.conf * 100) + "%";
+  return s + ".";
+}
+
+/** 3 위험 평가 — stages.assess 기반. */
+function describeAssessStage(stages) {
+  const a = stages && stages.assess;
+  if (!a) return "위험 평가 대기 중.";
+  return "이 위협의 위험도를 평가했습니다 — RAC " + a.rac + " · " + a.sub + ".";
+}
+
+/** 4 대응 결정 — stages.respond 기반. */
+function describeRespondStage(stages) {
+  const r = stages && stages.respond;
+  if (!r) return "대응 결정 대기 중입니다.";
+  return "위험에 대한 대응을 결정했습니다 — " + r.msg + (r.sub ? " · " + r.sub : "") + ".";
+}
+
+const WIZARD_STEPS = [
+  { el: "dc-signals", title: "입력 신호", desc: (stages, channels) => describeInputSignals(channels) },
+  { el: "dc-detect",  title: "탐지",     desc: (stages) => describeDetectStage(stages) },
+  { el: "dc-threat",  title: "위협 판정", desc: (stages) => describeThreatStage(stages) },
+  { el: "dc-assess",  title: "위험 평가", desc: (stages) => describeAssessStage(stages) },
+  { el: "dc-respond", title: "대응 결정", desc: (stages) => describeRespondStage(stages) },
+];
+const wizard = { enabled: false, active: false, step: 0, threatEvent: null, spot: null };
+let wizExplain = null; // 설명 말풍선 DOM — initWizard 에서 body 에 1회 부착, renderWizard 가 활성 단계 옆으로 이동.
+
 // Canvas 2D 핸들 (지도/고도 mock 렌더 대상). 신호는 HTML 리스트(#signals-list)로 렌더.
 const canvases = {
   map: document.getElementById("map-canvas"),
@@ -193,6 +256,8 @@ function applyStreamInit(msg) {
 
 /** type=tick 처리 — 드론 스냅샷 갱신 + 고도 프로파일 trail 누적 + 실 채널/결정 반영. */
 function applyStreamTick(msg) {
+  // 설명 마법사 진행 중엔 tick 을 무시해 드론/결정을 프리즈(버퍼된 tick 도 드론을 안 움직임).
+  if (wizard.active) return;
   live.drone = {
     x: msg.x, y: msg.y, alt_m: msg.alt_m, terrain_m: msg.terrain_m,
     heading_deg: msg.heading_deg, speed_mps: msg.speed_mps,
@@ -275,7 +340,8 @@ function applyLiveDecision(dec, channels) {
     renderDecisionFlow();
     return;
   }
-  if (!decision.current || live.threatEvent !== primary.threat_event) {
+  const isNewEncounter = (!decision.current || live.threatEvent !== primary.threat_event);
+  if (isNewEncounter) {
     finalizeDecision();
     decision.seq++;
     decision.current = { seq: decision.seq, stages: {} };
@@ -324,6 +390,7 @@ function applyLiveDecision(dec, channels) {
   }
 
   renderDecisionFlow();
+  if (isNewEncounter && wizard.enabled && !wizard.active) startWizard(primary.threat_event);
 }
 
 // ── AI 결정 모델(우측 패널) — 현재 결정 플로우 + 결정 이력 ──────
@@ -626,6 +693,119 @@ function initDebugMode() {
     debugState.open = !debugState.open;
     dbgEl.panel.hidden = !debugState.open;
     if (debugState.open) renderDebugLog();
+  });
+}
+
+// ── AI 결정 모델 설명 마법사 ────────────────────────────────────
+// 위협 신규 조우 시 UAV 를 멈추고, 5블록을 0→4 로 한 단계씩 짚으며 설명.
+// 화면 클릭으로 진행, 4단계까지 끝나면 UAV 재개. enabled(설명 토글) OFF 시 무동작.
+
+/** 수집기 /control 로 paused 상태를 밀어(LIVE runner 가 GET /control 폴링). best-effort. */
+function wizardPostPaused(paused) {
+  if (typeof window === "undefined" || !window.D4D_CONFIG) return;
+  window.D4D_CONFIG.then((cfg) => {
+    if (!cfg || !cfg.collectorHttpUrl) return;
+    return fetch(cfg.collectorHttpUrl + "/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paused: paused }),
+    });
+  }).catch(() => {});
+}
+
+/** 설명 마법사 시작 — UAV 정지(수집기 pause + 프론트 프리즈), 0단계부터 렌더. */
+function startWizard(ev) {
+  wizard.active = true;
+  wizard.step = 0;
+  wizard.threatEvent = ev;
+  // 스포트라이트 대상 좌표 — 드론에서 가장 가까운 적, 없으면 드론 위치(정규화 좌표).
+  let spot = null;
+  if (Array.isArray(live.enemies) && live.enemies.length && live.drone) {
+    let best = Infinity;
+    for (const en of live.enemies) {
+      const d = Math.hypot(en.x - live.drone.x, en.y - live.drone.y);
+      if (d < best) { best = d; spot = { x: en.x, y: en.y }; }
+    }
+  }
+  if (!spot && live.drone) spot = { x: live.drone.x, y: live.drone.y };
+  wizard.spot = spot;
+  wizardPostPaused(true);
+  renderWizard();
+}
+
+/** 다음 단계로 — 4단계(대응 결정)를 넘어서면 완료. */
+function advanceWizard() {
+  wizard.step++;
+  if (wizard.step > 4) finishWizard();
+  else renderWizard();
+}
+
+/** 마법사 종료 — UAV 재개(수집기 resume + 프론트 프리즈 해제), 시각 강조 정리. */
+function finishWizard() {
+  wizard.active = false;
+  wizard.spot = null;
+  // 마법사 진입 시 UAV 를 멈추지만(/control), 종료 시 무조건 재개하면 운용자가
+  // 마법사 중 수동 일시정지한 경우를 덮어써 UI(mock.paused)와 불일치한다.
+  // 운용자의 현재 pause 의도(mock.paused, play/pause 버튼이 유지)로 복원한다.
+  wizardPostPaused(mock.paused);
+  WIZARD_STEPS.forEach((s) => {
+    const stepEl = document.getElementById(s.el);
+    if (stepEl) stepEl.classList.remove("wiz-active", "wiz-dim");
+  });
+  if (wizExplain) wizExplain.hidden = true;
+}
+
+/** 현재 단계를 점선 강조 + 설명 노출, 이후 단계는 dim, 이전 단계는 정상. */
+function renderWizard() {
+  WIZARD_STEPS.forEach((s, i) => {
+    const stepEl = document.getElementById(s.el);
+    if (!stepEl) return;
+    stepEl.classList.toggle("wiz-active", i === wizard.step);
+    stepEl.classList.toggle("wiz-dim", i > wizard.step);
+  });
+  const active = WIZARD_STEPS[wizard.step];
+  const activeEl = active && document.getElementById(active.el);
+  if (wizExplain && activeEl) {
+    wizExplain.querySelector(".wiz-title").textContent = active.title;
+    wizExplain.querySelector(".wiz-desc").textContent =
+      active.desc(decision.current ? decision.current.stages : {}, live.channels || []);
+    wizExplain.hidden = false;
+    // 활성 단계를 가리키는 말풍선 배치 — 기본은 단계 왼쪽(결정 패널이 우측이라 왼쪽에 공간).
+    const r = activeEl.getBoundingClientRect();
+    if (r.left < 296) {
+      // 왼쪽 여백 부족 → 단계 위쪽으로 폴백(꼬리는 아래를 향함).
+      wizExplain.classList.add("wiz-above");
+      wizExplain.style.top = r.top - 12 + "px";
+      wizExplain.style.left = r.left + r.width / 2 + "px";
+    } else {
+      wizExplain.classList.remove("wiz-above");
+      wizExplain.style.top = r.top + r.height / 2 + "px";
+      wizExplain.style.left = r.left - 16 + "px";
+    }
+  }
+}
+
+/** 헤더 #wizard-toggle 바인딩 + 전역 클릭 진행 핸들러 + 설명 박스 생성. */
+function initWizard() {
+  const toggle = document.getElementById("wizard-toggle");
+  if (!toggle) return;
+  wizExplain = document.createElement("div");
+  wizExplain.id = "wizard-explain";
+  wizExplain.hidden = true;
+  wizExplain.innerHTML =
+    '<div class="wiz-title"></div><div class="wiz-desc"></div>' +
+    '<div class="wiz-hint">화면을 클릭하면 다음 단계로 →</div>';
+  document.body.appendChild(wizExplain); // 말풍선은 body 에 붙여 fixed 로 떠서 활성 단계를 가리킨다.
+  toggle.addEventListener("click", () => {
+    wizard.enabled = !wizard.enabled;
+    toggle.classList.toggle("active", wizard.enabled);
+    toggle.setAttribute("aria-pressed", wizard.enabled ? "true" : "false");
+    if (!wizard.enabled && wizard.active) finishWizard(); // 끄면 진행 중 정리(재개 포함).
+  });
+  document.addEventListener("click", (e) => {
+    if (!wizard.active) return;
+    if (e.target.closest("#wizard-toggle")) return; // 토글 버튼 클릭은 제외.
+    advanceWizard();
   });
 }
 
@@ -1292,6 +1472,25 @@ function drawMap() {
   // blue beats the phase color; the pulse ring above keeps phase feedback.
   D4DRender.drawFriendlyAir(ctx, dx, dy, 9, droneHeadRad);
 
+  // 6.5) 마법사 스포트라이트 — 대상 위치를 점선 앰버 원으로 감싸고 원 밖을 어둡게.
+  if (wizard.active && wizard.spot) {
+    const cx = px(wizard.spot.x), cy = py(wizard.spot.y);
+    const R = Math.max(46, Math.min(W, H) * 0.16);
+    ctx.save();
+    // 원 밖을 어둡게 (evenodd: 사각형 - 원).
+    ctx.beginPath();
+    ctx.rect(0, 0, W, H);
+    ctx.arc(cx, cy, R, 0, Math.PI * 2, true); // 반대방향 → 구멍.
+    ctx.fillStyle = "rgba(5,5,6,0.66)";
+    ctx.fill("evenodd");
+    // 점선 앰버 원.
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = "#F0A03C"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
   // 7) 사전 첩보 칩(라이브 전용) — GCS briefing.threats를 우상단에 요약 표시.
   drawBriefingChip(ctx, W);
 }
@@ -1855,6 +2054,7 @@ function init() {
   initSimControls();
   initSignalsOverlay();
   initDebugMode();
+  initWizard();
 
   // /config 로 기본 URL 확정 후 자동 연결(수집기 미기동이면 backoff 재연결).
   loadConfig().then(() => {

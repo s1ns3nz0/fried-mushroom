@@ -1160,6 +1160,25 @@ body {
   outline-offset: 1px;
 }
 
+#wizard-toggle {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+#wizard-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(240, 160, 60, 0.12);
+}
+
+#wizard-toggle:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* 🐛 버튼 — AI 결정 모델 패널(우측 컬럼) 우상단에 fixed로 뜬다(디버그 모드 ON에서만 표시). */
 #debug-bug-btn {
   position: fixed;
@@ -1290,4 +1309,76 @@ body {
   line-height: 1.5;
   color: var(--fg);
   white-space: pre;
+}
+
+/* ── AI 결정 모델 설명 마법사 ─────────────────────────────────── */
+/* 현재 단계: 점선 앰버 강조. 이후 단계: dim. 이전 단계: 정상(변화 없음). */
+.dc-step.wiz-active {
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  cursor: pointer;
+}
+
+.dc-step.wiz-dim {
+  opacity: 0.35;
+  transition: opacity 0.2s;
+}
+
+/* 설명 말풍선 — body 에 fixed 로 떠서 활성 단계 왼쪽을 가리킨다(레이아웃은 밀지 않음). */
+#wizard-explain {
+  position: fixed;
+  z-index: 60;
+  max-width: 260px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(240, 160, 60, 0.15);
+  transform: translate(-100%, -50%); /* 말풍선을 단계 왼쪽에 붙이고 세로 중앙 정렬. */
+}
+
+/* 꼬리(tail) — 오른쪽 중앙에서 단계를 향하는 삼각형(말풍선 배경색과 동일). */
+#wizard-explain::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  border: 7px solid transparent;
+  border-left-color: var(--panel);
+  filter: drop-shadow(1px 0 0 var(--accent));
+}
+
+/* 폴백 — 단계 위쪽 배치(꼬리는 아래를 향함). */
+#wizard-explain.wiz-above {
+  transform: translate(-50%, -100%);
+}
+
+#wizard-explain.wiz-above::after {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left-color: transparent;
+  border-top-color: var(--panel);
+  filter: drop-shadow(0 1px 0 var(--accent));
+}
+
+#wizard-explain .wiz-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-strong);
+  margin-bottom: 4px;
+}
+
+#wizard-explain .wiz-desc {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+#wizard-explain .wiz-hint {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--muted);
 }
