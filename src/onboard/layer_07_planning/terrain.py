@@ -63,10 +63,13 @@ def compute_bbox(waypoints: list[dict]) -> dict:
     헬퍼가 degenerate 입력에 ValueError 로 죽지 않게. to_norm 이 range 0 을 or 1.0 로
     처리하므로 0-bbox 도 안전하다.
     """
-    lats = [float(wp["lat"]) for wp in waypoints if wp.get("lat") is not None]
-    lons = [float(wp["lon"]) for wp in waypoints if wp.get("lon") is not None]
-    if not lats or not lons:
+    # 양 좌표가 모두 있는 waypoint 만 유효 — lat-만/lon-만 부분결측이 한쪽 축에 phantom
+    # 기여하지 않게 한다(위치 불가 waypoint 는 통째 무시).
+    valid = [wp for wp in waypoints if wp.get("lat") is not None and wp.get("lon") is not None]
+    if not valid:
         return {"lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0}
+    lats = [float(wp["lat"]) for wp in valid]
+    lons = [float(wp["lon"]) for wp in valid]
     return {
         "lat_min": min(lats), "lat_max": max(lats),
         "lon_min": min(lons), "lon_max": max(lons),

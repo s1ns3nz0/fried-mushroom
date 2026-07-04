@@ -73,3 +73,10 @@ def test_compute_bbox_skips_missing_latlon():
     from onboard.layer_07_planning.terrain import compute_bbox
     b = compute_bbox([{"lat": 37.5, "lon": 127.0}, {"alt_m": 100}, {"lat": None, "lon": None}])
     assert b["lat_min"] == 37.5 and b["lat_max"] == 37.5  # 결측 waypoint 무시, 크래시 없음
+
+
+def test_compute_bbox_partial_waypoints_are_phantom_free():
+    # lat-만/lon-만 waypoint 는 위치 불가 → 어느 축에도 기여하지 않고 통째 무시(0-bbox).
+    from onboard.layer_07_planning.terrain import compute_bbox
+    b = compute_bbox([{"lat": 10.0}, {"lon": 20.0}])
+    assert b == {"lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0}
