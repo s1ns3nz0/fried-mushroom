@@ -113,3 +113,41 @@ def segment_min_clearance(
         "min_at_frac": round(min_frac, 6),
         "terrain_max_m": round(terrain_max, 6),
     }
+
+
+def route_terrain_profile(route: list[dict], bbox: dict, *, samples: int = 20) -> list[dict]:
+    """경로 전체의 구간별 지형 프로파일 (#341/#382 후속) — CFIT 위험 요약.
+
+    각 인접 waypoint 쌍에 segment_min_clearance 를 적용해 구간별 최저 clearance/최대 표고를
+    리스트로 반환. **경로 출력 불변 — 순수 분석**(골든 무영향). CFIT/브리핑에서 소비.
+
+    반환: [{seg_index, from, to, min_clearance_m, min_at_frac, terrain_max_m}, ...].
+    route 길이 < 2 면 빈 리스트.
+    """
+    prof = []
+    for i in range(len(route) - 1):
+        p1, p2 = route[i], route[i + 1]
+        seg = segment_min_clearance(p1, p2, bbox, samples=samples)
+        prof.append({
+            "seg_index": i,
+            "from": {"lat": p1["lat"], "lon": p1["lon"]},
+            "to": {"lat": p2["lat"], "lon": p2["lon"]},
+            **seg,
+        })
+    return prof
+
+
+def min_route_clearance(route: list[dict], bbox: dict, *, samples: int = 20) -> dict:
+    """경로 전 구간 통틀어 최저 clearance 와 그 구간 — CFIT 최악점 (#341/#382 후속).
+
+    반환: {min_clearance_m, seg_index, terrain_max_m} (route < 2 면 min_clearance_m=None).
+    """
+    prof = route_terrain_profile(route, bbox, samples=samples)
+    if not prof:
+        return {"min_clearance_m": None, "seg_index": None, "terrain_max_m": None}
+    worst = min(prof, key=lambda s: s["min_clearance_m"])
+    return {
+        "min_clearance_m": worst["min_clearance_m"],
+        "seg_index": worst["seg_index"],
+        "terrain_max_m": worst["terrain_max_m"],
+    }
