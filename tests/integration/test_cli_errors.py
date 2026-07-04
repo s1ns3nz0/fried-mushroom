@@ -126,18 +126,25 @@ def test_schema_violation_brief_exits_nonzero(tmp_path):
     assert rc != 0
 
 
-@pytest.mark.xfail(
-    reason="파이프라인 내부 KeyError 가 스택트레이스로 노출됨 — "
-           "CLI 입력 스키마 검증 추가는 #204 follow-up 이슈 대상",
-    strict=False,
-)
 def test_schema_violation_brief_graceful_message(tmp_path):
-    """필수 키 누락 brief → 어떤 키가 누락인지 명시하는 에러 메시지 (스택트레이스 아님)."""
+    """필수 키 누락 brief → 어떤 키가 누락인지 명시하는 에러 메시지 (스택트레이스 아님, #209)."""
     minimal = tmp_path / "minimal_brief.json"
     minimal.write_text(json.dumps({"sortie_id": "x"}))
     rc, _, err = _run(str(_EXAMPLES / "raw_t3.json"), str(minimal))
     assert rc != 0
     assert "Traceback" not in err, f"스택트레이스 노출: {err[:300]}"
+    assert "error" in err.lower()
+    # 누락 키(예: posture/weights)를 명시해야 운용자가 무엇을 고칠지 앎.
+    assert "posture" in err and "weights" in err, f"누락 키 미명시: {err[:300]}"
+
+
+def test_brief_not_object_graceful_message(tmp_path):
+    """mission_brief 가 dict 아님(예: 리스트) → 명확한 에러 + 비-0 exit."""
+    notobj = tmp_path / "list_brief.json"
+    notobj.write_text(json.dumps(["not", "a", "dict"]))
+    rc, _, err = _run(str(_EXAMPLES / "raw_t3.json"), str(notobj))
+    assert rc != 0
+    assert "Traceback" not in err
     assert "error" in err.lower()
 
 
