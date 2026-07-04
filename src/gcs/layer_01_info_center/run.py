@@ -11,6 +11,7 @@ finalize: 운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from gcs.layer_01_info_center.briefing_advisor import build_briefing_advisory
@@ -51,8 +52,10 @@ def assemble_draft(inputs: dict, *, store: Any = None, ts_ms: int = 0) -> dict:
 
     store: CorpusStore 선택 주입. None 이면 briefing_advisory 를 생략(무-DB graceful).
     ts_ms: advisory generated_ts 용 타임스탬프(기본 0, 운용 시 유즈사이트에서 주입).
+    inputs['use_nlp_model']=True(또는 env GCS_NLP_MODEL) 시 NLP 시맨틱 위협 보강 opt-in.
     """
-    signals = extract_signals(inputs.get("directive_text", ""))
+    use_nlp = bool(inputs.get("use_nlp_model")) or os.environ.get("GCS_NLP_MODEL") == "1"
+    signals = extract_signals(inputs.get("directive_text", ""), use_nlp_model=use_nlp)
     c4i = normalize_c4i(inputs.get("c4i"))
     adjusted, warnings = cross_check(
         signals,
