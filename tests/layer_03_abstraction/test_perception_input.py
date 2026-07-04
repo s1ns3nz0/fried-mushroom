@@ -85,7 +85,7 @@ def _b64(data=b"xxxx"):
 
 def test_malformed_dims_do_not_crash():
     # 비숫자/None/float-str 치수 → 크래시 없이 안전 기본값(폴백 아닌 프레임, bytes 유효).
-    for bad in ("abc", None, "4.5", [1, 2]):
+    for bad in ("abc", None, "4.5", [1, 2], "inf", "1e309", "nan", float("inf")):
         frame = resolve_frame({"eo_frame": {"bytes_b64": _b64(), "width": bad,
                                             "height": bad, "channels": bad}})
         assert frame is not None

@@ -91,7 +91,8 @@ def _safe_int(value, default: int) -> int:
     except (TypeError, ValueError):
         try:
             return int(float(value))  # "4.5" 류는 절삭 수용.
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int(float("inf"))/"1e309" — 비유한 float 은 default 로.
             return default
 
 
