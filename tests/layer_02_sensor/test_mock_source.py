@@ -16,7 +16,7 @@ GOLDEN_SEQ = 0
 GOLDEN_TS_MS = 1730620801200
 
 
-@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t7"])
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t6", "t7"])
 def test_scenario_fills_required_keys(scenario):
     env = build_scenario_envelope(scenario, 0, 0)
     assert set(REQUIRED_KEYS).issubset(env.keys())
@@ -83,7 +83,7 @@ def test_unknown_scenario_raises():
         build_scenario_envelope("t9", 0, 0)
 
 
-@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t7"])
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t6", "t7"])
 def test_golden_fixture_matches_builder(scenario):
     fixture = EXAMPLES_DIR / f"raw_{scenario}.json"
     saved = json.loads(fixture.read_text(encoding="utf-8"))
