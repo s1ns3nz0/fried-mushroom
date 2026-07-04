@@ -31,3 +31,27 @@ CREATE INDEX IF NOT EXISTS idx_episode_status ON episode_index (narrative_status
 --       embedding  FLOAT[384]     -- 예: multilingual MiniLM 384차원
 --   );
 -- 검색: 메타필터(위 인덱스) → episode_vec MATCH 벡터유사도 → 임계미달 시 1회 재검색.
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- corpus_record — RAG 코퍼스 학습레코드 (라운드 1).
+-- episode(집계) → 위협 판정 하나당 학습레코드 1건으로 펼친 결과. "다음 임무 브리핑 시
+-- NLP confidence 참고자료" 회수의 저장소. 스키마 출처: docs/RAG-corpus.md.
+CREATE TABLE IF NOT EXISTS corpus_record (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    mission_id       TEXT NOT NULL,             -- 임무 식별자 (episode_index.mission_id)
+    raw_log_ref      TEXT,                      -- raw_log 파일 포인터 (추적)
+    mission_context  TEXT NOT NULL,             -- 임무유형 (예: "정찰") — 회수 키
+    posture          TEXT,                      -- 경계태세 표준 JSON (예: {"defcon":3,...}) — 회수 키
+    threat_event     TEXT NOT NULL,             -- 위협 이벤트 코드 (예: "T3") — 회수 키
+    confidence       REAL,                      -- 판정 confidence (04/NLP 확신도)
+    outcome          TEXT,                      -- 실제 outcome (예: "rtb_success")
+    corridor_region  TEXT,                      -- 지역 코드 (보조 필터)
+    kill_chain_stage TEXT,                      -- 킬체인 단계 (보조)
+    ts               INTEGER,                   -- 집계/편입 시각 (epoch)
+    UNIQUE (mission_id, threat_event)           -- 재집계 멱등 (ON CONFLICT DO UPDATE)
+);
+
+-- 회수 1단계 메타필터 인덱스 (mission_context / threat_event → 후보 축소).
+CREATE INDEX IF NOT EXISTS idx_corpus_context ON corpus_record (mission_context);
+CREATE INDEX IF NOT EXISTS idx_corpus_threat ON corpus_record (threat_event);
