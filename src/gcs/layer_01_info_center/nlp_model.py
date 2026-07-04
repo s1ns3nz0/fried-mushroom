@@ -31,6 +31,14 @@ _THREAT_PROTOTYPES: dict[str, tuple[str, ...]] = {
     "T2": ("사이버 공격", "전자전 재밍", "통신 해킹", "GPS 전파 교란"),
 }
 
+# civil(ROE 민간) 프로토타입 — 키워드(민가/민간/시가지/주거)의 의역/동의어.
+_CIVIL_PROTOTYPES: dict[str, tuple[str, ...]] = {
+    "civil": ("민간인 밀집 지역", "시가지 거주 구역", "주거지역 인접", "민가 근처 통과"),
+}
+# 민간 부재 부정 가드 — "민간인 없음"/"거주 밀집 구역 없음"류. 세그먼트가 이미 쉼표 분할이라
+# 민간 명사 뒤 넓은 span(≤12자) 안의 부정을 잡는다(codex P2). "미상"(unknown)은 부정 아님.
+_CIVIL_NEGATION = re.compile(r"(민간|민가|시가지|주거|거주|민간인)[가-힣이 ]{0,12}(없|부재|전무|아님)")
+
 
 _MODEL_CACHE: dict[str, object] = {}
 
@@ -55,26 +63,29 @@ def model_available(model_name: str = DEFAULT_MODEL) -> bool:
     return _load(model_name) is not None
 
 
-_PROTO_CACHE: dict[str, tuple[tuple[str, tuple[float, ...]], ...]] = {}
+_PROTO_CACHE: dict[tuple[str, str], tuple[tuple[str, tuple[float, ...]], ...]] = {}
 
 
-def _proto_vecs(model_name: str) -> tuple[tuple[str, tuple[float, ...]], ...] | None:
-    """(threat_code, 정규화벡터) 목록 — 프로토타입은 1회만 임베딩. 성공분만 캐시(None 미캐시)."""
-    if model_name in _PROTO_CACHE:
-        return _PROTO_CACHE[model_name]
+def _proto_vecs(
+    model_name: str, type_name: str, prototypes: dict[str, tuple[str, ...]]
+) -> tuple[tuple[str, tuple[float, ...]], ...] | None:
+    """(code, 정규화벡터) 목록 — 프로토타입은 (모델,타입)당 1회 임베딩. 성공분만 캐시(None 미캐시)."""
+    key = (model_name, type_name)
+    if key in _PROTO_CACHE:
+        return _PROTO_CACHE[key]
     model = _load(model_name)
     if model is None:
         return None  # 캐시하지 않음 — 일시적 미가용이 굳어지지 않게.
     out: list[tuple[str, tuple[float, ...]]] = []
     try:
-        for code, phrases in _THREAT_PROTOTYPES.items():
+        for code, phrases in prototypes.items():
             vecs = model.encode(list(phrases), normalize_embeddings=True)
             for v in vecs:
                 out.append((code, tuple(float(x) for x in v)))
     except Exception:
         return None  # encode 실패(OOM/디바이스/캐시손상) → 하향(assemble_draft crash 방지, codex P2)
     result = tuple(out)
-    _PROTO_CACHE[model_name] = result
+    _PROTO_CACHE[key] = result
     return result
 
 
@@ -94,11 +105,16 @@ def _embed(text: str, model_name: str) -> tuple[float, ...] | None:
 _SEGMENT_SPLIT = re.compile(r"[,、;·]|\s및\s|\s그리고\s")
 
 
-def classify_threat(clause: str, model_name: str = DEFAULT_MODEL) -> tuple[str, float, str] | None:
-    """절 → (threat_code, confidence, matched_segment) 또는 None.
+def _classify(
+    clause: str,
+    type_name: str,
+    prototypes: dict[str, tuple[str, ...]],
+    negation_re: re.Pattern,
+    model_name: str,
+) -> tuple[str, float, str] | None:
+    """절 → (best_code, confidence, matched_segment) 또는 None. 시맨틱 분류 공용 코어.
 
-    세그먼트별 부정 가드 후 비-부정 세그먼트만 임베딩, 최고 유사도 세그먼트를 채택.
-    matched_segment 는 신호의 source_phrase 로 쓰여 절 전체보다 좁게 근거를 남긴다.
+    세그먼트별 부정 가드 후 비-부정 세그먼트만 임베딩, 최고 유사도 세그먼트/코드를 채택.
     """
     if not clause or not clause.strip():
         return None
@@ -106,11 +122,11 @@ def classify_threat(clause: str, model_name: str = DEFAULT_MODEL) -> tuple[str, 
     candidates = [
         s.strip()
         for s in _SEGMENT_SPLIT.split(clause)
-        if s.strip() and not _THREAT_NEGATION.search(s)
+        if s.strip() and not negation_re.search(s)
     ]
     if not candidates:
         return None
-    protos = _proto_vecs(model_name)
+    protos = _proto_vecs(model_name, type_name, prototypes)
     if protos is None:
         return None
     best_code, best_sim, best_seg = None, -1.0, ""
@@ -127,3 +143,14 @@ def classify_threat(clause: str, model_name: str = DEFAULT_MODEL) -> tuple[str, 
     # 유사도 [임계,1] → confidence [0.75, 0.95] 선형 (CONFIDENCE_FLOOR=0.7 통과 보장).
     conf = 0.75 + (best_sim - _SIM_THRESHOLD) / (1.0 - _SIM_THRESHOLD) * (0.95 - 0.75)
     return best_code, round(min(conf, 0.95), 4), best_seg
+
+
+def classify_threat(clause: str, model_name: str = DEFAULT_MODEL) -> tuple[str, float, str] | None:
+    """절 → (threat_code, confidence, matched_segment) 또는 None (동의어/의역 위협)."""
+    return _classify(clause, "threat", _THREAT_PROTOTYPES, _THREAT_NEGATION, model_name)
+
+
+def classify_civil(clause: str, model_name: str = DEFAULT_MODEL) -> tuple[float, str] | None:
+    """절 → (confidence, matched_segment) 또는 None (동의어/의역 민간/ROE, 민간부재 negation 가드)."""
+    r = _classify(clause, "civil", _CIVIL_PROTOTYPES, _CIVIL_NEGATION, model_name)
+    return None if r is None else (r[1], r[2])
