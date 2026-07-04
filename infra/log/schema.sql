@@ -59,4 +59,7 @@ CREATE TABLE IF NOT EXISTS corpus_record (
 CREATE INDEX IF NOT EXISTS idx_corpus_context ON corpus_record (mission_context);
 CREATE INDEX IF NOT EXISTS idx_corpus_threat ON corpus_record (threat_event);
 -- pending 제외 회수 필터 인덱스 (라운드 3, docs/RAG-corpus.md §6-2).
-CREATE INDEX IF NOT EXISTS idx_corpus_narrative_status ON corpus_record (narrative_status);
+-- 주의: 이 인덱스는 여기서 만들지 않는다 — 라운드1/2가 만든 기존 corpus_record에는
+-- narrative_status 컬럼이 없어(CREATE TABLE IF NOT EXISTS는 컬럼을 추가하지 않음)
+-- executescript가 여기서 바로 실패한다. corpus.py:CorpusStore.__init__이 컬럼
+-- 마이그레이션(ALTER TABLE ADD COLUMN) 이후에 별도로 생성한다 (#166 Codex P2).

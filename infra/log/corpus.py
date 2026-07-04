@@ -23,6 +23,11 @@ from aggregate import NARRATIVE_PENDING
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
+# 라운드1/2가 만든 기존 corpus_record에는 라운드3 컬럼이 없다 — `CREATE TABLE IF NOT EXISTS`는
+# 기존 테이블에 컬럼을 추가하지 않으므로, 인덱스 생성 전에 별도로 마이그레이션해야 한다.
+# → docs/RAG-corpus.md §6-2, #166 Codex P2.
+_ROUND3_NEW_COLUMNS = ("narrative_status", "narrative", "embedding")
+
 # 벡터 백엔드(sqlite_vec)는 선택 의존 — narrative 하이브리드 재순위의 활성화 게이트.
 # 미설치(CI 기본) 시 retrieve()는 메타필터-only로 자동 하향(degrade)한다.
 # docs/RAG-corpus.md §6-2.
@@ -140,6 +145,27 @@ class CorpusStore:
         self._conn = sqlite3.connect(self.db_path)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        self._migrate_round3_columns()
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_corpus_narrative_status"
+            " ON corpus_record (narrative_status)"
+        )
+        self._conn.commit()
+
+    def _migrate_round3_columns(self) -> None:
+        """라운드1/2가 만든 기존 corpus_record에 라운드3 컬럼을 추가한다 (idempotent).
+
+        신규 DB는 schema.sql의 CREATE TABLE로 이미 컬럼을 갖고 있으므로 no-op.
+        → #166 Codex P2.
+        """
+        existing = {
+            row[1] for row in self._conn.execute("PRAGMA table_info(corpus_record)")
+        }
+        for column in _ROUND3_NEW_COLUMNS:
+            if column not in existing:
+                self._conn.execute(
+                    f"ALTER TABLE corpus_record ADD COLUMN {column} TEXT"
+                )
 
     def upsert_records(self, records: list[dict[str, Any]]) -> int:
         """학습레코드 리스트 삽입/갱신 ((mission_id, threat_event) 기준 멱등). 건수 반환."""

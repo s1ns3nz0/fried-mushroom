@@ -9,10 +9,29 @@ test_corpus.py와 동일하게 infra/log를 sys.path로 임포트한다(conftest
 (c) 벡터 백엔드 부재 시 degrade: 벡터 없이도 retrieve()가 메타필터 결과를 정상 반환한다.
 """
 
+import sqlite3
+
 import corpus
 import pytest
 from aggregate import NARRATIVE_CONFIRMED, NARRATIVE_PENDING
 from corpus import CorpusStore
+
+_ROUND1_2_SCHEMA = """
+CREATE TABLE corpus_record (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    mission_id       TEXT NOT NULL,
+    raw_log_ref      TEXT,
+    mission_context  TEXT NOT NULL,
+    posture          TEXT,
+    threat_event     TEXT NOT NULL,
+    confidence       REAL,
+    outcome          TEXT,
+    corridor_region  TEXT,
+    kill_chain_stage TEXT,
+    ts               INTEGER,
+    UNIQUE (mission_id, threat_event)
+);
+"""
 
 
 def _episode(mission_id, narrative_status=None, embedding=None, ts=1751600000000, confidence=0.5):
@@ -138,3 +157,44 @@ def test_retrieve_without_narrative_query_embedding_unaffected_by_vec_flag(store
     store.ingest_episode(_episode("m-a", narrative_status=NARRATIVE_CONFIRMED))
     # 기본값(narrative_query_embedding=None)은 라운드 1/2 동작 그대로(하위호환).
     assert len(store.retrieve()) == 1
+
+
+# ── (d) 기존 라운드1/2 DB 오픈 시 컬럼 마이그레이션 (#166 Codex P2) ────────────
+
+
+def test_opening_round1_2_db_migrates_missing_columns(tmp_path):
+    """라운드1/2 스키마로 만든 기존 corpus_record를 라운드3 CorpusStore로 열면
+    narrative_status/narrative/embedding 컬럼이 추가돼야 하고(마이그레이션),
+    기존 오픈은 예외 없이 성공해야 하며 기존 데이터는 보존돼야 한다.
+    """
+    db_path = tmp_path / "legacy_corpus.db"
+
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.executescript(_ROUND1_2_SCHEMA)
+    legacy_conn.execute(
+        """
+        INSERT INTO corpus_record (
+            mission_id, raw_log_ref, mission_context, posture,
+            threat_event, confidence, outcome, corridor_region,
+            kill_chain_stage, ts
+        ) VALUES ('m-legacy', 'raw/m-legacy.json', '정찰', '{"defcon": 3}',
+                  'T3', 0.7, 'rtb_success', 'KR-hill-07', '초기', 1751600000000)
+        """
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    store = CorpusStore(db_path)
+    try:
+        columns = {
+            row[1] for row in store._conn.execute("PRAGMA table_info(corpus_record)")
+        }
+        assert {"narrative_status", "narrative", "embedding"} <= columns
+
+        row = store._conn.execute(
+            "SELECT mission_id, threat_event, confidence FROM corpus_record"
+            " WHERE mission_id = 'm-legacy'"
+        ).fetchone()
+        assert tuple(row) == ("m-legacy", "T3", 0.7)
+    finally:
+        store.close()
