@@ -80,15 +80,20 @@
   if (typeof window !== "undefined") window.assembleFromSetMission = assembleFromSetMission;
 
   const DEFAULT_BRIEF = {
-    sortie_id: "",
+    sortie_id: "HWAJINPO-0705-01",
     mission_context: "정찰",
     posture: { watchcon: 4, defcon: 4, infocon: 5 },
     drone_profile: { armament: [], spare_asset_available: false, battery_pct: 100 },
     corridor: {
-      waypoints: [{ id: "wp1", lat: 37.5, lon: 127.0, alt_m: 120 }],
+      waypoints: [
+        { id: "lp", lat: 38.25675, lon: 128.42720, alt_m: 120 },
+        { id: "wp1", lat: 38.26620, lon: 128.43304, alt_m: 120 },
+        { id: "wp2", lat: 38.27344, lon: 128.44760, alt_m: 120 },
+        { id: "obj", lat: 38.27990, lon: 128.45080, alt_m: 120 },
+      ],
       bases: {
-        emergency: { id: "base_emergency", lat: 37.49, lon: 127.0, alt_m: 50 },
-        alternate: { id: "base_alternate", lat: 37.48, lon: 127.005, alt_m: 50 },
+        emergency: { id: "base_emergency", lat: 38.25370, lon: 128.42600, alt_m: 50 },
+        alternate: { id: "base_alternate", lat: 38.25440, lon: 128.42800, alt_m: 50 },
       },
     },
     weights: { stealth: 0.4, survival: 0.35, info_value: 0.2, timeliness: 0.05 },
@@ -96,10 +101,14 @@
 
   // E · 적 트랙 예시(set_mission_recon.json 과 동일) — 프리셋 미로드 시 프리필.
   const EXAMPLE_ENEMY_TRACKS = [
-    { id: "trk-1", kind: "T3", lat: 37.508, lon: 127.006, radius_m: 260, confidence: 0.9 },
-    { id: "trk-2", kind: "T3", lat: 37.513, lon: 127.014, radius_m: 220, confidence: 0.85 },
+    { id: "E1", kind: "T3", lat: 38.26426, lon: 128.45712, radius_m: 240, confidence: 0.9 },
+    { id: "E2", kind: "T3", lat: 38.26732, lon: 128.43480, radius_m: 260, confidence: 0.85 },
   ];
   const ENEMY_KINDS = ["T1", "T2", "T3", "T4", "T5", "T6", "T7"];
+
+  // 상황도 고정 위성 프레임(화진포, vizsim mission_brief_hwajinpo.json frame과 동일) —
+  // 관측 탭 위성 지도와 좌표계를 1:1 정합시키기 위해 폼-유래 bbox 대신 이 고정 프레임을 쓴다.
+  const SITU_FRAME = { latMin: 38.251, latMax: 38.285, lonMin: 128.398, lonMax: 128.478 };
 
   // ── 폼 유틸 ─────────────────────────────────────────────────
 
@@ -312,7 +321,7 @@
     const weights = b.weights || {};
     const D = DEFAULT_BRIEF;
 
-    $("gcs-sortie-id").value = b.sortie_id || "";
+    $("gcs-sortie-id").value = b.sortie_id || D.sortie_id;
     setSelect($("gcs-mission-context"), b.mission_context, D.mission_context);
     setNum("gcs-watchcon", posture.watchcon, D.posture.watchcon);
     setNum("gcs-defcon", posture.defcon, D.posture.defcon);
@@ -362,6 +371,251 @@
 
   function updatePreview() {
     $("gcs-json-preview").textContent = JSON.stringify(collectPreview(), null, 2);
+    renderBriefSummary();
+    drawSituMap();
+  }
+
+  // ── 우: UAV 임무 brief 요약(읽기 좋은 형태) ─────────────────
+  // collectBrief() 결과(온보드 전송 body)를 사람이 읽기 좋은 요약으로 렌더.
+
+  function renderBriefSummary() {
+    const host = $("gcs-brief-summary");
+    if (!host) return;
+    const b = collectBrief();
+    const p = b.posture || {};
+    const dp = b.drone_profile || {};
+    const co = b.corridor || {};
+    const w = b.weights || {};
+    const arms = Array.isArray(dp.armament) && dp.armament.length ? dp.armament.join(", ") : "없음";
+    const nWp = Array.isArray(co.waypoints) ? co.waypoints.length : 0;
+    const rows = [
+      ["출격번호", b.sortie_id || "—"],
+      ["임무 유형", b.mission_context || "—"],
+      ["태세", "WATCHCON " + p.watchcon + " · DEFCON " + p.defcon + " · INFOCON " + p.infocon],
+      ["기체 제원", "배터리 " + dp.battery_pct + "% · 무장 " + arms + " · 예비기 " + (dp.spare_asset_available ? "가용" : "없음")],
+      ["회랑", "웨이포인트 " + nWp + "개 · 기지 emergency/alternate"],
+      ["가중치", "S " + w.stealth + " · 생존 " + w.survival + " · 정보 " + w.info_value + " · 적시 " + w.timeliness],
+    ];
+    host.textContent = "";
+    rows.forEach(([k, v]) => {
+      const row = document.createElement("div");
+      row.className = "gcs-sum-row";
+      const key = document.createElement("span");
+      key.className = "gcs-sum-key";
+      key.textContent = k;
+      const val = document.createElement("span");
+      val.className = "gcs-sum-val";
+      val.textContent = v;
+      row.append(key, val);
+      host.appendChild(row);
+    });
+  }
+
+  // ── 좌: 피아 상황도 (상황도 이미지 배경 + 아군 경로/기지 + 적 트랙) ───
+  // 폼의 waypoints/bases + collectEnemyTracks() 를 lat/lon 바운딩박스로
+  // 정규화해 캔버스에 그린다(발표용 대략 정합). 폼 변경 시 갱신.
+
+  let situMapImg = null;
+  (function loadSituMapImg() {
+    const im = new Image();
+    im.onload = () => { situMapImg = im; drawSituMap(); };
+    im.onerror = () => { situMapImg = null; };
+    im.src = "/static/assets/situmap.jpg";
+  })();
+
+  function sizeCanvas(cv) {
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (w && h && (cv.width !== w || cv.height !== h)) {
+      cv.width = w;
+      cv.height = h;
+    }
+  }
+
+  /** 적 트랙 lat/lon 추출 — pos.lat/lon 또는 flat lat/lon 모두 수용(관측 탭/vizsim과 동일). */
+  function trackLatLon(e) {
+    const pos = e && e.pos;
+    if (pos && Number.isFinite(pos.lat) && Number.isFinite(pos.lon)) return [pos.lat, pos.lon];
+    return [e ? e.lat : undefined, e ? e.lon : undefined];
+  }
+
+  function drawSituMap() {
+    const cv = $("gcs-situ-canvas");
+    if (!cv || !cv.getContext) return;
+    if (cv.clientWidth === 0) return; // 탭 숨김/미표시 — 스킵.
+    sizeCanvas(cv);
+    const ctx = cv.getContext("2d");
+    const W = cv.width, H = cv.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // 배경: 상황도 이미지(있으면) + 어두운 스크림, 없으면 단색.
+    if (situMapImg) {
+      ctx.drawImage(situMapImg, 0, 0, W, H);
+      ctx.fillStyle = "rgba(6,10,16,0.44)";
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = "#10131a";
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    const b = collectBrief();
+    const co = b.corridor || {};
+    const wps = Array.isArray(co.waypoints) ? co.waypoints : [];
+    const bases = co.bases || {};
+    const baseList = [bases.emergency, bases.alternate].filter(Boolean);
+    const enemies = collectEnemyTracks();
+
+    const isPt = (la, lo) => Number.isFinite(la) && Number.isFinite(lo) && (la !== 0 || lo !== 0);
+    const all = [];
+    wps.forEach((p) => { if (isPt(p.lat, p.lon)) all.push([p.lat, p.lon]); });
+    baseList.forEach((p) => { if (isPt(p.lat, p.lon)) all.push([p.lat, p.lon]); });
+    enemies.forEach((e) => { const [la, lo] = trackLatLon(e); if (isPt(la, lo)) all.push([la, lo]); });
+    if (!all.length) return;
+
+    // 관측 탭(위성 프레임) 과 동일한 고정 프레임으로 정규화 — 폼-유래 bbox 대신 SITU_FRAME 사용.
+    const { latMin, latMax, lonMin, lonMax } = SITU_FRAME;
+    const dLat = latMax - latMin, dLon = lonMax - lonMin;
+    const proj = (la, lo) => [
+      ((lo - lonMin) / dLon) * W,
+      ((latMax - la) / dLat) * H, // 북쪽이 위.
+    ];
+    // 미터→px 근사(적 탐지반경 원). lon 방향 스케일 사용.
+    const midLat = (latMin + latMax) / 2;
+    const mPerDegLon = 111320 * Math.cos((midLat * Math.PI) / 180) || 111320;
+    const pxPerM = W / dLon / mPerDegLon;
+
+    // 아군 공격루트(waypoints, 출발지→목표) — 굵은 청색 화살표(글로우+본선).
+    const routePts = wps.filter((p) => isPt(p.lat, p.lon)).map((p) => proj(p.lat, p.lon));
+    if (routePts.length > 1) {
+      ctx.save();
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      routePts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = "rgba(59,156,255,0.35)"; ctx.lineWidth = 9; ctx.stroke();
+      ctx.beginPath();
+      routePts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = "#3B9CFF"; ctx.lineWidth = 3; ctx.stroke();
+      ctx.restore();
+      const [px, py] = routePts[routePts.length - 2];
+      const [tx, ty] = routePts[routePts.length - 1];
+      drawArrowHead(ctx, px, py, tx, ty, "#3B9CFF");
+    }
+
+    // 웨이포인트 점 + 출발지(첫 wp) 아군 심볼 + 목표(마지막 wp) 목표 심볼.
+    routePts.forEach(([x, y], i) => {
+      if (i === 0) {
+        drawFriendlyMarker(ctx, x, y); // 아군 출발(LP) — 청색 원.
+      } else if (i === routePts.length - 1) {
+        drawTargetMarker(ctx, x, y); // 목표(마지막 wp) — 청색 조준 심볼.
+      } else {
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#0D0D0F"; ctx.fill();
+        ctx.strokeStyle = "#3B9CFF"; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+    });
+
+    // 기지(청색 diamond, 소형) — 흰/검 외곽선으로 대비.
+    baseList.forEach((p) => {
+      if (!isPt(p.lat, p.lon)) return;
+      const [x, y] = proj(p.lat, p.lon);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = "#7FC7FF";
+      ctx.fillRect(-4, -4, 8, 8);
+      ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1.4; ctx.strokeRect(-4, -4, 8, 8);
+      ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 0.8; ctx.strokeRect(-4, -4, 8, 8);
+      ctx.restore();
+    });
+
+    // 적 트랙 — 탐지반경 원(붉은 점선) + 붉은 적대 마커(다이아몬드) + 짧은 라벨.
+    ctx.save();
+    ctx.font = "700 10px ui-monospace, Menlo, monospace";
+    ctx.textAlign = "left";
+    enemies.forEach((e) => {
+      const [la, lo] = trackLatLon(e);
+      if (!isPt(la, lo)) return;
+      const [x, y] = proj(la, lo);
+      const r = Number(e.radius_m) > 0 ? e.radius_m * pxPerM : 0;
+      if (r > 2) {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = "rgba(240,85,93,0.7)"; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(240,85,93,0.1)"; ctx.fill();
+      }
+      drawEnemyMarker(ctx, x, y);
+      const label = (e.kind || "E") + " " + (e.id || "");
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.85)";
+      ctx.strokeText(label, x + 11, y + 3);
+      ctx.fillStyle = "#FFD9DA";
+      ctx.fillText(label, x + 11, y + 3);
+    });
+    ctx.restore();
+  }
+
+  /** 화살표 머리 — (x1,y1)→(x2,y2) 방향으로 끝점(x2,y2)에 그림. */
+  function drawArrowHead(ctx, x1, y1, x2, y2, color) {
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    const s = 13;
+    ctx.save();
+    ctx.translate(x2, y2);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-s, -s * 0.55);
+    ctx.lineTo(-s, s * 0.55);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 아군 출발(LP) 심볼 — 청색 원 + 글로우 + 흰/검 외곽선. */
+  function drawFriendlyMarker(ctx, x, y) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(59,156,255,0.25)"; ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = "#3B9CFF"; ctx.fill();
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 목표(마지막 wp) 심볼 — 청색 조준(사각+십자) + 글로우. */
+  function drawTargetMarker(ctx, x, y) {
+    const s = 9;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, 13, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(59,156,255,0.2)"; ctx.fill();
+    ctx.strokeStyle = "#3B9CFF"; ctx.lineWidth = 2; ctx.strokeRect(x - s, y - s, s * 2, s * 2);
+    ctx.beginPath();
+    ctx.moveTo(x - s - 4, y); ctx.lineTo(x + s + 4, y);
+    ctx.moveTo(x, y - s - 4); ctx.lineTo(x, y + s + 4);
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 적대 마커 — 붉은 다이아몬드 + 흰/검 이중 외곽선(위성 배경 대비). */
+  function drawEnemyMarker(ctx, x, y) {
+    const s = 9;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillStyle = "#F0555D"; ctx.fillRect(-s, -s, s * 2, s * 2);
+    ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2; ctx.strokeRect(-s, -s, s * 2, s * 2);
+    ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 1; ctx.strokeRect(-s, -s, s * 2, s * 2);
+    ctx.restore();
   }
 
   // ── 시나리오 프리셋 / raw 바인딩 ─────────────────────────────
@@ -520,7 +774,6 @@
       const v = brief.weights[k];
       if (!(v >= 0 && v <= 1)) errs.push("weights." + k + " 0..1");
     });
-    if (!gcs.raw) errs.push("raw 센서 입력 미바인딩(프리셋 또는 raw 선택)");
     return errs;
   }
 
@@ -580,6 +833,101 @@
       });
   }
 
+  // ── 확인 → mission_brief 세팅 완료 모달 ─────────────────────
+
+  function openConfirmModal() {
+    const modal = $("gcs-modal");
+    if (!modal) return;
+    $("gcs-modal-json").textContent = JSON.stringify(collectBrief(), null, 2);
+    modal.hidden = false;
+  }
+
+  function closeConfirmModal() {
+    const modal = $("gcs-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  function initConfirmModal() {
+    const modal = $("gcs-modal");
+    if (!modal) return;
+    $("gcs-confirm").addEventListener("click", openConfirmModal);
+    $("gcs-modal-close").addEventListener("click", closeConfirmModal);
+    $("gcs-modal-backdrop").addEventListener("click", closeConfirmModal);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.hidden) closeConfirmModal();
+    });
+  }
+
+  // ── 발표 진행 마법사 — 좌(상황도)→중(폼)→우(brief)→확인 ──────
+  // 켜면 클릭할 때마다 다음 섹션으로 진행하며 현재 섹션을 점선 강조·나머지 dim.
+  // (관측 탭 결정모델 마법사 .wiz-active/.wiz-dim·전역 클릭 진행 패턴 참고.)
+
+  const PRESENT_STEPS = ["gcs-situ", "gcs-editor", "gcs-brief"];
+  const present = { on: false, step: 0 };
+
+  function renderPresent() {
+    PRESENT_STEPS.forEach((id, i) => {
+      const el = $(id);
+      if (!el) return;
+      el.classList.toggle("gcs-wiz-active", i === present.step);
+      el.classList.toggle("gcs-wiz-dim", i !== present.step);
+    });
+  }
+
+  function clearPresent() {
+    PRESENT_STEPS.forEach((id) => {
+      const el = $(id);
+      if (el) el.classList.remove("gcs-wiz-active", "gcs-wiz-dim");
+    });
+  }
+
+  function startPresent() {
+    present.on = true;
+    present.step = 0;
+    const t = $("gcs-present-toggle");
+    t.classList.add("active");
+    t.setAttribute("aria-pressed", "true");
+    renderPresent();
+    setStatus("발표 진행: 화면을 클릭하면 다음 섹션으로 →", "");
+  }
+
+  function endPresent() {
+    present.on = false;
+    const t = $("gcs-present-toggle");
+    t.classList.remove("active");
+    t.setAttribute("aria-pressed", "false");
+    clearPresent();
+  }
+
+  function advancePresent() {
+    present.step++;
+    if (present.step > PRESENT_STEPS.length - 1) {
+      openConfirmModal();
+      setStatus("세팅 완료", "ok");
+      endPresent();
+    } else {
+      renderPresent();
+    }
+  }
+
+  function initPresent() {
+    const toggle = $("gcs-present-toggle");
+    if (!toggle) return;
+    toggle.addEventListener("click", () => {
+      if (present.on) endPresent();
+      else startPresent();
+    });
+    // 전역 클릭 진행 — 진행 모드 ON + GCS 뷰 표시 중일 때만.
+    document.addEventListener("click", (e) => {
+      if (!present.on) return;
+      if (e.target.closest("#gcs-present-toggle")) return; // 토글 클릭은 제외.
+      if (e.target.closest("#gcs-modal")) return; // 모달 내부 클릭 제외.
+      const view = document.getElementById("view-gcs");
+      if (view && view.hidden) return;
+      advancePresent();
+    });
+  }
+
   // ── 진입점 ──────────────────────────────────────────────────
 
   function init() {
@@ -612,6 +960,10 @@
     $("gcs-raw-select").addEventListener("change", (e) => {
       if (e.target.value) loadRawOnly(e.target.value);
     });
+
+    initConfirmModal();
+    initPresent();
+    window.addEventListener("resize", drawSituMap);
 
     loadScenarios().then(loadSetMissions);
   }

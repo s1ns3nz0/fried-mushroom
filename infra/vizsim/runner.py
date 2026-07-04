@@ -55,6 +55,7 @@ KIND_EVENT = {kind: event_type for event_type, kind in EVENT_KIND.items()}
 ENEMY_OFFSET = 0.04  # normalized-coord distance the marker sits beside the route
 
 BRIEFED_ENEMY_COUNT = 2  # enemies known from pre-mission intel; the rest are popups
+POPUP_ENEMY_COUNT = 3  # 임무 중 신규식별(팝업) 최대 수 — seed가 더 만들어도 이만큼만
 
 _ENEMY_DETECT_RADIUS_M = 400.0  # default keep-out radius when track omits radius_m/radius
 
@@ -131,6 +132,17 @@ def build_enemies(
             }
         )
     return enemies
+
+
+def _select_spread_popups(popups: list[dict], count: int) -> list[dict]:
+    """경로 전반(arc-length s)에 고루 퍼진 count개 팝업을 결정론적으로 선택.
+    이벤트 목록 앞쪽이 출발지에 군집돼 즉시 전부 식별되는 것을 방지 —
+    s로 정렬 후 균등 간격 샘플링."""
+    if len(popups) <= count:
+        return popups
+    ordered = sorted(popups, key=lambda e: e.get("s", 0.0))
+    n = len(ordered)
+    return [ordered[int(n * (k + 0.5) / count)] for k in range(count)]
 
 
 def split_enemies(enemies: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -223,7 +235,7 @@ def build_scenario(
     total_s = path.total_length(rt["waypoints"])
     evs = events_module.generate_events(seed, total_s)
     if enemy_tracks is not None:
-        popup = build_enemies(rt["waypoints"], evs)
+        popup = _select_spread_popups(build_enemies(rt["waypoints"], evs), POPUP_ENEMY_COUNT)
     else:
         all_final = build_enemies(rt["waypoints"], evs, briefed_threats)
         _briefed_final, popup = split_enemies(all_final)

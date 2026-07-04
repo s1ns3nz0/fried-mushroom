@@ -815,16 +815,219 @@ body {
   background: transparent;
 }
 
-/* ── 관측소(GCS) 뷰 — 프리셋 | 편집기 | JSON 미리보기 + 하단 액션바 ── */
+/* ── 관측소(GCS) 뷰 — 피아 상황도 | METT+TC 편집기 | UAV brief + 하단 액션바 ── */
 
 #gcs-layout {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 1.25fr) minmax(320px, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 8px;
   padding: 8px;
+}
+
+/* 좌 열 — 상황도(비율 고정) 세로 스택 wrapper */
+
+#gcs-situ {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* 상황도 패널 — situmap.jpg 자연비(1224x1434, 세로형)로 고정,
+   세로로 길쭉해지지 않도록 flex:none 으로 내용물 크기만큼만 차지 */
+
+#gcs-situ-map {
+  flex: none;
+}
+
+.gcs-situ-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1224 / 1434;
+  flex: none;
+  background: #10131a;
+}
+
+#gcs-situ-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 우: UAV brief 요약 */
+
+#gcs-brief-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.gcs-sum-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gcs-sum-key {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent-strong);
+}
+
+.gcs-sum-val {
+  font-size: 11px;
+  color: var(--fg);
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.gcs-brief-json-head {
+  padding: 8px 10px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+#gcs-presets-fold {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+}
+
+#gcs-presets-fold summary {
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#gcs-presets-fold #gcs-scenario-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 발표 진행 마법사 — 현재 섹션 점선 강조 / 나머지 dim (패널 단위) */
+
+#gcs-present-toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(240, 160, 60, 0.12);
+}
+
+.gcs-wiz-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.gcs-wiz-dim {
+  opacity: 0.4;
+  transition: opacity 0.2s;
+}
+
+/* 확인 → mission_brief 세팅 완료 중앙 모달 */
+
+.gcs-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gcs-modal[hidden] {
+  display: none;
+}
+
+.gcs-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.66);
+}
+
+.gcs-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(240, 160, 60, 0.18);
+  padding: 18px 20px 20px;
+}
+
+.gcs-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.gcs-modal-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.gcs-modal-card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--accent-strong);
+}
+
+.gcs-modal-sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gcs-modal-sub code {
+  font-family: var(--mono);
+  color: var(--fg);
+}
+
+#gcs-modal-json {
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre;
 }
 
 .gcs-scroll {
