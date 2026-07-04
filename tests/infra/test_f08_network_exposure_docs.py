@@ -69,18 +69,27 @@ def test_log_readme_documents_hardening_path():
 
 
 def test_audit_doc_f08_references_decision():
-    """docs/security/devsecops-audit.md F-08 항목에 결정 참조(#275 또는 README 링크)가 있어야 한다."""
+    """docs/security/devsecops-audit.md 후속 조치 테이블의 F-08 행에 결정 참조(#275)가 있어야 한다.
+
+    P2 수정: text.index("F-08") 는 findings 테이블 첫 출현을 잡으므로 후속 행을
+    검증하지 못함. 후속 조치 섹션 내에서 F-08 행을 직접 탐색한다.
+    """
     text = _AUDIT_DOC.read_text(encoding="utf-8")
 
-    # F-08 섹션이 존재해야 함
-    assert "F-08" in text, "devsecops-audit.md 에 F-08 항목 없음"
+    # 후속 조치 섹션 경계 확인
+    assert "후속 조치" in text, "devsecops-audit.md 에 후속 조치 섹션 없음"
+    followup_idx = text.index("후속 조치")
+    followup_section = text[followup_idx:]
 
-    # F-08 이후 텍스트에서 결정 참조 확인
-    f08_idx = text.index("F-08")
-    f08_section = text[f08_idx: f08_idx + 600]
-    has_ref = bool(
-        re.search(r"#275|README|결정|addressed|완료|documented|명시됨", f08_section, re.IGNORECASE)
+    # 후속 조치 섹션 내 F-08 행 탐색 — `| ... | F-08 |` 패턴
+    f08_row_match = re.search(r"\|[^\n]*F-08[^\n]*\n", followup_section)
+    assert f08_row_match, (
+        "devsecops-audit.md 후속 조치 섹션에 F-08 행(| ... | F-08 |) 없음"
     )
-    assert has_ref, (
-        "devsecops-audit.md F-08 항목에 결정 참조(#275 또는 README 링크) 없음"
+
+    # 해당 행에 #275 결정 참조가 있어야 함
+    f08_row = f08_row_match.group(0)
+    assert "#275" in f08_row, (
+        f"후속 조치 F-08 행에 #275 결정 참조 없음:\n  {f08_row.strip()}\n"
+        "  → PR #275 결정 참조를 해당 행에 추가 필요"
     )
