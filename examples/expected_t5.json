@@ -2,7 +2,7 @@
   "abstraction": {
     "schema_version": "1.0",
     "id": "scenario-t5-0",
-    "ts": 1000,
+    "ts": 1730620801200,
     "channels": [
       {
         "channel": "position_consistency",
@@ -226,6 +226,7 @@
     "target_bearing_deg": null,
     "altitude_delta_m": 0,
     "replan_scope": "NONE",
-    "reroute_anchor": null
+    "reroute_anchor": null,
+    "route": []
   }
 }
