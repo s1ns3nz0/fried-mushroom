@@ -11,40 +11,44 @@ import json
 import sys
 from pathlib import Path
 
-_INFRA_SIM = Path(__file__).resolve().parents[2] / "infra" / "sim"
-sys.path.insert(0, str(_INFRA_SIM))  # runner/world/envelope 임포트 (onboard 는 pythonpath=src)
+# infra/sim (flat sim modules), infra/log (pipeline_feeder), src (onboard)
+# on sys.path so bare imports resolve when run from tests/.
+_REPO = Path(__file__).resolve().parents[2]
+for _p in (_REPO / "infra" / "sim", _REPO / "infra" / "log", _REPO / "src"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from onboard.layer_02_sensor.schema import REQUIRED_KEYS, RawSensorEnvelope  # noqa: E402
 from onboard.run import run_cycle  # noqa: E402
 
-from envelope import world_to_envelope  # noqa: E402
-from runner import build_scenario, run_closed_loop  # noqa: E402
-from world import World  # noqa: E402
+import route  # noqa: E402
+import world  # noqa: E402
+from envelope import synthesize  # noqa: E402
+from runner import build_scenario, run_ticks  # noqa: E402
 
 from tests.helpers.contracts import (  # noqa: E402
     assert_json_serializable,
     assert_matches_schema,
 )
 
-_EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+_EXAMPLES = _REPO / "examples"
 
 
 def _brief():
     return json.loads((_EXAMPLES / "mission_brief_t3.json").read_text(encoding="utf-8"))
 
 
-_MAINTAIN = {"flight_action": "MAINTAIN", "target_bearing_deg": None,
-             "altitude_delta_m": 0, "replan_scope": "NONE", "speed_mode": "NORMAL"}
-
-
 def _sim_envelopes(n, seed=42):
     """sim world 를 굴려 n개의 RawSensorEnvelope 합성(직접 envelope.py 경로)."""
-    scen = build_scenario(_brief(), seed)
-    world = scen["world"]
+    brief = _brief()
+    scen = build_scenario(seed, brief)
+    bbox = scen["bbox"]
+    w = world.World(scen["route"], scen["events"], brief, enemies=scen["all_enemies"])
+    sortie_id = brief.get("sortie_id", "SIM")
     envs = []
-    for seq in range(n):
-        state = world.tick(1.0, _MAINTAIN)
-        envs.append(world_to_envelope("SIM", seq, seq * 1000, state))
+    for _ in range(n):
+        w.tick(1.0)
+        envs.append(synthesize(w.snapshot(), sortie_id, bbox))
     return envs
 
 
@@ -66,7 +70,7 @@ def test_each_sim_envelope_passes_pipeline_to_flight_plan():
 
 def test_closed_loop_frames_reach_flight_plan():
     # 폐루프(되먹임)에서도 매 tick run_cycle 이 flight_plan 을 낸다.
-    frames = run_closed_loop(_brief(), seed=42, ticks=10)
+    frames = run_ticks(42, _brief(), 10, 1.0)
     assert len(frames) == 10
     for f in frames:
         assert "flight_action" in f["result"]["flight_plan"]
@@ -76,16 +80,22 @@ def test_pipeline_decisions_deterministic_same_seed():
     def decisions(seed):
         return [(f["result"]["flight_plan"]["flight_action"],
                  f["result"]["flight_plan"]["replan_scope"])
-                for f in run_closed_loop(_brief(), seed=seed, ticks=10)]
+                for f in run_ticks(seed, _brief(), 10, 1.0)]
     assert decisions(42) == decisions(42)
 
 
 def test_threat_encounter_envelope_produces_primary():
     # 근접위협 주입 envelope → 04 primary 위협 산출(계약 흐름 확인).
-    threat_obj = {"class": "person", "weapon_shape": True, "closing": True,
-                  "closure_rate_mps": 3.2, "bearing_deg": 90.0, "degraded_reason": None}
-    state = World(route=[{"lat": 37.5, "lon": 127.0, "alt_m": 120},
-                         {"lat": 37.6, "lon": 127.1, "alt_m": 120}]).tick(1.0, _MAINTAIN)
-    env = world_to_envelope("SIM", 0, 0, state, threat_object=threat_obj)
-    result = run_cycle(env, _brief())
+    # T3_ambush active event 를 실은 snapshot 을 synthesize 하면 envelope 의
+    # object_label(person/weapon_shape/closing)이 채워져 04 primary 가 나온다.
+    brief = _brief()
+    bbox = route.compute_bbox(brief["corridor"]["waypoints"])
+    rt = route.generate_route(brief)
+    w = world.World(rt, [], brief)
+    w.tick(1.0)
+    snap = w.snapshot()
+    snap["active_events"] = [{"type": "T3_ambush", "s_start": snap["s"],
+                              "s_end": snap["s"], "params": {}}]
+    env = synthesize(snap, "SIM", bbox)
+    result = run_cycle(env, brief)
     assert (result["threat"].get("primary") or {}).get("threat_event") is not None

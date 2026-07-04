@@ -1,117 +1,257 @@
-"""infra/sim 경로 생성기 — METT+TC corridor + 적 탐지반경 회피 (2-pass).
-
-폐루프 시뮬(#151)의 사전 경로. 적(위치·탐지반경)을 **경로 생성 전에 확정**(2-pass)해
-직선 corridor 가 적 detect_radius 를 침범하면 우회 웨이포인트를 삽입한다.
-
-온보드 파이프라인(src/onboard) 무관·무수정. 순수 geometry(표준 라이브러리만).
-`build_normal_envelope`/`RawSensorEnvelope` 등은 envelope.py 소관 — 여기선 lat/lon 만.
+"""METT+TC route generator: maps a mission brief's lat/lon corridor onto the
+normalized [0,1] plane shared with terrain.py, inserts a midpoint between each
+consecutive skeleton waypoint pair, and biases those midpoints (and route
+altitude) using weights.stealth / weights.timeliness / posture.watchcon.
+Deterministic — no randomness.
 """
-
-from __future__ import annotations
-
 import math
 
-_EARTH_R_M = 6_371_000.0
-# 우회 시 detect_radius 위에 더 두는 안전 여유(m).
-AVOID_MARGIN_M = 60.0
+import terrain
+
+MARGIN = 0.1
+SPAN = 1.0 - 2 * MARGIN  # 0.8
+
+CLEARANCE_MAX_M = 100.0  # clearance above terrain when stealth ~= 0
+CLEARANCE_FLOOR_M = 20.0  # clearance above terrain when stealth ~= 1 (floor)
+
+WATCHCON_BASELINE = 5  # least alert; lower watchcon = higher alert
+WATCHCON_AMP_STEP = 0.15  # amplification per level below baseline
+
+OFFSET_BASE = 0.06  # max lateral midpoint offset, normalized plane units
+
+ENEMY_AVOID_MARGIN = 0.02  # extra keep-out distance beyond enemy radius
+
+SEGMENT_DETOUR_BUFFER = 0.005  # extra push past keep-out for inserted detours
+SEGMENT_AVOID_MAX_ITER = 8  # cap on re-check passes to guarantee termination
 
 
-def haversine_m(a: dict, b: dict) -> float:
-    """두 {lat, lon} 사이 대권거리(m)."""
-    lat1, lon1 = math.radians(a["lat"]), math.radians(a["lon"])
-    lat2, lon2 = math.radians(b["lat"]), math.radians(b["lon"])
-    dlat, dlon = lat2 - lat1, lon2 - lon1
-    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    return 2 * _EARTH_R_M * math.asin(min(1.0, math.sqrt(h)))
+def compute_bbox(waypoints):
+    lats = [wp["lat"] for wp in waypoints]
+    lons = [wp["lon"] for wp in waypoints]
+    return {
+        "lat_min": min(lats),
+        "lat_max": max(lats),
+        "lon_min": min(lons),
+        "lon_max": max(lons),
+    }
 
 
-def _meters_to_deg(lat_deg: float, dnorth_m: float, deast_m: float) -> tuple[float, float]:
-    """국소 평면 근사: 북/동 방향 오프셋(m) → (dlat, dlon) 도. cos(lat) 경도 보정."""
-    dlat = dnorth_m / 111_320.0
-    dlon = deast_m / (111_320.0 * math.cos(math.radians(lat_deg)))
-    return dlat, dlon
+def to_norm(lat, lon, bbox):
+    lat_range = (bbox["lat_max"] - bbox["lat_min"]) or 1.0
+    lon_range = (bbox["lon_max"] - bbox["lon_min"]) or 1.0
+    x = MARGIN + (lon - bbox["lon_min"]) / lon_range * SPAN
+    y = MARGIN + (bbox["lat_max"] - lat) / lat_range * SPAN
+    return (x, y)
 
 
-def _segment_clearance(p1: dict, p2: dict, enemy: dict) -> float:
-    """선분 p1→p2 와 적 위치의 최소거리(m). 국소 평면 근사(짧은 구간 가정)."""
-    e = enemy["pos"]
-    lat0 = p1["lat"]
-    # p1 기준 국소 미터 좌표.
-    def to_m(p):
-        north = (p["lat"] - lat0) * 111_320.0
-        east = (p["lon"] - p1["lon"]) * 111_320.0 * math.cos(math.radians(lat0))
-        return north, east
-    ax, ay = to_m(p1)
-    bx, by = to_m(p2)
-    ex, ey = to_m(e)
+def to_geo(x, y, bbox):
+    lat_range = (bbox["lat_max"] - bbox["lat_min"]) or 1.0
+    lon_range = (bbox["lon_max"] - bbox["lon_min"]) or 1.0
+    lon = bbox["lon_min"] + (x - MARGIN) / SPAN * lon_range
+    lat = bbox["lat_max"] - (y - MARGIN) / SPAN * lat_range
+    return (lat, lon)
+
+
+def _effective_stealth(weights, posture):
+    stealth = weights.get("stealth", 0.0)
+    watchcon = posture.get("watchcon", WATCHCON_BASELINE)
+    amplification = 1.0 + max(0, WATCHCON_BASELINE - watchcon) * WATCHCON_AMP_STEP
+    return min(1.0, stealth * amplification)
+
+
+def _clearance_m(effective_stealth):
+    return CLEARANCE_FLOOR_M + (1.0 - effective_stealth) * (
+        CLEARANCE_MAX_M - CLEARANCE_FLOOR_M
+    )
+
+
+def _offset_scale(effective_stealth, timeliness):
+    timeliness = max(0.0, min(1.0, timeliness))
+    return OFFSET_BASE * effective_stealth * (1.0 - timeliness)
+
+
+def _clamp01(v):
+    return max(0.0, min(1.0, v))
+
+
+def _biased_midpoint(a, b, offset_scale):
+    ax, ay = a
+    bx, by = b
+    mx, my = (ax + bx) / 2.0, (ay + by) / 2.0
     dx, dy = bx - ax, by - ay
-    seg2 = dx * dx + dy * dy
-    if seg2 == 0:
-        return math.hypot(ex - ax, ey - ay)
-    t = max(0.0, min(1.0, ((ex - ax) * dx + (ey - ay) * dy) / seg2))
-    cx, cy = ax + t * dx, ay + t * dy
-    return math.hypot(ex - cx, ey - cy)
+    length = math.hypot(dx, dy)
+    if length == 0.0 or offset_scale == 0.0:
+        return (_clamp01(mx), _clamp01(my))
+
+    # Unit perpendicular to the AB segment.
+    px, py = -dy / length, dx / length
+    cand1 = (_clamp01(mx + px * offset_scale), _clamp01(my + py * offset_scale))
+    cand2 = (_clamp01(mx - px * offset_scale), _clamp01(my - py * offset_scale))
+
+    # Nudge toward the lower-terrain candidate (stealth heuristic).
+    h1 = terrain.height_at(*cand1)
+    h2 = terrain.height_at(*cand2)
+    return cand1 if h1 <= h2 else cand2
 
 
-def _avoid_waypoint(p1: dict, p2: dict, enemy: dict) -> dict:
-    """적을 감싸 도는 우회점 — 적에서 경로 수직방향으로 offset 이동.
+def _point_segment_dist(px, py, ax, ay, bx, by):
+    dx, dy = bx - ax, by - ay
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq == 0.0:
+        return math.hypot(px - ax, py - ay)
+    t = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / seg_len_sq))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
 
-    단일 offset(radius+margin)은 두 leg(p1→우회점, 우회점→p2)가 여전히 원을 관통할 수
-    있으므로(긴 구간·중점 적), **두 leg 의 clearance 가 모두 radius 이상이 될 때까지
-    offset 을 결정론적으로 키운다**(수렴). radius 가 구간 절반보다 크면(끝점이 원 안)
-    기하학상 불가 — 그 경우 도달 가능한 최대 offset(best-effort)을 쓴다.
-    """
-    e = enemy["pos"]
-    lat0 = e["lat"]
-    north = (p2["lat"] - p1["lat"]) * 111_320.0
-    east = (p2["lon"] - p1["lon"]) * 111_320.0 * math.cos(math.radians(lat0))
-    norm = math.hypot(north, east) or 1.0
-    # 수직 단위벡터 (좌현: (-east, north)). 결정론 위해 항상 좌현 우회.
-    perp_n, perp_e = -east / norm, north / norm
-    radius = enemy["detect_radius_m"]
 
-    def _wp(offset: float) -> dict:
-        dlat, dlon = _meters_to_deg(lat0, perp_n * offset, perp_e * offset)
-        return {"lat": round(e["lat"] + dlat, 7), "lon": round(e["lon"] + dlon, 7),
-                "alt_m": p1.get("alt_m", 120)}
+def _avoid_enemies(points, enemies):
+    adjusted = list(points)
+    for i in range(1, len(adjusted) - 1):
+        for enemy in enemies:
+            ex, ey = enemy["x"], enemy["y"]
+            keep_out = enemy["radius"] + ENEMY_AVOID_MARGIN
+            px, py = adjusted[i]
+            dx, dy = px - ex, py - ey
+            dist = math.hypot(dx, dy)
+            if dist >= keep_out:
+                continue
+            if dist == 0.0:
+                # Point sits exactly on the enemy center: displace along the
+                # neighbor segment's perpendicular toward lower terrain.
+                ax, ay = adjusted[i - 1]
+                bx, by = adjusted[i + 1]
+                sx, sy = bx - ax, by - ay
+                length = math.hypot(sx, sy)
+                if length == 0.0:
+                    ux, uy = 1.0, 0.0
+                else:
+                    ux, uy = -sy / length, sx / length
+                cand1 = (_clamp01(px + ux * keep_out), _clamp01(py + uy * keep_out))
+                cand2 = (_clamp01(px - ux * keep_out), _clamp01(py - uy * keep_out))
+                h1 = terrain.height_at(*cand1)
+                h2 = terrain.height_at(*cand2)
+                adjusted[i] = cand1 if h1 <= h2 else cand2
+            else:
+                adjusted[i] = (
+                    _clamp01(ex + dx / dist * keep_out),
+                    _clamp01(ey + dy / dist * keep_out),
+                )
+    return adjusted
 
-    offset = radius + AVOID_MARGIN_M
-    wp = _wp(offset)
-    # 두 leg 가 모두 clear 될 때까지 offset 을 1.5배씩 키움(결정론 수렴, 상한).
-    for _ in range(40):
-        if (_segment_clearance(p1, wp, enemy) >= radius
-                and _segment_clearance(wp, p2, enemy) >= radius):
+
+def _push_point_out(x, y, enemies, push_extra):
+    # Radially push a point out of every enemy keep-out circle. Overlapping
+    # circles may re-capture the point, so iterate with a cap (deterministic;
+    # if the cap is hit the point is returned as-is).
+    for _ in range(SEGMENT_AVOID_MAX_ITER):
+        moved = False
+        for enemy in enemies:
+            ex, ey = enemy["x"], enemy["y"]
+            keep_out = enemy["radius"] + ENEMY_AVOID_MARGIN
+            dx, dy = x - ex, y - ey
+            dist = math.hypot(dx, dy)
+            if dist >= keep_out:
+                continue
+            if dist == 0.0:
+                ux, uy = 1.0, 0.0
+            else:
+                ux, uy = dx / dist, dy / dist
+            x = _clamp01(ex + ux * (keep_out + push_extra))
+            y = _clamp01(ey + uy * (keep_out + push_extra))
+            moved = True
+        if not moved:
             break
-        offset *= 1.5
-        wp = _wp(offset)
-    return wp
+    return (x, y)
 
 
-def generate_route(mission_brief: dict, enemies: list[dict] | None = None) -> list[dict]:
-    """corridor waypoints 기반 경로 + 적 탐지반경 회피 (2-pass).
+def _avoid_enemy_segments(points, enemies):
+    adjusted = list(points)
+    # Iterate because an inserted detour creates two new segments that may
+    # themselves clip a keep-out circle. Capped to guarantee termination; if
+    # the cap is hit a residual violation may remain (deterministic either way).
+    for _ in range(SEGMENT_AVOID_MAX_ITER):
+        inserted = False
+        i = 0
+        while i < len(adjusted) - 1:
+            ax, ay = adjusted[i]
+            bx, by = adjusted[i + 1]
+            inserted_here = False
+            for enemy in enemies:
+                ex, ey = enemy["x"], enemy["y"]
+                keep_out = enemy["radius"] + ENEMY_AVOID_MARGIN
+                if _point_segment_dist(ex, ey, ax, ay, bx, by) >= keep_out:
+                    continue
+                dx, dy = bx - ax, by - ay
+                seg_len_sq = dx * dx + dy * dy
+                if seg_len_sq == 0.0:
+                    # Degenerate segment: endpoint case is handled by the
+                    # waypoint push-out pass.
+                    continue
+                t = max(0.0, min(1.0, ((ex - ax) * dx + (ey - ay) * dy) / seg_len_sq))
+                cx, cy = ax + t * dx, ay + t * dy
+                ox, oy = cx - ex, cy - ey
+                olen = math.hypot(ox, oy)
+                push = keep_out + SEGMENT_DETOUR_BUFFER
+                if olen == 0.0:
+                    # Enemy center lies exactly on the segment: push along the
+                    # perpendicular toward the lower-terrain side.
+                    seg_len = math.sqrt(seg_len_sq)
+                    ux, uy = -dy / seg_len, dx / seg_len
+                    cand1 = (_clamp01(ex + ux * push), _clamp01(ey + uy * push))
+                    cand2 = (_clamp01(ex - ux * push), _clamp01(ey - uy * push))
+                    h1 = terrain.height_at(*cand1)
+                    h2 = terrain.height_at(*cand2)
+                    detour = cand1 if h1 <= h2 else cand2
+                else:
+                    detour = (
+                        _clamp01(ex + ox / olen * push),
+                        _clamp01(ey + oy / olen * push),
+                    )
+                # Overlapping keep-outs: make sure the inserted point itself
+                # clears every enemy circle, not just the triggering one.
+                detour = _push_point_out(
+                    detour[0], detour[1], enemies, SEGMENT_DETOUR_BUFFER
+                )
+                if detour == (ax, ay) or detour == (bx, by):
+                    # Clamping collapsed the detour onto an endpoint; inserting
+                    # it cannot improve the segment.
+                    continue
+                adjusted.insert(i + 1, detour)
+                inserted = True
+                inserted_here = True
+                break
+            # Skip past a freshly inserted detour within this pass; the outer
+            # loop re-checks the new segments on the next iteration.
+            i += 2 if inserted_here else 1
+        if not inserted:
+            break
+    return adjusted
 
-    적이 없거나 경로에서 충분히 멀면 corridor 원본을 그대로 반환한다. 적 detect_radius
-    를 침범하는 구간에는 좌현 우회점을 1개 삽입한다(결정론).
-    """
-    waypoints = [dict(wp) for wp in mission_brief.get("corridor", {}).get("waypoints", [])]
-    if len(waypoints) < 2 or not enemies:
-        return waypoints
 
-    route = [waypoints[0]]
-    for i in range(1, len(waypoints)):
-        p1, p2 = route[-1], waypoints[i]
+def generate_route(brief, enemies=None):
+    corridor = brief["corridor"]
+    weights = brief.get("weights", {})
+    posture = brief.get("posture", {})
 
-        def _feasible(e: dict) -> bool:
-            # 끝점이 이미 탐지원 안이면 기하학상 회피 불가 → 우회하지 않는다(무한 offset 방지).
-            r = e["detect_radius_m"]
-            return haversine_m(p1, e["pos"]) >= r and haversine_m(p2, e["pos"]) >= r
+    bbox = compute_bbox(corridor["waypoints"])
+    skeleton = [to_norm(wp["lat"], wp["lon"], bbox) for wp in corridor["waypoints"]]
 
-        # 이 구간을 침범하고 회피 가능한 적(가장 가까운 것부터) 우회.
-        threatening = [
-            e for e in enemies
-            if _segment_clearance(p1, p2, e) < e["detect_radius_m"] and _feasible(e)
-        ]
-        for enemy in sorted(threatening, key=lambda e: _segment_clearance(p1, p2, e)):
-            route.append(_avoid_waypoint(p1, p2, enemy))
-        route.append(p2)
-    return route
+    effective_stealth = _effective_stealth(weights, posture)
+    timeliness = weights.get("timeliness", 0.0)
+    clearance = _clearance_m(effective_stealth)
+    offset_scale = _offset_scale(effective_stealth, timeliness)
+
+    points = [skeleton[0]]
+    for a, b in zip(skeleton, skeleton[1:]):
+        points.append(_biased_midpoint(a, b, offset_scale))
+        points.append(b)
+
+    if enemies:
+        points = _avoid_enemies(points, enemies)
+        points = _avoid_enemy_segments(points, enemies)
+
+    waypoints = []
+    for x, y in points:
+        elev = terrain.elev_m(terrain.height_at(x, y))
+        waypoints.append({"x": x, "y": y, "alt_m": elev + clearance})
+
+    return {"waypoints": waypoints}

@@ -1,80 +1,83 @@
-# infra/sim — 폐루프 시뮬레이션 소스 (sim 코어)
+# sim
 
-METT+TC(mission_brief) → 적 사전배치 → 회피경로 → `World.tick(command)` → envelope →
-`run_cycle`(실 판정) → `flight_plan` 되먹임 폐루프. seed 이벤트(팝업 위협) 조우 시
-궤적이 실제로 꺾인다(EVADE → 우회 → 달성). **온보드 파이프라인(`src/onboard`) 무수정**
-— `run_cycle` / `build_normal_envelope` import 재사용만. 순수 결정론(난수 없음): 같은
-seed = 동일 적·이벤트·궤적·판정(재현성).
+D4D **신호발생기(가상 세계)** — layer 2(Sensor)의 상류에서 `RawSensorEnvelope`를
+연속 생성해 온보드 파이프라인(`onboard.run.run_cycle`)에 tick마다 흘려보내고, 결과를
+`infra/log/log_server.py`(로그수집기)로 push해 대시보드가 라이브로 관측할 수 있게 한다.
 
-## 모듈 계약 (4)
+## 목적
 
-| 모듈 | 계약 |
-|---|---|
-| `route.py` | `generate_route(mission_brief, enemies=None) -> [{lat,lon,alt_m}]`. corridor + 적 `detect_radius` **선분(leg)-aware 회피**(2-pass): 침범 구간에 우회점 삽입 후 두 leg clearance ≥ radius 될 때까지 offset 결정론 수렴. 끝점이 원 안(회피 불가)이면 우회 스킵(무효좌표 방지). |
-| `world.py` | `World.tick(dt, command) -> state`. `command`=`flight_plan`. `target_bearing_deg`+`replan_scope≠NONE` → 그 방위로 조향(EVADE, action명 무관). `speed_mode`→대지속도, `altitude_delta_m`→승강(율 상한). phase 는 **매 tick 재계산**(래치 없음). lat/lon 7자리·heading 6자리 반올림(포터블 결정론). |
-| `envelope.py` | `world_to_envelope(sortie_id, seq, ts_ms, world_state, *, threat_object=None) -> RawSensorEnvelope`. `build_normal_envelope` baseline + 위치/헤딩/속도 주입(gps=imu est 로 T1 오탐 방지). `threat_object` → 근접위협 주입. |
-| `runner.py` | `run_closed_loop(mission_brief, seed, ticks, dt) -> [{world, result}]` 폐루프 되먹임 + `previous_qualities`/`flight_plan_state` 스레딩. `build_scenario`/`build_tick_payload`. CLI `main()`(`--seed --brief --ticks --dt --rate --collector`). |
+실제 비행체·센서 없이도 mission brief 하나만으로 결정론적인 가상 임무를 재생한다.
+드론이 경로를 따라 이동하며 매 tick `RawSensorEnvelope`를 합성하고, 이를 그대로
+02 Sensor Layer 입력으로 온보드 파이프라인 전체(02..07)에 흘려 실제 판단(위협 모델링→
+위험 평가→대응→비행계획)이 나오도록 한다.
 
-## `enemy_tracks` (E.tracks) 입력 스키마 — F3
+## 아키텍처 파이프
 
-`mission_brief.enemy_tracks` 가 있으면 `place_enemies` 가 seed 배치 대신 그 위치에 적을
-놓는다(폼/C4I → route 회피 → 조우). **두 정본 형상을 모두 수용**:
-
-| 출처 | 형상 |
-|---|---|
-| 관측소 폼 (`gcs.js`) | `{ id, kind, lat, lon, radius_m, confidence }` — 위치 top-level `lat`/`lon` |
-| C4I / `assemble_mettc` (B-1 §5.1) | `{ track_id, kind, pos: [lat, lon], confidence, label, ... }` — 위치 `pos` 리스트(또는 `{lat,lon}`) |
-
-- id = `id` ‖ `track_id`. 반경 = `radius_m` (없으면 기본 400m). `kind`/`confidence` 보존(표시용).
-- 위치 해석 불가 항목은 스킵. **유효 변환이 0개면 조용히 0기로 두지 않고 seed 폴백**(적 없는 시뮬 방지).
-
-## `POST /tick` payload 스키마 (정본)
-
-runner 가 사이클마다 산출하는 관측 패널 전송 계약 (`build_tick_payload` 출력). 수집기
-`/tick` → `WS /stream` → 대시보드 `app.js` 소비. **모킹 아님** — 파이프라인 실출력.
-
-```jsonc
-{
-  "type": "tick",
-  "seq": 0,                      // 단조증가(사이클 인덱스)
-  "ts_ms": 0,                    // = int(seq * dt * 1000)
-  "correlation_id": "SORTIE-0000", // sortie 단위(시뮬 재시작 시 신규)
-  "world": {                     // sim 산출 — 지도/텔레메트리 패널
-    "pos": { "lat": 37.5, "lon": 127.0, "alt_m": 120.0 },
-    "heading_deg": 42.1,
-    "speed_mps": 17.0,
-    "phase": "TRANSIT",          // TRANSIT | ENCOUNTER | EVADE | RTL | ARRIVED
-    "enemies": [ { "id": "E1", "pos": { "lat": 37.55, "lon": 127.05 }, "detect_radius_m": 400.0 } ]
-  },
-  "abstraction": { "schema_version": "...", "id": "...", "ts": 0, "channels": [ /* 03 실 11채널 */ ] },
-  "threat":   { /* 04 run_cycle 실출력 */ },
-  "risk":     { /* 05 실출력 */ },
-  "response": { /* 06 실출력 */ },
-  "flight_plan": { /* 07 실출력 (flight_action/target_bearing_deg/speed_mode/replan_scope/...) */ }
-}
+```
+route → path → events → world → envelope → runner
 ```
 
-- **`world`** = sim 코어 산출(위 world.py). **`abstraction`/`threat`/`risk`/`response`/`flight_plan`** = `run_cycle` 실출력 **그대로**(계약: `docs/contracts/*`). `abstraction.channels[]` = `{channel,state,quality,quality_delta,payload}`(#106).
-- **`speed_mode` enum** = 07 `flight_plan.speed_mode` = `CAUTIOUS | NORMAL | MAX` (`shared/constants.SPEED_MODE_ORDER`). world 속도표는 이 enum 을 키로 쓴다.
-
-### fallback 계약 (app.js 패널별)
-
-스트림/필드 부재 시 패널별 mock 으로 폴백(데모 모드 유지). 실 스트림 수신 시 자동 전환.
-
-| 조건 | app.js 동작 |
+| 모듈 | 역할 |
 |---|---|
-| `/stream` 미연결 | 전 패널 mock(내부 시뮬), "시뮬" 라벨 |
-| tick 수신, `world` 있음 | 지도/텔레메트리 실값. `world` 는 **필수 키**(없으면 그 tick 무시) |
-| tick 수신, `abstraction` null/부재 | 신호 패널만 mock 폴백, 나머지는 실값 |
-| tick 수신, `threat/risk/response` null/부재 | AI 결정 패널만 mock 폴백 |
+| `terrain.py` | 결정론적 가우시안 heightmap(`app.js`의 PEAKS/heightAt 파이썬 포트) + 200×200 u16 격자 생성 |
+| `route.py` | mission brief의 lat/lon corridor → 정규화 [0,1] 평면 경로로 변환, stealth/timeliness/watchcon 가중치로 경로·고도 편향 |
+| `path.py` | 웨이포인트 리스트의 호길이(arc-length) 파라미터화 — 진행도 `s` → (x, y, alt, heading) |
+| `events.py` | seed 기반 위협 이벤트(T1/T2/T3/T4/T7)를 진행도 `s` 위치에 사전 배치 |
+| `world.py` | `World` — tick(dt)마다 `s`/고도/heading/속도/배터리를 결정론적으로 전진시키는 물리 상태 |
+| `envelope.py` | `World` 스냅샷 + route bbox → `RawSensorEnvelope` 합성(활성 이벤트에 따라 센서 필드 오버라이드) |
+| `runner.py` | CLI — 위 파이프를 tick 루프로 구동하며 온보드 파이프라인 실행 + 로그수집기로 `/init`·`/log`·`/tick` push |
 
-## 실행
+`runner.py`가 보내는 `/init`·`/tick`은 로그수집기(`log_server.py`)의 `stream_hub`가
+받아 대시보드가 구독하는 `WS /stream`으로 그대로 broadcast된다 — 계약 상세는
+`infra/log/API.md` "실시간 텔레메트리 스트림" 절 참고.
 
-```bash
-# 폐루프 dry-run (tick payload JSON Lines 를 stdout)
-PYTHONPATH=src:infra/sim python -m runner --seed 42 --brief examples/mission_brief_t3.json --ticks 20
-# 수집기로 스트림 (POST /tick)
-PYTHONPATH=src:infra/sim python -m runner --seed 42 --brief examples/mission_brief_t3.json --collector http://localhost:8500/tick --rate 0.5
+## seed 재현성 규칙
+
+- 이벤트(T1 재밍, T2 링크 저하, T3 매복, T4 포획, T7 장애물)는 **tick 진행 중이 아니라
+  생성 시점에 한 번**, `random.Random(seed)`로 경로 진행도 `s`(전체 경로 길이에 대한
+  arc-length)에 미리 배치된다(`events.generate_events`).
+- 따라서 **같은 `seed`는 항상 같은 경로 위치에서 같은 사건**을 만든다 — `--rate`나
+  `--speed`(배속)를 바꿔도 이벤트가 발생하는 `s` 값은 변하지 않는다. tick/시간 개념은
+  이벤트 배치에 전혀 관여하지 않는다.
+- `World.tick(dt)`도 난수를 쓰지 않는 순수 물리 전진이므로, 동일 `seed` + 동일 `dt` 시퀀스는
+  바이트 단위로 동일한 결과를 재생한다(`runner.run_ticks` 참고 — 벽시계 시간이 아니라
+  `dt` 누적으로 `ts_ms`를 만드는 이유).
+
+## in-process 실행
+
+네트워크·수집기 없이 `runner.run_ticks(seed, brief, n_ticks, dt)`를 직접 import해
+n틱을 순수 함수 호출로 재생할 수 있다(테스트·배치 분석용). 온보드 파이프라인 실행
+결과(`result`)와 tick 스냅샷(`snapshot`)이 리스트로 반환되며, 로그수집기 POST는
+발생하지 않는다.
+
+```python
+from runner import run_ticks
+records = run_ticks(seed=42, brief=brief_dict, n_ticks=100, dt=0.2)
 ```
 
-테스트: `tests/infra_sim/`(루트 CI `python -m pytest` 수집). 계약 회귀 = `test_tick_payload_contract.py`.
+## 실행 커맨드
+
+```
+# 로그수집기 기동 (별도 터미널)
+cd infra/log && PYTHONPATH=../../src:. ../../.venv/bin/uvicorn log_server:app --host 0.0.0.0 --port 8500
+# 신호발생기 실행
+PYTHONPATH=src .venv/bin/python infra/sim/runner.py --seed 42 --brief examples/mission_brief_t3.json --rate 5
+```
+
+## #102(layer 07 지형경로) 어댑터 교체 지점
+
+`terrain.py`(가우시안 heightmap)와 `route.py`(직선 보간 + 편향 미드포인트)는 현재
+mock 지형·경로 생성기다. 실제 DEM/지형경로 계획(#102, layer 07 Flight Planning)이
+들어오면 이 두 모듈의 **출력 스키마(`{"u16","w","h","hmin","hmax"}`, `{"waypoints":[...]}`)
+는 유지한 채 내부 구현만 교체**하면 된다 — `world.py`/`envelope.py`/`runner.py`는
+스키마에만 의존하고 생성 방식을 모른다.
+
+## layer 2 무수정 원칙
+
+`envelope.py`는 `onboard.layer_02_sensor.mock_source.build_normal_envelope`와
+`onboard.layer_02_sensor.schema.REQUIRED_KEYS`를 그대로 재사용해 정상 baseline
+envelope를 만들고, 이벤트별 오버라이드만 얹는다. **`src/onboard/` 레이어 코드는
+sim이 절대 수정하지 않는다** — sim은 layer 2의 소비자일 뿐, mock_source가 만든
+값을 가져다 쓰기만 한다. 이는 온보드 파이프라인이 실제 하드웨어 입력과 sim 입력을
+구분하지 못하게(동일 스키마) 만들어, 신호발생기가 실제 파이프라인을 그대로 검증하는
+용도로 쓰일 수 있게 한다.

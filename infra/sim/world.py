@@ -1,133 +1,173 @@
-"""infra/sim 세계 진화 — 폐루프 결정론 조향 World.tick(dt, command).
+"""Deterministic per-tick physics evolution of the sim world's drone state.
 
-command = run_cycle 의 flight_plan(dict). world 가 이를 받아 실제 기체 상태
-(pos/heading/alt/speed/phase)를 갱신한다 → 회피 결정이 화면 궤적에 반영(폐루프).
+Consumes route.py (arc-length waypoints), events.py (seed-placed threat
+events) and a mission brief, and advances arc-length position s, altitude,
+heading, speed and battery on tick(dt, command=None). Phases: outbound
+(s 0 -> total), return (s total -> 0), complete (holds at s=0).
 
-순수 결정론(난수 없음). 온보드 파이프라인 무관 — lat/lon/alt geometry 만 다룬다.
+Closed-loop steering: `command` is the prior cycle's flight_plan dict
+{flight_action, target_bearing_deg, altitude_delta_m, replan_scope,
+speed_mode}. Command -> motion mapping:
+- None / MAINTAIN: lateral offset and altitude offset linearly decay to 0
+  (drone re-joins the planned route).
+- REROUTE / ALTITUDE_CHANGE_REROUTE with target_bearing_deg: lateral offset
+  accrues toward the bearing at EVADE_LATERAL_SHARE of the move rate, capped
+  at EVADE_OFFSET_MAX_NORM; s still advances along the route.
+- ALTITUDE_CHANGE / POSTURE_ELEVATE / ALTITUDE_CHANGE_REROUTE: alt offset
+  moves toward altitude_delta_m at CLIMB_RATE_MPS.
+- RTL: outbound phase flips to return immediately; offset decays.
+- speed_mode (CAUTIOUS/NORMAL/MAX): scales this tick's speed via
+  SPEED_MODE_FACTOR.
+Final position = route point + offset; alt_m = route alt + alt_offset_m;
+heading_deg = compass bearing of the actual displacement. No randomness —
+with command=None behavior is identical to the plain open-loop tick.
 """
-
-from __future__ import annotations
-
 import math
 
-# 페이즈: 이동/조우/회피/복귀/도착.
-_ARRIVE_RADIUS_M = 30.0
-_ALT_RATE_M_PER_S = 5.0  # 물리적 승강률 상한.
-# 07 flight_plan.speed_mode enum(CAUTIOUS/NORMAL/MAX, shared/constants.SPEED_MODE_ORDER)
-# → 대지속도(m/s). 07 지시 속도가 폐루프에 실제 반영되도록 키를 07 enum 으로 맞춘다.
-_SPEED_MODE_MPS = {"CAUTIOUS": 10.0, "NORMAL": 17.0, "MAX": 24.0}
-_DEFAULT_SPEED_MODE = "NORMAL"
+import path
+import terrain
+import events as events_module
 
+MAP_EXTENT_M = 3000  # matches infra/dashboard/static/app.js MAP_EXTENT_M
 
-def _bearing_deg(a: dict, b: dict) -> float:
-    """a→b 방위(도, 북=0 시계방향). cos(lat) 보정."""
-    lat0 = math.radians(a["lat"])
-    north = (b["lat"] - a["lat"]) * 111_320.0
-    east = (b["lon"] - a["lon"]) * 111_320.0 * math.cos(lat0)
-    return math.degrees(math.atan2(east, north)) % 360.0
+SPEED_MPS = 17.0
+BATTERY_DRAIN_PCT_PER_SEC = 0.1  # ~200s t3 mission -> ~20% drain, small/sec
 
-
-def _advance(pos: dict, heading_deg: float, dist_m: float) -> dict:
-    """pos 에서 heading 방향으로 dist_m 이동한 새 좌표.
-
-    lat/lon 은 7자리(≈1cm)로 반올림한다 — cos/sin 의 마지막 ULP 가 libm(파이썬/플랫폼)
-    마다 달라 envelope→run_cycle 판정이 버전 간 갈리는 것을 막는다(포터블 결정론).
-    """
-    rad = math.radians(heading_deg)
-    dnorth, deast = dist_m * math.cos(rad), dist_m * math.sin(rad)
-    dlat = dnorth / 111_320.0
-    dlon = deast / (111_320.0 * math.cos(math.radians(pos["lat"])))
-    return {
-        "lat": round(pos["lat"] + dlat, 7),
-        "lon": round(pos["lon"] + dlon, 7),
-        "alt_m": round(pos["alt_m"], 3),
-    }
-
-
-def _dist_m(a: dict, b: dict) -> float:
-    lat0 = math.radians(a["lat"])
-    north = (b["lat"] - a["lat"]) * 111_320.0
-    east = (b["lon"] - a["lon"]) * 111_320.0 * math.cos(lat0)
-    return math.hypot(north, east)
+EVADE_LATERAL_SHARE = 0.5
+EVADE_OFFSET_MAX_NORM = 100.0 / MAP_EXTENT_M
+CLIMB_RATE_MPS = 3.0
+SPEED_MODE_FACTOR = {"CAUTIOUS": 0.7, "NORMAL": 1.0, "MAX": 1.3}
 
 
 class World:
-    """폐루프 시뮬 세계. route 를 따라가되 command(회피 등)로 조향된다."""
+    def __init__(self, route, events, brief, enemies=None):
+        self.route = route
+        self.events = events
+        self.brief = brief
+        self.enemies = enemies
 
-    def __init__(self, route: list[dict], enemies: list[dict] | None = None,
-                 speed_mps: float = 17.0) -> None:
-        if len(route) < 1:
-            raise ValueError("route must have >= 1 waypoint")
-        self._route = [dict(wp) for wp in route]
-        self._enemies = enemies or []
-        self._pos = dict(self._route[0])
-        self._pos.setdefault("alt_m", 120.0)
-        self._seg = 1  # 다음 목표 route 인덱스.
-        self._speed = speed_mps
-        self._heading = (_bearing_deg(self._route[0], self._route[1])
-                         if len(self._route) > 1 else 0.0)
-        self._phase = "TRANSIT"
+        self._total_length = path.total_length(route["waypoints"])
 
-    def state(self) -> dict:
-        return {
-            "pos": dict(self._pos),
-            "heading_deg": round(self._heading, 3),
-            "speed_mps": self._speed,
-            "phase": self._phase,
-        }
+        self.s = 0.0
+        self.phase = "outbound"
+        point = path.point_at_s(route["waypoints"], self.s)
+        self.pos = (point["x"], point["y"])
+        self.alt_m = point["alt_m"]
+        self.heading_deg = point["heading_deg"]
+        self.speed_mps = SPEED_MPS
+        self.battery_pct = brief["drone_profile"]["battery_pct"]
+        self.seq = 0
+        self.ts_ms = 0
+        self.offset = (0.0, 0.0)
+        self.alt_offset_m = 0.0
 
-    def _target(self) -> dict | None:
-        return self._route[self._seg] if self._seg < len(self._route) else None
+    def tick(self, dt, command=None):
+        action = command.get("flight_action") if command else None
+        speed_mode = command.get("speed_mode") if command else None
+        target_bearing_deg = command.get("target_bearing_deg") if command else None
+        altitude_delta_m = command.get("altitude_delta_m") if command else None
 
-    def tick(self, dt: float, command: dict) -> dict:
-        """dt(초) 동안 command 를 반영해 세계를 전진시킨다. 갱신된 state 반환.
+        speed_mps = SPEED_MPS * SPEED_MODE_FACTOR.get(speed_mode, 1.0)
+        prev_x, prev_y = self.pos
 
-        phase 는 **매 tick 현재 command 기준으로 재계산**한다(래치 금지) — EVADE 후
-        MAINTAIN 이 오면 즉시 TRANSIT/ENCOUNTER 로 복귀한다.
-        """
-        action = command.get("flight_action", "MAINTAIN")
-        self._speed = _SPEED_MODE_MPS.get(
-            command.get("speed_mode") or _DEFAULT_SPEED_MODE, self._speed)
+        ds = (speed_mps / MAP_EXTENT_M) * dt
+        if self.phase == "outbound":
+            self.s += ds
+            if self.s >= self._total_length:
+                self.s = self._total_length
+                self.phase = "return"
+        elif self.phase == "return":
+            self.s -= ds
+            if self.s <= 0.0:
+                self.s = 0.0
+                self.phase = "complete"
 
-        # 고도: altitude_delta_m 를 승강률 상한 내에서 점진 적용.
-        alt_delta = command.get("altitude_delta_m", 0) or 0
-        if alt_delta:
-            step = max(-_ALT_RATE_M_PER_S * dt, min(_ALT_RATE_M_PER_S * dt, float(alt_delta)))
-            self._pos["alt_m"] = round(self._pos["alt_m"] + step, 3)
+        if action == "RTL" and self.phase == "outbound":
+            self.phase = "return"
 
-        # 헤딩·회피의도 결정: 회피(replan≠NONE + target_bearing) → 그 방위, RTL → 기지,
-        # 아니면 route 추종. action 명 무관하게 target_bearing 이 있으면 그 회피방위로 꺾는다.
-        target = self._target()
-        evade_intent: str | None = None  # 이 tick 의 command 가 지시하는 특수 phase.
-        if command.get("target_bearing_deg") is not None and command.get("replan_scope", "NONE") != "NONE":
-            self._heading = float(command["target_bearing_deg"]) % 360.0
-            evade_intent = "EVADE"
-        elif action == "RTL":
-            self._heading = _bearing_deg(self._pos, self._route[0])
-            evade_intent = "RTL"
-        elif target is not None:
-            self._heading = _bearing_deg(self._pos, target)
-        self._heading = round(self._heading % 360.0, 6)  # 포터블 반올림(atan2 ULP 차단).
+        point = path.point_at_s(self.route["waypoints"], self.s)
 
-        # 도착 판정(경로 끝).
-        if target is None:
-            self._phase = "ARRIVED"
-            return self.state()
-
-        # 전진.
-        self._pos = _advance(self._pos, self._heading, self._speed * dt)
-        if _dist_m(self._pos, target) < _ARRIVE_RADIUS_M:
-            self._seg += 1
-
-        # phase 재계산(래치 없음): 경로 끝→ARRIVED, command 회피의도→EVADE/RTL,
-        # 아니면 적 근접 여부로 ENCOUNTER/TRANSIT.
-        if self._seg >= len(self._route):
-            self._phase = "ARRIVED"
-        elif evade_intent is not None:
-            self._phase = evade_intent
+        lateral_rate = (speed_mps / MAP_EXTENT_M) * dt
+        if (
+            action in ("REROUTE", "ALTITUDE_CHANGE_REROUTE")
+            and target_bearing_deg is not None
+        ):
+            b = math.radians(target_bearing_deg)
+            ox = self.offset[0] + math.sin(b) * EVADE_LATERAL_SHARE * lateral_rate
+            oy = self.offset[1] - math.cos(b) * EVADE_LATERAL_SHARE * lateral_rate
+            norm = math.hypot(ox, oy)
+            if norm > EVADE_OFFSET_MAX_NORM:
+                scale = EVADE_OFFSET_MAX_NORM / norm
+                ox, oy = ox * scale, oy * scale
+            self.offset = (ox, oy)
         else:
-            if any(_dist_m(self._pos, e["pos"]) < e["detect_radius_m"] for e in self._enemies):
-                self._phase = "ENCOUNTER"
+            ox, oy = self.offset
+            norm = math.hypot(ox, oy)
+            if norm <= lateral_rate:
+                self.offset = (0.0, 0.0)
             else:
-                self._phase = "TRANSIT"
-        return self.state()
+                scale = (norm - lateral_rate) / norm
+                self.offset = (ox * scale, oy * scale)
+
+        if action in ("ALTITUDE_CHANGE", "POSTURE_ELEVATE", "ALTITUDE_CHANGE_REROUTE"):
+            alt_target = altitude_delta_m if altitude_delta_m is not None else 0.0
+        else:
+            alt_target = 0.0
+        alt_step = CLIMB_RATE_MPS * dt
+        alt_diff = alt_target - self.alt_offset_m
+        if abs(alt_diff) <= alt_step:
+            self.alt_offset_m = alt_target
+        else:
+            self.alt_offset_m += alt_step if alt_diff > 0 else -alt_step
+
+        new_x = point["x"] + self.offset[0]
+        new_y = point["y"] + self.offset[1]
+        self.pos = (new_x, new_y)
+        self.alt_m = point["alt_m"] + self.alt_offset_m
+
+        dx, dy = new_x - prev_x, new_y - prev_y
+        if math.hypot(dx, dy) < 1e-9:
+            self.heading_deg = point["heading_deg"]
+        else:
+            self.heading_deg = math.degrees(math.atan2(dx, -dy)) % 360
+
+        self.speed_mps = speed_mps
+        self.battery_pct = max(0.0, self.battery_pct - BATTERY_DRAIN_PCT_PER_SEC * dt)
+
+        self.seq += 1
+        self.ts_ms += round(dt * 1000)
+
+    def _proximity_active_events(self, x, y) -> list:
+        active = []
+        for e in self.enemies:
+            if math.hypot(x - e["x"], y - e["y"]) < e["radius"]:
+                active.append(
+                    {
+                        "type": e["type"],
+                        "s_start": e.get("s", self.s),
+                        "s_end": e.get("s", self.s),
+                        "params": e.get("params", {}),
+                    }
+                )
+        return active
+
+    def snapshot(self) -> dict:
+        x, y = self.pos
+        if self.enemies is None:
+            active = events_module.active_events(self.events, self.s)
+        else:
+            active = self._proximity_active_events(x, y)
+        return {
+            "seq": self.seq,
+            "ts_ms": self.ts_ms,
+            "s": self.s,
+            "phase": self.phase,
+            "x": x,
+            "y": y,
+            "alt_m": self.alt_m,
+            "terrain_m": terrain.elev_m(terrain.height_at(x, y)),
+            "heading_deg": self.heading_deg,
+            "speed_mps": self.speed_mps,
+            "battery_pct": self.battery_pct,
+            "active_events": active,
+        }
