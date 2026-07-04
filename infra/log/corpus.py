@@ -294,5 +294,37 @@ class CorpusStore:
         )
         return record
 
+    def retrieve_semantic(
+        self,
+        query_text: str,
+        *,
+        mission_context: str | None = None,
+        posture: dict[str, Any] | None = None,
+        threat_event: str | None = None,
+        top_k: int = 20,
+        posture_tolerance: int | None = None,
+        model_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """자연어 질의 → 임베딩 모델로 벡터화 → 메타필터 후보를 narrative 유사도로 재순위.
+
+        embedding 모델(선택 의존) 미가용 시 query 벡터가 None → retrieve()가 메타필터-only 로
+        자동 하향(하위호환). 순수 advisory 회수 — 결정론 판정 무관(SCC-1).
+        """
+        # 재순위 백엔드가 없으면 임베딩 자체를 건너뛴다 — 어차피 무시될 벡터를 위해
+        # 대형 모델을 로드/다운로드하지 않는다(codex P2).
+        query_vec = None
+        if _VEC_BACKEND_AVAILABLE:
+            import embedding
+
+            query_vec = embedding.embed(query_text, model_name or embedding.DEFAULT_MODEL)
+        return self.retrieve(
+            mission_context=mission_context,
+            posture=posture,
+            threat_event=threat_event,
+            top_k=top_k,
+            posture_tolerance=posture_tolerance,
+            narrative_query_embedding=query_vec,
+        )
+
     def close(self) -> None:
         self._conn.close()
