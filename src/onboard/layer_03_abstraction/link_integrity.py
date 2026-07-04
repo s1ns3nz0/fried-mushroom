@@ -18,7 +18,10 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
         else "normal"
     )
 
-    quality = 1.0 - checksum_fail_rate * 5.0 - min(seq_gap_count, 10) * 0.05
+    # quality = 판독기 건전성(A-1/#28): 무결성 계측은 결정론적이라 값이 나빠도
+    # 측정 신뢰도는 높다. 위협 크기(체크섬 실패율·seq_gap)는 payload 로 전달한다.
+    # (계측기 자체 손상 — 샘플 부족 등 — 시에만 degraded/quality↓, MVP 는 훅만 문서화.)
+    quality = 0.95
 
     payload = {"checksum_fail_rate": checksum_fail_rate, "seq_gap_count": seq_gap_count}
     return make_output("link_integrity", state, quality, payload, previous_quality)

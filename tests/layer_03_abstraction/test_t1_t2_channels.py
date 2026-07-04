@@ -7,6 +7,7 @@
 
 from onboard.layer_02_sensor.mock_source import build_scenario_envelope
 from onboard.layer_03_abstraction import run as layer_03
+from onboard.shared.constants import Q_MIN
 
 
 def _channels(scenario: str) -> dict:
@@ -32,3 +33,11 @@ def test_t2_encryption_and_link_anomaly() -> None:
         ch["link_integrity"]["payload"]["checksum_fail_rate"] > 0.05
         or ch["link_integrity"]["payload"]["seq_gap_count"] > 0
     )
+
+
+def test_t2_anomaly_channels_survive_qmin_gate() -> None:
+    # 회귀 방지(#28): 이상 증거는 state/payload 로, quality 는 판독기 건전성.
+    # anomaly 여도 quality 가 Q_MIN(0.65) 아래로 떨어지지 않아야 04 게이트를 통과한다.
+    ch = _channels("t2")
+    assert ch["encryption_status"]["quality"] >= Q_MIN
+    assert ch["link_integrity"]["quality"] >= Q_MIN
