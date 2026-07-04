@@ -45,11 +45,27 @@ _ENEMY_DETECT_RADIUS_M = 400.0
 _EVENT_WINDOW = 3  # 팝업 위협 지속 tick 수(회피 안정화용).
 
 
-def _track_to_enemy(track: dict) -> dict:
-    """관측소 폼 E.tracks 항목 → sim 적. {id,kind,lat,lon,radius_m,confidence} → sim 계약."""
+def _track_pos(track: dict) -> tuple[float, float] | None:
+    """E.tracks 위치 추출 — 두 정본 형상을 모두 수용:
+    - 관측소 폼: top-level `lat`/`lon`
+    - C4I/assemble_mettc: `pos: [lat, lon]` (또는 `pos: {lat, lon}`)
+    해석 불가하면 None."""
+    if track.get("lat") is not None and track.get("lon") is not None:
+        return track["lat"], track["lon"]
+    pos = track.get("pos")
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2 and pos[0] is not None and pos[1] is not None:
+        return pos[0], pos[1]
+    if isinstance(pos, dict) and pos.get("lat") is not None and pos.get("lon") is not None:
+        return pos["lat"], pos["lon"]
+    return None
+
+
+def _track_to_enemy(track: dict, latlon: tuple[float, float]) -> dict:
+    """E.tracks 항목 → sim 적 계약. id 는 `id` 또는 C4I `track_id`. radius 없으면 기본."""
+    lat, lon = latlon
     return {
-        "id": track.get("id", "E?"),
-        "pos": {"lat": track["lat"], "lon": track["lon"]},
+        "id": track.get("id") or track.get("track_id") or "E?",
+        "pos": {"lat": lat, "lon": lon},
         "detect_radius_m": float(track.get("radius_m") or _ENEMY_DETECT_RADIUS_M),
         "kind": track.get("kind"),            # 표시/위협유형(선택)
         "confidence": track.get("confidence"),
@@ -57,16 +73,19 @@ def _track_to_enemy(track: dict) -> dict:
 
 
 def place_enemies(mission_brief: dict, seed: int) -> list[dict]:
-    """적 배치 — 관측소 폼 `enemy_tracks`(E.tracks, #151 F3)가 있으면 그 위치를 쓰고,
+    """적 배치 — 관측소 폼/C4I `enemy_tracks`(E.tracks, #151 F3)가 있으면 그 위치를 쓰고,
     없으면 seed 결정론 폴백(경로 진행도 s≈0.4~0.6 에 적 1기).
 
-    E.tracks 항목: {id, kind(T1..T7), lat, lon, radius_m, confidence}. lat/lon 있는
-    항목만 채택(불완전 항목은 스킵).
+    E.tracks 두 형상 수용: 폼 `{id,kind,lat,lon,radius_m,confidence}` /
+    C4I `{track_id,kind,pos:[lat,lon],confidence,...}`. **실제 변환된 적이 하나도 없으면
+    (형상 불일치 등) 조용히 0기로 두지 않고 seed 폴백**(codex #195 P2).
     """
     tracks = mission_brief.get("enemy_tracks")
     if isinstance(tracks, list) and tracks:
-        return [_track_to_enemy(t) for t in tracks
-                if isinstance(t, dict) and "lat" in t and "lon" in t]
+        enemies = [_track_to_enemy(t, ll) for t in tracks if isinstance(t, dict)
+                   for ll in (_track_pos(t),) if ll is not None]
+        if enemies:  # 유효 변환이 있을 때만 채택 — 전부 무효면 아래 seed 폴백.
+            return enemies
 
     wps = mission_brief.get("corridor", {}).get("waypoints", [])
     if len(wps) < 2:

@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "sim"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from runner import build_scenario, run_closed_loop, build_tick_payload  # noqa: E402
+from runner import _ENEMY_DETECT_RADIUS_M as _RUNNER_DEFAULT_RADIUS  # noqa: E402
 
 _BRIEF = {
     "sortie_id": "SIM", "mission_context": "정찰",
@@ -156,3 +157,30 @@ def test_build_scenario_route_avoids_etrack_enemies():
 def test_etracks_deterministic():
     from runner import place_enemies
     assert place_enemies(_ETRACKS_BRIEF, 42) == place_enemies(_ETRACKS_BRIEF, 7)  # seed 무관(트랙 고정)
+
+
+def test_place_enemies_accepts_c4i_pos_list_shape():
+    # C4I/assemble_mettc 정본 형상 {track_id, kind, pos:[lat,lon], confidence} 수용 (#195 P2).
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [
+        {"track_id": "t1", "kind": "humint", "pos": [37.53, 127.03], "confidence": 0.8},
+    ]}
+    enemies = place_enemies(brief, seed=42)
+    assert len(enemies) == 1
+    assert enemies[0]["id"] == "t1"
+    assert enemies[0]["pos"] == {"lat": 37.53, "lon": 127.03}
+    assert enemies[0]["detect_radius_m"] == _RUNNER_DEFAULT_RADIUS  # radius 없음 → 기본
+
+
+def test_place_enemies_pos_dict_shape():
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [{"track_id": "t1", "pos": {"lat": 37.53, "lon": 127.03}}]}
+    assert place_enemies(brief, 42)[0]["pos"] == {"lat": 37.53, "lon": 127.03}
+
+
+def test_place_enemies_all_malformed_falls_back_to_seed():
+    # 형상 불일치(위치 해석 불가) 트랙만 있으면 조용히 0기가 아니라 seed 폴백 (#195 P2).
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [{"kind": "humint", "label": "위치없음"}, {"foo": 1}]}
+    enemies = place_enemies(brief, seed=42)
+    assert len(enemies) == 1 and enemies[0]["id"] == "E1"  # seed 폴백
