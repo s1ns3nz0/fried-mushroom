@@ -70,6 +70,35 @@
 
 `info`(기본), `warn`, `error`.
 
+## AI 결정 로그 항목 계약 — 04 탐지 / 05 평가 (#105 · #104)
+
+`pipeline_feeder.cycle_to_log_entries`(및 인프로세스 `/gcs/run`)가 `run_cycle` 결과의
+`threat`(04)/`risk`(05) 출력을 아래 **고정 라인 포맷**으로 변환해 `POST /log`로 스트림한다.
+대시보드 AI 결정 로그의 탐지/평가 행은 이 라인을 그대로 소비한다. 실데이터 소스는
+`python -m onboard ... --log run.jsonl` 의 `layer=threat|risk` 라인(`output` = 레이어 출력 dict)과 동일 계약이다.
+포맷 변경 시 양측 합의 필요 — 계약 테스트: `infra/log/test_pipeline_feeder.py`.
+
+### `layer=threat` — 04 탐지 행
+
+| 케이스 | log 포맷 | level |
+|---|---|---|
+| primary 존재 | `04 위협 · primary={threat_event} conf={confidence:.2f} killchain={kill_chain_stage} cands={candidates 수}` | `warn` |
+| 후보 없음 (`primary=None`) | `04 위협 · 후보 없음` | `info` |
+
+예: `04 위협 · primary=T3 conf=0.92 killchain=후기 cands=1`
+
+### `layer=risk` — 05 평가 행 (rank-1 후보 = `priority_rank` 최솟값)
+
+| 케이스 | log 포맷 | level |
+|---|---|---|
+| candidates 존재 | `05 위험 · RAC={rac} L={l_class_final} S={severity_label_final} urgency={compound_urgency_score:.2f} rank={priority_rank}` | `rac ∈ {High, Serious}` → `error`, 그 외 `warn` |
+| 위협 없음 (`candidates=[]`) | `05 위험 · 위협 없음 ambient={ambient_rac}` (05 계약상 항상 `Low`) | `info` |
+
+예: `05 위험 · RAC=Serious L=B S=Critical urgency=0.22 rank=1`
+
+필드 의미는 [`docs/contracts/04-threat-modeling-output.md`](../../docs/contracts/04-threat-modeling-output.md) ·
+[`docs/contracts/05-risk-assessment-output.md`](../../docs/contracts/05-risk-assessment-output.md) 참조.
+
 ## 엔드포인트
 
 ### `POST /log` — 레이어 → 로그수집기
