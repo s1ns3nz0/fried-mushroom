@@ -139,6 +139,17 @@ def abstraction_t7() -> AbstractionOutput:
 
 
 @pytest.fixture
+def abstraction_stub() -> AbstractionOutput:
+    """layer 03 미구현 시 orchestrator 가 넘기는 stub (mission_phase 채널 없음)."""
+    return {
+        "schema_version": "0.0-stub",
+        "id": "stub",
+        "ts": 0,
+        "channels": [],
+    }
+
+
+@pytest.fixture
 def abstraction_normal() -> AbstractionOutput:
     """이상 신호 없음 → 매칭 없음."""
     return _envelope(
