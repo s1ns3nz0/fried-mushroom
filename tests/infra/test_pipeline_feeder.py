@@ -1,10 +1,5 @@
 """pipeline_feeder 단위 테스트 (네트워크 없음)."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
 from pipeline_feeder import cycle_to_log_entries, post_entries
 
 LAYER_ORDER = ["abstraction", "threat", "risk", "response", "flight_plan"]
