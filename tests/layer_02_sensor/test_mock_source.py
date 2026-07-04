@@ -18,7 +18,7 @@ GOLDEN_SEQ = 0
 GOLDEN_TS_MS = 1730620801200
 
 
-@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t6", "t7"])
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t5", "t6", "t7"])
 def test_scenario_fills_required_keys(scenario):
     env = build_scenario_envelope(scenario, 0, 0)
     assert set(REQUIRED_KEYS).issubset(env.keys())
@@ -126,7 +126,16 @@ def test_t6_injects_camera_gis_mismatch():
     assert terrain["camera_mismatch"] is True
 
 
-@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t6", "t7"])
+def test_t5_injects_terrain_confidence_drop():
+    # T5(광학 교란): terrain_class 품질(camera_confidence)이 낮게(0.65) 주입돼 직전(1.0)
+    # 대비 급락 → 03 quality_delta<-0.3 (T5 SIGNAL). GIS 일치라 camera_mismatch 는 없음.
+    env = build_scenario_envelope("t5", 0, 0)
+    terrain = env["imagery"]["terrain_label"]
+    assert terrain["camera_confidence"] == 0.65
+    assert terrain["dominant_class"] == "open_field"
+
+
+@pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t5", "t6", "t7"])
 def test_golden_fixture_matches_builder(scenario):
     fixture = EXAMPLES_DIR / f"raw_{scenario}.json"
     saved = json.loads(fixture.read_text(encoding="utf-8"))

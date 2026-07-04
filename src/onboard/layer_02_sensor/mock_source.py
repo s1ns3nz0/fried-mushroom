@@ -13,7 +13,7 @@ import copy
 
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 
-SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t6", "t7")
+SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t5", "t6", "t7")
 
 # imagery 에 심는 mock 객체 라벨 hint. 03 proximity_object(AI 채널) stub 이 그대로 읽어
 # class/weapon_shape/closing 을 산출한다 (step2: mock 라벨 필드를 심어둔다).
@@ -206,6 +206,16 @@ def build_scenario_envelope(scenario_id: str, seq: int, ts_ms: int) -> RawSensor
         env["environment"]["alt_agl_m"] = 20.0
         env["navigation"]["gps"]["alt_m"] = 40.0
         env["navigation"]["imu"]["est_speed_mps"] = 4.0
+
+    elif scenario_id == "t5":
+        # 레이저/광학 교란(T5): 카메라 세그멘테이션 확신도 급락(1.0→0.65). 03 terrain_class
+        # 품질=camera_confidence 이 직전 대비 -0.35 하락 → 04 quality_delta<-0.3 → T5.
+        # GIS(open_field)와 일치시켜 camera_mismatch/T6 노이즈를 배제 — 순수 품질급락 신호.
+        env["imagery"]["terrain_label"] = {
+            "dominant_class": "open_field",
+            "camera_mismatch": False,
+            "camera_confidence": 0.65,
+        }
 
     elif scenario_id == "t6":
         # 배경 환경노출도(T6) + camera_verified 경로: GIS 는 forest(은폐 양호)로 알고
