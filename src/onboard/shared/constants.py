@@ -310,3 +310,17 @@ QUALITY_DELTA_DROP_THRESHOLD: Final[float] = -0.3
 ALTITUDE_DELTA_PREVENTIVE_M: Final[int] = 15
 POSTURE_ELEVATE_ALTITUDE_M: Final[int] = 25
 ALTITUDE_DELTA_TERRAIN_M: Final[int] = 50
+
+# 06 Response — 위협 이벤트 → 3분류 (PHYSICAL / REMOTE / NAVIGATION).
+# 06 이 참조하는 공유 taxonomy. 레이어 간 직접 import 를 피하려 shared 에 둔다
+# (이전 layer_05_risk.likelihood 에서 이관, CLAUDE.md 레이어 격리 규칙 준수).
+THREAT_CATEGORY: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        "T1": "REMOTE",
+        "T2": "REMOTE",
+        "T5": "REMOTE",
+        "T3": "PHYSICAL",
+        "T4": "PHYSICAL",
+        "T7": "NAVIGATION",
+    }
+)
