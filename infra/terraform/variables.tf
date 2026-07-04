@@ -82,6 +82,19 @@ variable "github_repo" {
   default     = "fried-mushroom-uav"
 }
 
+# F-02(DevSecOps 감사 #232): OIDC 배포 role 을 assume 할 수 있는 git ref 를 최소범위로 제한.
+# 기본 main 브랜치 push 만 — PR/fork/타 브랜치의 role assume 를 차단(#208 노출 role 남용 방지).
+variable "github_deploy_ref" {
+  description = "배포 role assume 허용 git ref (sub 클레임). 기본: main 브랜치만"
+  type        = string
+  default     = "refs/heads/main"
+
+  validation {
+    condition     = can(regex("^refs/(heads|tags)/", var.github_deploy_ref))
+    error_message = "github_deploy_ref 는 refs/heads/ 또는 refs/tags/ 로 시작해야 함 (와일드카드 금지)."
+  }
+}
+
 variable "uav_container_image" {
   description = "온보드 UAV 컨테이너 이미지 (기본은 ECR uav 리포지토리 latest)"
   type        = string
