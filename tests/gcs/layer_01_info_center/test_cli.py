@@ -46,6 +46,36 @@ def test_usage_error_on_missing_input() -> None:
     assert main([]) == 2
 
 
+def test_override_applies_at_approval(capsys) -> None:
+    rc = main([_EXAMPLE, "--approve", "--ts-ms", "1",
+               "--override", 'posture={"watchcon": 2, "defcon": 2, "infocon": 3}'])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["mission_brief"]["posture"]["defcon"] == 2
+    assert result["applied_overrides"]["posture"]["to"]["defcon"] == 2
+
+
+def test_override_unknown_field_errors() -> None:
+    assert main([_EXAMPLE, "--approve", "--ts-ms", "1", "--override", "secret=1"]) == 2
+
+
+def test_override_requires_approve() -> None:
+    assert main([_EXAMPLE, "--ts-ms", "1", "--override", 'mission_context="타격"']) == 2
+
+
+def test_override_without_approve_errors_before_load() -> None:
+    # 나쁜 파일 경로여도 override/approve 계약 위반이 먼저 usage 오류 (codex P3).
+    assert main(["/nonexistent/path.json", "--override", 'posture={"defcon":2}']) == 2
+
+
+def test_override_bad_json_errors() -> None:
+    assert main([_EXAMPLE, "--approve", "--ts-ms", "1", "--override", "posture={bad"]) == 2
+
+
+def test_override_missing_equals_errors() -> None:
+    assert main([_EXAMPLE, "--approve", "--ts-ms", "1", "--override", "posture"]) == 2
+
+
 def test_usage_error_on_non_integer_ts_ms(capsys) -> None:
     rc = main([_EXAMPLE, "--approve", "--ts-ms", "abc"])
     assert rc == 2, "비정수 --ts-ms 는 traceback 아닌 usage 오류"

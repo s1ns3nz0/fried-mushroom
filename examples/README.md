@@ -106,6 +106,17 @@ python3 -m onboard examples/raw_t3.json /tmp/brief_t3.json
 (회귀 잠금: `tests/integration/test_gcs_to_onboard.py`). `--approve` 없이 실행하면
 `pending_approval` 페이로드(신호 카드 + 경고)만 출력한다 — AI 는 후보만, 최종 결정은 사람.
 
+운용자가 AI 초안을 필드단위로 확정/수정하려면 `--override K=<json>`(반복 가능, `--approve` 필수):
+
+```bash
+python3 -m gcs examples/set_mission_t3.json --approve \
+  --override 'posture={"watchcon":2,"defcon":2,"infocon":3}'
+# → mission_brief.posture 반영 + applied_overrides 감사기록
+```
+
+허용 필드는 `mission_context/posture/drone_profile/corridor/weights` 뿐이다(`sortie_id`·온보드-소유
+필드는 거부 — 레이어 계약/SCC-1).
+
 ## mission_brief 필드 참고
 
 - `mission_context` : `"정찰"|"타격"|"호송"|"수송"` — 05 BASE_RATE 조회 키

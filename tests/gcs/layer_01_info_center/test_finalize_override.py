@@ -69,6 +69,33 @@ def test_mettc_state_superseded_when_overridden():
     assert out["applied_overrides"]["posture"]["to"]["defcon"] == 1
 
 
+def test_partial_dict_override_merges_not_drops():
+    # posture 부분 오버라이드 → 나머지 키 보존 (병합, codex P2).
+    out = finalize(_draft(), approved=True, ts_ms=1, overrides={"posture": {"defcon": 1}})
+    p = out["mission_brief"]["posture"]
+    assert p == {"watchcon": 3, "defcon": 1, "infocon": 4}, "defcon 만 바뀌고 나머지 보존"
+
+
+def test_override_invalid_mission_context_rejected():
+    with pytest.raises(ValueError):
+        finalize(_draft(), approved=True, ts_ms=1, overrides={"mission_context": "없는임무"})
+
+
+def test_override_valid_mission_context_ok():
+    out = finalize(_draft(), approved=True, ts_ms=1, overrides={"mission_context": "타격"})
+    assert out["mission_brief"]["mission_context"] == "타격"
+
+
+def test_override_wrong_type_rejected():
+    # 형태가 틀린 값(예: posture=정수)은 하류 crash 유발 → 거부 (codex P2).
+    with pytest.raises(ValueError):
+        finalize(_draft(), approved=True, ts_ms=1, overrides={"posture": 1})
+    with pytest.raises(ValueError):
+        finalize(_draft(), approved=True, ts_ms=1, overrides={"corridor": None})
+    with pytest.raises(ValueError):
+        finalize(_draft(), approved=True, ts_ms=1, overrides={"mission_context": {"x": 1}})
+
+
 def test_original_draft_not_mutated():
     draft = _draft()
     before = copy.deepcopy(draft["draft_brief"])

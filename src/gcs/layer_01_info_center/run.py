@@ -63,8 +63,21 @@ def assemble_draft(inputs: dict) -> dict:
     }
 
 
-# 운용자가 승인 시 수정 가능한 GCS-소유 결정필드 (sortie_id=식별자 제외, 온보드-소유 필드 제외).
-_OVERRIDABLE_FIELDS = frozenset({"mission_context", "posture", "drone_profile", "corridor", "weights"})
+# 운용자가 승인 시 수정 가능한 GCS-소유 결정필드 → 기대 타입 (sortie_id=식별자·온보드-소유 제외).
+# 타입 검증으로 형태가 틀린 오버라이드(예: posture=정수)가 하류 crash 를 내지 않게 한다.
+_OVERRIDABLE_FIELDS: dict[str, type | tuple[type, ...]] = {
+    "mission_context": str,
+    "posture": dict,
+    "drone_profile": dict,
+    "corridor": dict,
+    "weights": dict,
+}
+# dict 필드는 replace 아닌 merge — 부분 오버라이드(예: posture={"defcon":2})가 나머지 키를
+# 떨어뜨려 불완전 브리핑을 만들지 않게 한다 (codex P2).
+_MERGE_FIELDS = frozenset({"posture", "drone_profile", "corridor", "weights"})
+# mission_context 유효값 (온보드 MISSION_CONTEXTS 미러 — 레이어 경계상 onboard 상수 import 금지).
+# 미러 드리프트 방지: 값 추가 시 shared/constants.MISSION_CONTEXTS 와 동기.
+_VALID_MISSION_CONTEXTS = frozenset({"정찰", "타격", "호송", "수송"})
 
 
 def finalize(draft: dict, approved: bool, ts_ms: int, overrides: dict | None = None) -> dict:
@@ -88,8 +101,16 @@ def finalize(draft: dict, approved: bool, ts_ms: int, overrides: dict | None = N
     for field, value in (overrides or {}).items():
         if field not in _OVERRIDABLE_FIELDS:
             raise ValueError(f"override 불가 필드: {field!r} (허용: {sorted(_OVERRIDABLE_FIELDS)})")
-        applied[field] = {"from": brief.get(field), "to": value}
-        brief[field] = value
+        if not isinstance(value, _OVERRIDABLE_FIELDS[field]):
+            raise ValueError(
+                f"override {field!r} 타입 오류: {_OVERRIDABLE_FIELDS[field].__name__} 기대, {type(value).__name__} 받음")
+        if field == "mission_context" and value not in _VALID_MISSION_CONTEXTS:
+            raise ValueError(f"override mission_context 무효: {value!r} (유효: {sorted(_VALID_MISSION_CONTEXTS)})")
+        old = brief.get(field)
+        # dict 필드는 기존 완전값에 병합 → 부분 오버라이드가 키를 떨어뜨리지 않음.
+        new = {**old, **value} if field in _MERGE_FIELDS and isinstance(old, dict) else value
+        applied[field] = {"from": old, "to": new}
+        brief[field] = new
 
     result = {
         "mission_brief": brief,
