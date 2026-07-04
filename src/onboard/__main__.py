@@ -17,6 +17,7 @@ import json
 import sys
 from pathlib import Path
 
+from onboard.layer_02_sensor.schema import REQUIRED_KEYS as RAW_REQUIRED_KEYS
 from onboard.run import run_cycle
 from onboard.shared.schemas import MissionBrief
 
@@ -65,6 +66,14 @@ def main(argv: list[str] | None = None) -> int:
         raw = json.loads(raw_text)
     except json.JSONDecodeError as exc:
         print(f"error: raw JSON 파싱 실패 ({args[0]}): {exc}", file=sys.stderr)
+        return 2
+    # 진입점 raw 스키마 검증 — 필수 키 누락이 파이프라인 내부 KeyError 로 새지 않게 (#214).
+    if not isinstance(raw, dict):
+        print(f"error: raw 는 객체(dict)여야 함 ({args[0]}): {type(raw).__name__} 받음", file=sys.stderr)
+        return 2
+    missing_raw = sorted(k for k in RAW_REQUIRED_KEYS if k not in raw)
+    if missing_raw:
+        print(f"error: raw 필수 키 누락 ({args[0]}): {', '.join(missing_raw)}", file=sys.stderr)
         return 2
 
     try:
