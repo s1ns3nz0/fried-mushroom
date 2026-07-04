@@ -38,7 +38,11 @@ def main(argv: list[str] | None = None) -> int:
             if flag == "--out":
                 out_path = val
             else:
-                ts_ms = int(val)
+                try:
+                    ts_ms = int(val)
+                except ValueError:
+                    print(_USAGE, file=sys.stderr)
+                    return 2
             args = args[:i] + args[i + 2:]
 
     if len(args) != 1 or (out_path is not None and not approve):

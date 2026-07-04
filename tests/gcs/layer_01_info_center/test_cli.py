@@ -44,3 +44,8 @@ def test_out_requires_approve(tmp_path, capsys) -> None:
 
 def test_usage_error_on_missing_input() -> None:
     assert main([]) == 2
+
+
+def test_usage_error_on_non_integer_ts_ms(capsys) -> None:
+    rc = main([_EXAMPLE, "--approve", "--ts-ms", "abc"])
+    assert rc == 2, "비정수 --ts-ms 는 traceback 아닌 usage 오류"
