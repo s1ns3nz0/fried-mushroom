@@ -103,7 +103,10 @@ def assess_endurance(
     endurance = endurance_rated_s if endurance_rated_s is not None \
         else (mission_brief.get("drone_profile") or {}).get("endurance_rated_s")
     if endurance is None or battery_pct is None:
-        return _report(False, "UNKNOWN", dist_home_m=dist_home_m, rtl_time_s=rtl_time_s,
+        # dist_home_m·rtl_time_s 는 반드시 반올림해 내보낸다 — raw float 은 Python 버전 간
+        # 마지막 ULP 가 달라 golden 이식성을 깨뜨린다(assessable 분기와 동일 정밀도로 통일).
+        return _report(False, "UNKNOWN", dist_home_m=round(dist_home_m, 1),
+                       rtl_time_s=round(rtl_time_s, 1),
                        battery_pct=battery_pct, home_base_id=home_id,
                        note=f"홈까지 {dist_home_m:.0f}m — 내구/배터리 정보 부재로 여유 계산 불가.")
 
