@@ -116,3 +116,49 @@ def test_cfit_override_not_triggered_when_already_climbing():
     out = run(response, None, ctx)
     assert out["flight_action"] == "ALTITUDE_CHANGE_REROUTE"
     assert out["altitude_delta_m"] == 50
+
+
+# --- 미커버 분기 보완 (issue #76) ---
+
+def test_posture_elevate_target_bearing_locked():
+    """POSTURE_ELEVATE + PHYSICAL + bearing 없음 → target_bearing_deg=lowest_exposure(270) 잠금."""
+    response = _make_response("POSTURE_ELEVATE", "PHYSICAL")
+    out = run(response, None, _CYCLE_CTX)
+    assert out["flight_action"] == "POSTURE_ELEVATE"
+    assert out["target_bearing_deg"] == 270
+    assert out["altitude_delta_m"] == 25
+    assert out["replan_scope"] == "LOCAL"
+    assert out["reroute_anchor"] == "terrain_fallback"
+
+
+def test_rtl_terrain_fallback():
+    """RTL + PHYSICAL + bearing 없음 → lowest_exposure_bearing_deg 사용, terrain_fallback anchor."""
+    response = _make_response("RTL", "PHYSICAL")
+    out = run(response, None, _CYCLE_CTX)
+    assert out["flight_action"] == "RTL"
+    assert out["target_bearing_deg"] == 270
+    assert out["altitude_delta_m"] == 0
+    assert out["replan_scope"] == "LOCAL"
+    assert out["reroute_anchor"] == "terrain_fallback"
+
+
+def test_altitude_change_reroute_physical_with_bearing():
+    """ALTITUDE_CHANGE_REROUTE + PHYSICAL + bearing → threat_reverse + delta=50 잠금."""
+    response = _make_response("ALTITUDE_CHANGE_REROUTE", "PHYSICAL")
+    out = run(response, {"bearing_deg": 90.0}, _CYCLE_CTX)
+    assert out["flight_action"] == "ALTITUDE_CHANGE_REROUTE"
+    assert out["target_bearing_deg"] == 270.0
+    assert out["altitude_delta_m"] == 50
+    assert out["replan_scope"] == "FULL"
+    assert out["reroute_anchor"] == "threat_reverse(channel)"
+
+
+def test_altitude_change_direct_physical_with_bearing():
+    """ALTITUDE_CHANGE 직접(CFIT 경유 아님) + PHYSICAL + bearing → delta=15, scope=LOCAL 잠금."""
+    response = _make_response("ALTITUDE_CHANGE", "PHYSICAL")
+    out = run(response, {"bearing_deg": 45.0}, _CYCLE_CTX)
+    assert out["flight_action"] == "ALTITUDE_CHANGE"
+    assert out["target_bearing_deg"] == 225.0
+    assert out["altitude_delta_m"] == 15
+    assert out["replan_scope"] == "LOCAL"
+    assert out["reroute_anchor"] == "threat_reverse(channel)"
