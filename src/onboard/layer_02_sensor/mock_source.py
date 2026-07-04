@@ -13,7 +13,7 @@ import copy
 
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 
-SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t7")
+SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t6", "t7")
 
 # imagery 에 심는 mock 객체 라벨 hint. 03 proximity_object(AI 채널) stub 이 그대로 읽어
 # class/weapon_shape/closing 을 산출한다 (step2: mock 라벨 필드를 심어둔다).
@@ -206,5 +206,16 @@ def build_scenario_envelope(scenario_id: str, seq: int, ts_ms: int) -> RawSensor
         env["environment"]["alt_agl_m"] = 20.0
         env["navigation"]["gps"]["alt_m"] = 40.0
         env["navigation"]["imu"]["est_speed_mps"] = 4.0
+
+    elif scenario_id == "t6":
+        # 배경 환경노출도(T6) + camera_verified 경로: GIS 는 forest(은폐 양호)로 알고
+        # 있으나 카메라 세그멘테이션이 open_field(벌목 등 최근 지형변화) 감지 → 불일치.
+        # 03 terrain_class: source=camera_verified, dominant_class=open_field(카메라 우선),
+        # exposure_score=0.8 → 04 background_exposure_score 로 흐른다. 위협 채널은 정상.
+        env["environment"]["mock_gis_class"] = "forest"
+        env["imagery"]["terrain_label"] = {
+            "dominant_class": "open_field",
+            "camera_mismatch": True,
+        }
 
     return env
