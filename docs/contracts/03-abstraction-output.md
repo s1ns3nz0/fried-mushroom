@@ -53,7 +53,7 @@
       "payload": { "declared": "LOITER_ROI", "behavioral": "loiter_pattern", "match": true, "mission_phase_confidence": 0.9 } },
 
     { "channel": "terrain_class", "state": "degraded", "quality": 0.55, "quality_delta": -0.05,
-      "payload": { "dominant_class": "open_field", "source": "camera_verified", "gis_last_updated": "2025-11", "camera_mismatch": true, "exposure_score": 0.72, "risk_map_ref": "buf://terrain_seg/4471" } },
+      "payload": { "dominant_class": "open_field", "source": "camera_verified", "gis_last_updated": "2025-11", "camera_mismatch": true, "exposure_score": 0.72, "risk_map_ref": "buf://terrain_seg/4471", "optimal_terrain_bearing_deg": null, "lowest_exposure_bearing_deg": null } },
 
     { "channel": "proximity_object", "state": "anomaly", "quality": 0.55, "quality_delta": -0.05,
       "payload": { "class": "person", "weapon_shape": true, "bearing_deg": 142.3, "closing": true, "closure_rate_mps": 3.2, "degraded_reason": "low_visibility" } },

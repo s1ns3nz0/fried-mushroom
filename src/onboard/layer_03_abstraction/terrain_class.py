@@ -35,6 +35,9 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
         "camera_mismatch": camera_mismatch,
         "exposure_score": _EXPOSURE_SCORE.get(dominant_class, _DEFAULT_EXPOSURE),
         "risk_map_ref": risk_map_ref,
+        # 지형 방위(#40 option a): 07 reroute anchor 정본 소스. 미확정 시 null → 07 corridor fallback.
+        "optimal_terrain_bearing_deg": cam["optimal_terrain_bearing_deg"],
+        "lowest_exposure_bearing_deg": cam["lowest_exposure_bearing_deg"],
     }
     # 배경 정보라 항상 normal.
     return make_output("terrain_class", "normal", cam["camera_confidence"], payload, previous_quality)
