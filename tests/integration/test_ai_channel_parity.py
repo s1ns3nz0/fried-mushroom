@@ -431,3 +431,30 @@ def test_embedding_real_model_smoke():
     # 결정론
     vec2 = _emb.embed("적 저격조 조우 후 고도 상승 회피 기동")
     assert vec == vec2, "실 모델: 결정론 위반"
+
+
+# --- 폴백 안전망: stub 이 malformed(비-dict) 라벨에 크래시하지 않음 ---
+
+
+def test_yolo_stub_non_dict_label_falls_back():
+    from onboard.ai_stubs.yolo_stub import detect_proximity
+    for bad in ("person", ["x"], 123, True):
+        out = detect_proximity({"object_label": bad})
+        assert out["class"] is None  # malformed → 안전 기본값(크래시 없음)
+
+
+def test_segmentation_stub_non_dict_label_falls_back():
+    from onboard.ai_stubs.segmentation_stub import classify_terrain
+    for bad in ("forest", ["x"], 123):
+        out = classify_terrain({"terrain_label": bad})
+        assert out["dominant_class"] == "open_field"
+
+
+def test_channels_no_crash_on_non_dict_labels():
+    from onboard.layer_02_sensor.mock_source import build_normal_envelope
+    from onboard.layer_03_abstraction import proximity_object, terrain_class
+    raw = build_normal_envelope("s", 0, 0)
+    raw["imagery"]["object_label"] = "person"
+    raw["imagery"]["terrain_label"] = "forest"
+    assert proximity_object.run(raw)["payload"]["class"] is None
+    assert terrain_class.run(raw)["payload"]["dominant_class"] in {"open_field", "forest"}
