@@ -1,10 +1,11 @@
-"""공급망 재현성 회귀 가드 (#242 #247).
+"""공급망 재현성 회귀 가드 (#242 #247 #261).
 
 #242: infra/log·infra/dashboard requirements.txt 모든 패키지 == 버전 핀,
       infra/log/Dockerfile base image SHA-256 다이제스트 고정.
 #247: infra/log transitive 의존성 lock 파일(requirements.lock) 존재 + 전체 해시 포함,
       Dockerfile pip install --require-hashes 사용.
       (infra/dashboard 는 컨테이너 없는 정적자산/S3 → lock 불필요, requirements.txt 핀만 유지)
+#261: lock hash 가드 강화 — continuation(\\) 없는 standalone `package==X.Y.Z` 엔트리도 탐지.
 
 DevSecOps 감사 F-06/F-07 — 빌드 재현성 보장.
 src/onboard, src/gcs, infra/sim 무접촉.
@@ -52,7 +53,56 @@ def test_requirements_all_pinned(req_path: pathlib.Path) -> None:
     )
 
 
-# ── 2. log lock 파일 존재 + 각 패키지 블록에 실제 hash 포함 (#247) ──────────
+# ── 2. log lock 파일 존재 + 각 패키지 블록에 실제 hash 포함 (#247 #261) ──────
+
+
+def _packages_without_hash(lock_text: str) -> list[str]:
+    """lock 파일 텍스트에서 --hash=sha256: 없는 top-level 패키지 이름 반환.
+
+    continuation(\\로 끝남) 유무와 무관하게 모든 top-level 패키지 라인을 검사 (#261).
+    - 패키지 헤더: 공백 없이 시작, == 포함, # 로 시작하지 않음.
+    - 헤더 직후 들여쓰기 continuation 블록에서 --hash=sha256: 탐색.
+    """
+    no_hash: list[str] = []
+    lines = lock_text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # top-level 패키지 헤더: 첫 글자가 영문, == 포함, 주석 아님
+        if re.match(r"^[a-zA-Z]", line) and "==" in line and not line.lstrip().startswith("#"):
+            pkg_name = line.split("==")[0].strip()
+            found_hash = False
+            j = i + 1
+            # 헤더 다음 들여쓰기 블록 탐색 (continuation 유무 무관)
+            while j < len(lines) and (lines[j].startswith("    ") or lines[j].startswith("\t")):
+                if "--hash=sha256:" in lines[j]:
+                    found_hash = True
+                    break
+                j += 1
+            if not found_hash:
+                no_hash.append(pkg_name)
+        i += 1
+    return no_hash
+
+
+def test_lock_parser_catches_standalone_unhashed_entry() -> None:
+    """_packages_without_hash 가 continuation 없는 un-hashed 엔트리를 탐지해야 한다 (#261).
+
+    TDD 검증: 구 가드(\\로 끝남 조건)는 이 케이스를 skip했으나, 신 가드는 탐지해야 함.
+    """
+    synthetic = "\n".join([
+        "# Generated lock",
+        "good-pkg==1.0.0 \\",
+        "    --hash=sha256:aabbcc",
+        "    # via something",
+        "bad-pkg==2.0.0",          # continuation 없고 hash도 없음 — 구 가드는 놓침
+        "    # via other",
+    ])
+    result = _packages_without_hash(synthetic)
+    assert result == ["bad-pkg"], (
+        f"standalone un-hashed 패키지 탐지 실패: {result!r} (expected ['bad-pkg'])"
+    )
+
 
 def test_log_lock_file_exists() -> None:
     """infra/log/requirements.lock 파일이 존재해야 한다 (transitive 의존성 lock, F-07 확장).
@@ -66,34 +116,15 @@ def test_log_lock_file_exists() -> None:
 
 
 def test_log_lock_each_package_has_hash() -> None:
-    """infra/log/requirements.lock 의 각 패키지 블록에 --hash=sha256: 가 최소 1개 있어야 한다.
+    """infra/log/requirements.lock 의 모든 top-level 패키지에 --hash=sha256: 가 있어야 한다.
 
-    헤더 shape(\\로 끝남)만 보면 실제 hash 없는 경우도 통과할 수 있으므로,
-    패키지 헤더 직후 들여쓰기 continuation 블록에서 --hash=sha256: 실존을 assert.
+    continuation(\\) 유무 무관하게 모든 패키지 헤더를 검사 (#261 강화).
+    _packages_without_hash 헬퍼를 통해 검증.
     """
     if not _LOG_LOCK.exists():
         pytest.skip("lock 파일 없음 — test_log_lock_file_exists 가 먼저 실패")
 
-    lines = _LOG_LOCK.read_text(encoding="utf-8").splitlines()
-    no_hash: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        # 패키지 헤더: 공백 없이 시작, == 포함, \ 로 끝남 (continuation 있음)
-        if (re.match(r"^[a-zA-Z]", line) and "==" in line and line.rstrip().endswith("\\")):
-            pkg_name = line.split("==")[0].strip()
-            # continuation 블록에서 --hash=sha256: 탐색
-            found_hash = False
-            j = i + 1
-            while j < len(lines) and (lines[j].startswith("    ") or lines[j].startswith("\t")):
-                if "--hash=sha256:" in lines[j]:
-                    found_hash = True
-                    break
-                j += 1
-            if not found_hash:
-                no_hash.append(pkg_name)
-        i += 1
-
+    no_hash = _packages_without_hash(_LOG_LOCK.read_text(encoding="utf-8"))
     assert not no_hash, (
         f"infra/log/requirements.lock: --hash=sha256: 없는 패키지: {no_hash[:5]}\n"
         "  → pip-compile --generate-hashes 로 재생성 필요"
