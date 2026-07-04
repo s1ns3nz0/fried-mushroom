@@ -99,3 +99,29 @@ python3 -m onboard examples/raw_t3.json examples/mission_brief_strike.json > exa
 - `drone_profile.spare_asset_available` : `False` 이면 05 severity 1단계 격상
 - `drone_profile.battery_pct` : 05 continuous_S margin_penalty (< 30% 시 +0.10)
 - `weights` : 07 flight planning 우선순위 조합 (stealth/survival/info_value/timeliness)
+
+## GCS 01→07 파이프라인 fixture (`mission_pipeline`)
+
+지상통제센터 layer 01 → 온보드 02..07 종단 CLI(`python -m mission_pipeline`)용.
+`set_mission_*.json`(운용자 입력: 지시서·임무유형·기체프로필·C4I) → layer 01 이
+`mission_brief` 생성 → `run_cycle` 실행.
+
+| 파일 | 스키마 | 비고 |
+|------|--------|------|
+| `set_mission_{recon,strike}.json` | layer 01 입력 번들 | directive_text + mission_context + drone_profile + c4i |
+| `expected_pipeline_{recon,strike}.json` | `{mission_brief, approved_ts_ms, cycle}` | CLI 산출(`--ts` 고정), **손편집 금지** |
+
+- `recon`(정찰/저격조 지시서) + `raw_t3.json` → T3 / Serious / ALTITUDE_CHANGE.
+- `strike`(타격/leaflet) + `raw_t3.json` → T3 / High / RTL / `[DATA_WIPE, WEAPON_DROP]`.
+
+재생성 (결정론 위해 `--ts` 고정, 손편집 금지):
+
+```bash
+for s in recon strike; do
+  python3 -m mission_pipeline examples/set_mission_$s.json examples/raw_t3.json \
+    --approve --ts 1720051200000 > examples/expected_pipeline_$s.json
+done
+```
+
+회귀 잠금: `tests/test_pipeline_golden.py`. `--approve` 없으면 리뷰(카드·경고)만
+출력하고 온보드는 실행하지 않는다(운용자 승인 게이트).

@@ -2,9 +2,10 @@
 
 ## 디렉토리 구조
 
-소스는 `src/` 아래 두 축으로 나뉜다.
-- `src/onboard/` — UAV 온보드 (MVP 스코프): layer 02..07 + shared/ + ai_stubs/
-- `src/gcs/` — 지상통제센터 AI (MVP 밖 skeleton): layer 01
+소스는 `src/` 아래로 나뉜다.
+- `src/onboard/` — UAV 온보드 (비행 중): layer 02..07 + shared/ + ai_stubs/
+- `src/gcs/` — 지상통제센터 AI (비행 전): layer 01 info center — set_mission → mission_brief 조립
+- `src/mission_pipeline.py` — 01→07 종단 CLI. gcs layer 01 + onboard 를 중립 조합(둘은 서로 import 안 함)
 
 ```
 src/
@@ -63,10 +64,15 @@ src/
 │       ├── yolo_stub.py          # proximity_object AI 채널용
 │       ├── segmentation_stub.py  # terrain_class 카메라 보조용
 │       └── yamnet_stub.py        # acoustic_event 2차 판정용
-└── gcs/
-    ├── __init__.py
-    └── layer_01_info_center/     # MVP 밖 skeleton (지상 정보 센터 AI)
-        └── __init__.py
+├── gcs/
+│   ├── __init__.py
+│   └── layer_01_info_center/     # 지상 정보 센터 AI (구현됨)
+│       ├── __init__.py
+│       ├── nlp_extract.py        # 결정론 키워드룰 지시서 해석 (실 NLP 모델 stub)
+│       ├── cross_check.py        # NLP 신호/운용자 입력 vs C4I 사실 대조
+│       ├── assemble.py           # set_mission → 온보드 MissionBrief 6필드
+│       └── run.py                # 2단계 오케스트레이터 (assemble_draft → finalize)
+└── mission_pipeline.py           # 01→07 종단 CLI (gcs+onboard 중립 조합)
 
 examples/
 ├── raw_t1.json / mission_brief_t1.json   # GPS 스푸핑 시나리오
