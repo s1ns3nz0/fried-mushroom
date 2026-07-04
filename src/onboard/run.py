@@ -82,8 +82,10 @@ def _compute_terrain_bearings(mission_brief: dict) -> dict:
         dlon = wps[-1]["lon"] - wps[0]["lon"]
         mean_lat = math.radians((wps[0]["lat"] + wps[-1]["lat"]) / 2)
         dlon_corr = dlon * math.cos(mean_lat)
-        optimal = math.degrees(math.atan2(dlon_corr, dlat)) % 360
-        lowest = (optimal + 90) % 360
+        # atan2/cos 의 마지막 ULP 는 libm(파이썬/플랫폼)마다 달라 골든을 CI(3.11)와
+        # 로컬(3.13)에서 어긋나게 한다. 6자리(≈0.1m)로 반올림해 이식성 확보.
+        optimal = round(math.degrees(math.atan2(dlon_corr, dlat)) % 360, 6)
+        lowest = round((optimal + 90) % 360, 6)
     else:
         optimal = 0.0
         lowest = 0.0
