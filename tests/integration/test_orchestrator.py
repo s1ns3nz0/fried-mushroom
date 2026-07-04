@@ -227,6 +227,41 @@ class TestCli:
         assert rc == 2
         assert "usage" in capsys.readouterr().err
 
+    def _write_inputs(self, tmp_path):
+        raw = {**_raw(), "seq": 7}
+        raw_p = tmp_path / "raw.json"
+        brief_p = tmp_path / "brief.json"
+        raw_p.write_text(json.dumps(raw), encoding="utf-8")
+        brief_p.write_text(json.dumps(_brief()), encoding="utf-8")
+        return raw_p, brief_p
+
+    def test_main_log_writes_one_tagged_line_per_layer(self, tmp_path, capsys) -> None:
+        raw_p, brief_p = self._write_inputs(tmp_path)
+        log_p = tmp_path / "run.jsonl"
+
+        rc = cli.main([str(raw_p), str(brief_p), "--log", str(log_p)])
+        assert rc == 0
+
+        # stdout 결과는 여전히 출력 (로그는 부수 채널).
+        assert set(json.loads(capsys.readouterr().out)) == set(RESULT_SCHEMA)
+
+        lines = [json.loads(x) for x in log_p.read_text(encoding="utf-8").splitlines()]
+        assert [ln["layer"] for ln in lines] == list(RESULT_SCHEMA)
+        assert all(ln["seq"] == 7 for ln in lines)
+        assert all(set(ln) == {"seq", "layer", "output"} for ln in lines)
+        # 각 라인 output 이 비어있지 않은 레이어 dict.
+        assert all(isinstance(ln["output"], dict) and ln["output"] for ln in lines)
+
+    def test_main_log_appends_across_cycles(self, tmp_path) -> None:
+        raw_p, brief_p = self._write_inputs(tmp_path)
+        log_p = tmp_path / "run.jsonl"
+
+        cli.main([str(raw_p), str(brief_p), "--log", str(log_p)])
+        cli.main([str(raw_p), str(brief_p), "--log", str(log_p)])
+
+        lines = log_p.read_text(encoding="utf-8").splitlines()
+        assert len(lines) == 2 * len(RESULT_SCHEMA)  # append, not truncate
+
 
 # --- canned 참고 구조 (실제 레이어 미구현 시 passthrough 가 내는 최소 형태) ---
 
