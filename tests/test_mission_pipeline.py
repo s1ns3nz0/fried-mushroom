@@ -71,3 +71,20 @@ def test_missing_args_usage_error(capsys) -> None:
     rc = mp.main([])
     assert rc == 2
     assert "usage" in capsys.readouterr().err
+
+
+def test_ts_flag_injects_deterministic_timestamp(tmp_path, capsys) -> None:
+    sm, raw = _write(tmp_path)
+    rc = mp.main([str(sm), str(raw), "--approve", "--ts", "1720051200000"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["approved_ts_ms"] == 1720051200000
+
+
+def test_ts_flag_makes_output_reproducible(tmp_path, capsys) -> None:
+    sm, raw = _write(tmp_path)
+    mp.main([str(sm), str(raw), "--approve", "--ts", "42"])
+    first = capsys.readouterr().out
+    mp.main([str(sm), str(raw), "--approve", "--ts", "42"])
+    second = capsys.readouterr().out
+    assert first == second  # 동일 입력+ts → 동일 출력 (골든 재현 전제)
