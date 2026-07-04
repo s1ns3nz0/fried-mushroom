@@ -12,7 +12,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>D4D Dashboard</title>
-<link rel="stylesheet" href="/static/style.css" />
+<link rel="stylesheet" href="/static/style.css?v=obs20" />
 
 <header id="topbar">
   <span class="brand">D4D · UAV 관측</span>
@@ -457,7 +457,6 @@
             <h3 class="gcs-mbcra-card-title">합참 위험 평가 프레임워크</h3>
           </header>
           <div class="gcs-mbcra-card-body">
-            <p>합동 위험 평가 프레임워크는 <span class="gcs-hl">Risk to Mission과 Risk to Force를 서로 다른 축</span>으로 봅니다. 두 축이 교차하는 4분면에서, 최적은 생존이 아니라 임무 성공을 우선하는 분면입니다.</p>
             <svg class="gcs-mbcra-svg" viewBox="0 0 260 180" role="img" aria-label="가로축 Risk to Force(생존성), 세로축 Risk to Mission이 중앙에서 교차하는 4분면 그래프. Risk to Mission을 낮추는 분면에 최적 지점 강조">
               <defs>
                 <filter id="gcsOptGlow" x="-80%" y="-80%" width="260%" height="260%">
@@ -481,7 +480,6 @@
               <text x="244" y="104" font-size="9.5" fill="#98979F" text-anchor="end">Risk to Force↑(생존성)</text>
               <text x="136" y="16" font-size="9.5" fill="#98979F" text-anchor="start">Risk to Mission↑</text>
             </svg>
-            <p class="gcs-mbcra-caption gcs-hl">최적 = 생존이 아니라 임무 성공</p>
           </div>
         </section>
 
@@ -513,6 +511,7 @@
       <code>MAVLink</code>급 비행 지시값으로 산출되는 과정.
     </p>
     <div class="gcs-arch-flow" id="gcs-arch-flow">
+      <div class="gcs-arch-row">
       <div class="gcs-arch-node" data-step="0">
         <div class="gcs-arch-node-head">
           <span class="gcs-arch-name">센서</span>
@@ -588,8 +587,9 @@
           </div>
         </div>
       </div>
-      <div class="gcs-arch-link" data-link="2"><i class="gcs-arch-dot"></i></div>
-
+      </div>
+      <div class="gcs-arch-link gcs-arch-link--join" data-link="2" aria-hidden="true"><i class="gcs-arch-dot"></i><span class="gcs-arch-join-label">이어짐</span></div>
+      <div class="gcs-arch-row">
       <div class="gcs-arch-node" data-step="3">
         <div class="gcs-arch-node-head">
           <span class="gcs-arch-name">위험 평가</span>
@@ -663,6 +663,7 @@
           </div>
         </div>
       </div>
+      </div>
     </div>
   </div>
 </div>
@@ -676,6 +677,6 @@
   <div id="debug-log-body"></div>
 </aside>
 
-<script src="/static/render.js"></script>
-<script src="/static/app.js"></script>
-<script src="/static/gcs.js"></script>
+<script src="/static/render.js?v=obs20"></script>
+<script src="/static/app.js?v=obs20"></script>
+<script src="/static/gcs.js?v=obs20"></script>

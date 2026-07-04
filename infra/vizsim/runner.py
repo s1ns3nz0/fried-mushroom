@@ -455,7 +455,7 @@ def main(argv=None) -> int:
 
     # Seed the collector's control channel so dashboard readout and runner agree.
     try:
-        client.post(f"{args.collector}/control", json={"speed": args.speed})
+        client.post(f"{args.collector}/control", json={"speed": args.speed, "paused": True})
     except Exception as exc:
         print(f"[runner] POST {args.collector}/control failed: {exc}", file=sys.stderr)
 

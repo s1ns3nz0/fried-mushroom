@@ -124,14 +124,90 @@ function describeRespondStage(stages) {
   return "위험에 대한 대응을 결정했습니다 — " + r.msg + (r.sub ? " · " + r.sub : "") + ".";
 }
 
+// T1~T7 위협 유형 라벨 — dc-threat 단계 말풍선의 범례에 쓰인다.
+const THREAT_LEGEND_LABELS = [
+  ["T1", "EW/GPS 스푸핑"],
+  ["T2", "사이버/C2 하이재킹"],
+  ["T3", "근접 소화기"],
+  ["T4", "물리 포획"],
+  ["T5", "레이저"],
+  ["T6", "환경노출도(배경)"],
+  ["T7", "지형충돌/CFIT"],
+];
+
+/** 2 위협 판정 말풍선 extra — T1~T7 범례 HTML(현재 판정 위협 Tn 을 .here 로 강조). */
+function buildThreatLegendHtml(stages) {
+  const t = stages && stages.threat;
+  const text = t ? (t.short || t.msg) : null;
+  const m = text ? String(text).match(/T[1-7]/) : null;
+  const active = m ? m[0] : null;
+  const chips = THREAT_LEGEND_LABELS.map(([id, label]) =>
+    '<span class="dc-tchip' + (id === active ? " here" : "") + '" data-threat="' + id + '">' +
+      "<b>" + id + "</b> " + label + "</span>"
+  ).join("");
+  return '<div class="dc-tlegend" aria-label="위협 유형 T1~T7 범례">' + chips + "</div>";
+}
+
+// RAC(High/Serious/Medium/Low) 대표 셀의 SVG 좌표 — index.html 의 원래 rac-cell-* 위치와 동일.
+const RAC_CELL_POS = {
+  high: { x: 100, y: 6 },
+  medium: { x: 52, y: 22 },
+  serious: { x: 76, y: 22 },
+  low: { x: 28, y: 54 },
+};
+
+/** 3 위험 평가 말풍선 extra — RAC 미니 매트릭스 SVG HTML(현재 rac 좌표에 강조 마커). */
+function buildRacSvgHtml(stages) {
+  const a = stages && stages.assess;
+  const key = a && a.rac ? String(a.rac).toLowerCase() : "";
+  const pos = RAC_CELL_POS[key];
+  const hereRect = pos
+    ? '<rect class="dc-rac-here on" x="' + pos.x + '" y="' + pos.y + '" width="24" height="16"/>'
+    : '<rect class="dc-rac-here" width="24" height="16"/>';
+  return (
+    '<div class="dc-rac">' +
+    '<svg class="dc-rac-svg" viewBox="0 0 132 96" role="img" aria-label="RAC 매트릭스 — 가능성 × 심각도">' +
+    '<text class="dc-rac-axt" x="8" y="38" transform="rotate(-90 8 38)">심각도 ↑</text>' +
+    '<text class="dc-rac-tick" x="22" y="17">Ⅰ</text>' +
+    '<text class="dc-rac-tick" x="22" y="33">Ⅱ</text>' +
+    '<text class="dc-rac-tick" x="22" y="49">Ⅲ</text>' +
+    '<text class="dc-rac-tick" x="22" y="65">Ⅳ</text>' +
+    '<rect class="dc-rc medium" x="28" y="6" width="24" height="16"/>' +
+    '<rect class="dc-rc serious" x="52" y="6" width="24" height="16"/>' +
+    '<rect class="dc-rc high" x="76" y="6" width="24" height="16"/>' +
+    '<rect class="dc-rc high" x="100" y="6" width="24" height="16"/>' +
+    '<rect class="dc-rc medium" x="28" y="22" width="24" height="16"/>' +
+    '<rect class="dc-rc medium" x="52" y="22" width="24" height="16"/>' +
+    '<rect class="dc-rc serious" x="76" y="22" width="24" height="16"/>' +
+    '<rect class="dc-rc high" x="100" y="22" width="24" height="16"/>' +
+    '<rect class="dc-rc low" x="28" y="38" width="24" height="16"/>' +
+    '<rect class="dc-rc low" x="52" y="38" width="24" height="16"/>' +
+    '<rect class="dc-rc medium" x="76" y="38" width="24" height="16"/>' +
+    '<rect class="dc-rc serious" x="100" y="38" width="24" height="16"/>' +
+    '<rect class="dc-rc low" x="28" y="54" width="24" height="16"/>' +
+    '<rect class="dc-rc low" x="52" y="54" width="24" height="16"/>' +
+    '<rect class="dc-rc low" x="76" y="54" width="24" height="16"/>' +
+    '<rect class="dc-rc medium" x="100" y="54" width="24" height="16"/>' +
+    hereRect +
+    '<text class="dc-rac-tick" x="40" y="80">E</text>' +
+    '<text class="dc-rac-tick" x="64" y="80">D</text>' +
+    '<text class="dc-rac-tick" x="88" y="80">B</text>' +
+    '<text class="dc-rac-tick" x="112" y="80">A</text>' +
+    '<text class="dc-rac-axt" x="76" y="92">가능성 →</text>' +
+    "</svg>" +
+    '<div class="dc-rac-cap">RAC = 가능성 × 심각도</div>' +
+    "</div>"
+  );
+}
+
 const WIZARD_STEPS = [
   { el: "dc-signals", title: "입력 신호", desc: (stages, channels) => describeInputSignals(channels) },
   { el: "dc-detect",  title: "탐지",     desc: (stages) => describeDetectStage(stages) },
-  { el: "dc-threat",  title: "위협 판정", desc: (stages) => describeThreatStage(stages) },
-  { el: "dc-assess",  title: "위험 평가", desc: (stages) => describeAssessStage(stages) },
+  { el: "dc-threat",  title: "위협 판정", desc: (stages) => describeThreatStage(stages), extra: (stages) => buildThreatLegendHtml(stages) },
+  { el: "dc-assess",  title: "위험 평가", desc: (stages) => describeAssessStage(stages), extra: (stages) => buildRacSvgHtml(stages) },
   { el: "dc-respond", title: "대응 결정", desc: (stages) => describeRespondStage(stages) },
 ];
-const wizard = { enabled: false, active: false, step: 0, threatEvent: null, spot: null };
+const wizard = { enabled: true, active: false, step: 0, threatEvent: null, spot: null };
 let wizExplain = null; // 설명 말풍선 DOM — initWizard 에서 body 에 1회 부착, renderWizard 가 활성 단계 옆으로 이동.
 
 // Canvas 2D 핸들 (지도/고도 mock 렌더 대상). 신호는 HTML 리스트(#signals-list)로 렌더.
@@ -769,20 +845,31 @@ function renderWizard() {
   const active = WIZARD_STEPS[wizard.step];
   const activeEl = active && document.getElementById(active.el);
   if (wizExplain && activeEl) {
+    const stages = decision.current ? decision.current.stages : {};
+    const channels = live.channels || [];
     wizExplain.querySelector(".wiz-title").textContent = active.title;
-    wizExplain.querySelector(".wiz-desc").textContent =
-      active.desc(decision.current ? decision.current.stages : {}, live.channels || []);
+    wizExplain.querySelector(".wiz-desc").textContent = active.desc(stages, channels);
+    const extraEl = wizExplain.querySelector(".wiz-extra");
+    if (active.extra) {
+      extraEl.innerHTML = active.extra(stages, channels);
+      extraEl.hidden = false;
+    } else {
+      extraEl.innerHTML = "";
+      extraEl.hidden = true;
+    }
     wizExplain.hidden = false;
     // 활성 단계를 가리키는 말풍선 배치 — 기본은 단계 왼쪽(결정 패널이 우측이라 왼쪽에 공간).
+    // extra(범례/RAC 그래프)로 말풍선이 커질 수 있어, top 은 화면 밖으로 나가지 않게 clamp 한다.
     const r = activeEl.getBoundingClientRect();
+    const clamp = (v) => Math.min(Math.max(v, 24), window.innerHeight - 24);
     if (r.left < 296) {
       // 왼쪽 여백 부족 → 단계 위쪽으로 폴백(꼬리는 아래를 향함).
       wizExplain.classList.add("wiz-above");
-      wizExplain.style.top = r.top - 12 + "px";
+      wizExplain.style.top = clamp(r.top - 12) + "px";
       wizExplain.style.left = r.left + r.width / 2 + "px";
     } else {
       wizExplain.classList.remove("wiz-above");
-      wizExplain.style.top = r.top + r.height / 2 + "px";
+      wizExplain.style.top = clamp(r.top + r.height / 2) + "px";
       wizExplain.style.left = r.left - 16 + "px";
     }
   }
@@ -792,12 +879,14 @@ function renderWizard() {
 function initWizard() {
   const toggle = document.getElementById("wizard-toggle");
   if (!toggle) return;
+  toggle.classList.toggle("active", wizard.enabled);
+  toggle.setAttribute("aria-pressed", wizard.enabled ? "true" : "false");
   wizExplain = document.createElement("div");
   wizExplain.id = "wizard-explain";
   wizExplain.hidden = true;
   wizExplain.innerHTML =
     '<div class="wiz-title"></div><div class="wiz-desc"></div>' +
-    '<div class="wiz-hint">화면을 클릭하면 다음 단계로 →</div>';
+    '<div class="wiz-extra"></div>';
   document.body.appendChild(wizExplain); // 말풍선은 body 에 붙여 fixed 로 떠서 활성 단계를 가리킨다.
   toggle.addEventListener("click", () => {
     wizard.enabled = !wizard.enabled;
@@ -936,7 +1025,7 @@ const mock = {
   vs: 0, // 수직속도(m/s) — mock.alt 미분(저역통과).
   _prevHead: null, _prevAlt: null, _altTarget: null,
   timeScale: 1, // 배속(−/+ 스테퍼, SPEED_STEPS 중 하나) — 시뮬레이션 시간에만 적용(WS 재연결/실제 timestamp/rAF 제외).
-  paused: false, // 일시중지 — true 면 updateMock(상태 전진)·주기 시스템 로그를 스킵(rAF 렌더는 유지).
+  paused: true, // 일시중지 — true 면 updateMock(상태 전진)·주기 시스템 로그를 스킵(rAF 렌더는 유지). 초기값 true: 재생 버튼을 누르기 전까지 드론은 출발지에 정지.
 };
 
 const CLEAR_M = 120;  // 지형추종 여유고도(m)
@@ -2060,15 +2149,22 @@ function initSimControls() {
       mock.odo = 0; mock.trailProfile = [];
       mock.pos = { x: PATH[0].x, y: PATH[0].y };
       mock._threatened = false; mock._assessed = false; mock._responded = false;
-      // Best-effort: push the reset nonce to the collector's control channel
-      // so the LIVE runner (which polls GET /control) replays from the start.
+      // Reset = scenario restart also resets speed to x1 and re-pauses —
+      // the drone sits at the start until play is pressed again.
+      mock.timeScale = 1;
+      mock.paused = true;
+      syncSpeed();
+      syncPlay();
+      // Best-effort: push the reset nonce + speed x1 + paused to the
+      // collector's control channel so the LIVE runner (which polls
+      // GET /control) rebuilds from the start, stopped, at x1 speed.
       if (typeof window !== "undefined" && window.D4D_CONFIG) {
         window.D4D_CONFIG.then((cfg) => {
           if (!cfg || !cfg.collectorHttpUrl) return;
           return fetch(cfg.collectorHttpUrl + "/control", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reset: resetNonce }),
+            body: JSON.stringify({ reset: resetNonce, speed: 1, paused: true }),
           });
         }).catch(() => {});
       }
