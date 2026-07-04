@@ -1,7 +1,7 @@
 {
   "sortie_id": "scenario-t5",
   "seq": 0,
-  "ts_ms": 1000,
+  "ts_ms": 1730620801200,
   "imagery": {
     "eo_frame_ref": "buf://eo/normal",
     "ir_frame_ref": "buf://ir/normal",
