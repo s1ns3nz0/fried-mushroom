@@ -311,27 +311,27 @@ def build_tick_payload(
         "debug": {
             "layers": [
                 {
-                    "layer": "02→03 Sensor Abstraction",
+                    "layer": "02→03 센서 추상화",
                     "input": raw,
                     "output": result["abstraction"],
                 },
                 {
-                    "layer": "03→04 Threat Modeling",
+                    "layer": "03→04 위협 모델링",
                     "input": result["abstraction"],
                     "output": result["threat"],
                 },
                 {
-                    "layer": "04→05 Risk Assessment",
+                    "layer": "04→05 위험 평가",
                     "input": result["threat"],
                     "output": result["risk"],
                 },
                 {
-                    "layer": "05→06 Response",
+                    "layer": "05→06 대응 결정",
                     "input": result["risk"],
                     "output": result["response"],
                 },
                 {
-                    "layer": "06→07 Flight Planning",
+                    "layer": "06→07 비행 계획",
                     "input": result["response"],
                     "output": result["flight_plan"],
                 },
