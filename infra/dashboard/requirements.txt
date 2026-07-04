@@ -1,2 +1,3 @@
-fastapi
-uvicorn[standard]
+# 버전 핀: 빌드 재현성 보장 (DevSecOps 감사 F-07 #242)
+fastapi==0.135.3
+uvicorn[standard]==0.44.0
