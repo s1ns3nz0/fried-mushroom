@@ -97,3 +97,47 @@ def test_real_model_paraphrase_detected():
     assert nlp_model.classify_threat("연료 잔량 점검 완료") is None
     # "미상"(위치 미상)은 부재가 아님 — 위협을 억누르지 않아야 함(codex P2).
     assert nlp_model.classify_threat("무장한 적 병력 다수 규모 미상") is not None
+
+
+# ── civil(ROE) 시맨틱 확장 ────────────────────────────────────────────────────
+
+
+def test_civil_negation_guard():
+    g = nlp_model._CIVIL_NEGATION
+    assert g.search("민간인 전혀 없음")
+    assert g.search("민간 없음")
+    assert g.search("거주 밀집 구역 없음")  # 넓은 span(codex P2)
+    assert not g.search("민간인 주거지 인접")  # 부재 아님 → 발화 허용
+
+
+def test_extract_civil_augment_when_enabled(monkeypatch):
+    # 키워드 미스 민간 의역 절 + use_nlp_model → civil 보강.
+    monkeypatch.setattr(nlp_model, "classify_civil", lambda clause, **k: (0.86, "거주 밀집 구역"))
+    sigs = nlp_extract.extract_signals("거주 밀집 구역 상공 통과.", use_nlp_model=True)
+    civ = [s for s in sigs if s["signal_type"] == "civil"]
+    assert len(civ) == 1
+    assert civ[0]["effect"] == "roe_caution" and civ[0]["source"] == "nlp_model"
+
+
+def test_extract_civil_not_invoked_when_keyword_civil_present(monkeypatch):
+    monkeypatch.setattr(nlp_model, "classify_civil", lambda *a, **k: pytest.fail("중복 civil"))
+    sigs = nlp_extract.extract_signals("민간 밀집지역 확인됨.", use_nlp_model=True)  # 키워드 '민간'
+    assert sum(s["signal_type"] == "civil" for s in sigs) == 1
+
+
+def test_civil_default_off(monkeypatch):
+    monkeypatch.setattr(nlp_model, "classify_civil", lambda *a, **k: pytest.fail("civil 모델 호출"))
+    nlp_extract.extract_signals("거주 밀집 구역 통과.")  # use_nlp_model 미지정
+
+
+def test_real_model_civil_detected_and_negation():
+    pytest.importorskip("sentence_transformers")
+    if not nlp_model.model_available():
+        pytest.skip("모델 로드 불가")
+    assert nlp_model.classify_civil("민간인 전혀 없음") is None  # negation
+    hit = nlp_model.classify_civil("거주 밀집 구역 상공 통과")
+    if hit is None:
+        pytest.skip("임계 미달")
+    conf, seg = hit
+    assert 0.7 <= conf <= 0.95
+    assert nlp_model.classify_civil("적 스나이퍼 매복") is None  # 위협은 civil 아님
