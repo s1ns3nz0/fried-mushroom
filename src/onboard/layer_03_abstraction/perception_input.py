@@ -123,3 +123,61 @@ def resolve_frame(imagery: dict) -> Optional[PerceptionFrame]:
         "meta": dict(meta) if isinstance(meta, dict) else {},
     }
     return frame
+
+
+# --- 음향(acoustic) 실 파형 데이터 경로 — YAMNet 실모델 언블록 (perception 후속) ---
+
+
+class AudioClip(TypedDict):
+    """acoustic 실모델(YAMNet)이 소비하는 정규화 오디오 인터페이스.
+
+    samples 는 decode 가능(numpy 등)할 때만 채워지고, 아니면 None(raw_bytes 로 대체).
+    """
+    fmt: str                 # "pcm16" | "wav" | "raw" | ...
+    sample_rate: int
+    channels: int
+    raw_bytes: bytes         # 원본 파형 바이트
+    samples: Optional[Any]   # decode 된 파형 배열(가능 시), 아니면 None
+    meta: dict
+
+
+def has_real_audio(acoustic: dict) -> bool:
+    """acoustic 에 실 파형 소스(waveform + bytes/path)가 있는지 — mock 힌트와 구분."""
+    src = acoustic.get("waveform")
+    return isinstance(src, dict) and bool(src.get("bytes_b64") or src.get("path"))
+
+
+def _coerce_int(value, default: int) -> int:
+    """정수 필드 → int. 비숫자/None/float-str 등 malformed 는 default(크래시 대신 그레이스풀)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: 비유한 float(inf/1e309) sample_rate/channels → default.
+            return default
+
+
+def resolve_audio(acoustic: dict) -> Optional[AudioClip]:
+    """02 raw acoustic → 정규화 AudioClip. 실 소스 없으면 None(mock 폴백).
+
+    acoustic.waveform(선택): {fmt, sample_rate, channels, bytes_b64|path, meta}.
+    **malformed waveform(비숫자 sample_rate/channels·비-dict meta)은 크래시하지 않고 안전
+    파싱한다** — perception "crash 0, mock 폴백" 원칙(resolve_frame 과 동일).
+    """
+    if not has_real_audio(acoustic):
+        return None
+    src = acoustic["waveform"]
+    raw = _load_bytes(src)
+    if raw is None:
+        return None
+    meta = src.get("meta")
+    return {
+        "fmt": str(src.get("fmt", "pcm16")),
+        "sample_rate": _coerce_int(src.get("sample_rate", 16000), 16000),
+        "channels": _coerce_int(src.get("channels", 1), 1),
+        "raw_bytes": raw,
+        "samples": None,   # 실모델이 자체 decode(pcm16→float 등) — 무거운 decode 는 모델측.
+        "meta": dict(meta) if isinstance(meta, dict) else {},
+    }
