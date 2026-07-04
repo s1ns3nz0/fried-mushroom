@@ -1,15 +1,18 @@
-"""배포 워크플로 보안 회귀 가드 (#225).
+"""배포 워크플로 보안 회귀 가드 (#225 #238).
 
 .github/workflows/*.yml 에 AWS 식별자(계정 ID / ARN / EC2 인스턴스 ID /
 CloudFront 배포 ID / S3 버킷) 리터럴 하드코딩 금지 + deploy-*.yml 배포 job 의
 DEPLOY_ENABLED 게이트 존재를 assert.
 
 #221(배포 안전화) 상태를 고정 — 재발 방지.
+#238: 배포 게이트 OR-우회 탐지 강화 — if 조건이 정확히 DEPLOY_ENABLED == 'true' 여야 함.
+      `... == 'true' || github.event_name == 'workflow_dispatch'` 같은 OR 확장 시 실패.
 
 검증 전략:
 - 리터럴 탐지: string literal 이 없는 ${{ ... }} 표현식만 제거(known-safe 참조).
   string literal 포함 표현식(예: ${{ 'arn:...' }})은 제거하지 않고 스캔.
 - 게이트 탐지: jobs: 섹션을 파싱해 각 job 이 개별적으로 DEPLOY_ENABLED 게이트를 가짐 assert.
+- 게이트 엄격 검증: 전체 조건이 정확히 DEPLOY_ENABLED == 'true' 여야 함(OR 확장 불허).
 - (선택) secrets.X || 'literal' 폴백 패턴 금지.
 
 src/onboard, src/gcs, infra/sim 무접촉.
@@ -131,7 +134,49 @@ def test_no_hardcoded_aws_identifier(wf_path: pathlib.Path, pattern_name: str) -
     )
 
 
-# ── 2. deploy job 각각 DEPLOY_ENABLED 게이트 ─────────────────────────────────
+# ── 2. deploy job 각각 DEPLOY_ENABLED 게이트 (엄격 검증, #238) ───────────────
+
+# 허용 게이트 패턴: ${{ }} 벗긴 후 전체 표현식이 정확히 이 형식이어야 함.
+_STRICT_GATE_RE = re.compile(r"^vars\.DEPLOY_ENABLED\s*==\s*['\"]true['\"]$")
+
+
+def _is_strict_deploy_gate(if_cond: str) -> bool:
+    """if 조건이 정확히 `vars.DEPLOY_ENABLED == 'true'` 인지 검증 (#238).
+
+    ${{ }} 래퍼는 허용하되, OR / AND 확장 등 부가 조건은 불허.
+    예시:
+        통과: "${{ vars.DEPLOY_ENABLED == 'true' }}"
+        통과: "vars.DEPLOY_ENABLED == 'true'"
+        실패: "${{ vars.DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}"
+        실패: "vars.DEPLOY_ENABLED == 'true' && always()"
+    """
+    stripped = re.sub(r"^\$\{\{\s*|\s*\}\}$", "", if_cond).strip()
+    return bool(_STRICT_GATE_RE.match(stripped))
+
+
+# ── TDD: _is_strict_deploy_gate 단위 케이스 (#238) ───────────────────────────
+
+@pytest.mark.parametrize("cond,expected", [
+    ("${{ vars.DEPLOY_ENABLED == 'true' }}", True),
+    ("vars.DEPLOY_ENABLED == 'true'", True),
+    ('${{ vars.DEPLOY_ENABLED == "true" }}', True),
+    ("${{ vars.DEPLOY_ENABLED == 'true' || github.event_name == 'workflow_dispatch' }}", False),
+    ("vars.DEPLOY_ENABLED == 'true' && always()", False),
+    ("${{ vars.DEPLOY_ENABLED != 'true' }}", False),
+    ("vars.DEPLOY_ENABLED == 'true' || true", False),
+], ids=[
+    "ok-wrapped", "ok-bare", "ok-double-quote",
+    "fail-or-dispatch", "fail-and-always", "fail-neq", "fail-or-true",
+])
+def test_is_strict_deploy_gate_unit(cond: str, expected: bool) -> None:
+    """_is_strict_deploy_gate 가 OR-우회·부가 조건을 올바르게 거부해야 한다 (#238).
+
+    구 가드(re.search)는 fail-or-dispatch 케이스를 통과 — 이 유닛 테스트로 맹점 검증.
+    """
+    assert _is_strict_deploy_gate(cond) is expected, (
+        f"조건 {cond!r} → expected {expected}, got {not expected}"
+    )
+
 
 _deploy_ids = [wf.name for wf in _deploy_workflow_files()]
 
@@ -140,7 +185,7 @@ _deploy_ids = [wf.name for wf in _deploy_workflow_files()]
 def test_every_deploy_job_has_deploy_enabled_gate(wf_path: pathlib.Path) -> None:
     """deploy-*.yml 의 각 job 이 개별적으로 DEPLOY_ENABLED 게이트를 가져야 한다.
 
-    파일 내 단 하나의 job 이 게이트를 가져도 통과하는 기존 방식의 허점을 보완.
+    #238: OR 확장 등 우회 조건이 있는 경우도 실패하도록 _is_strict_deploy_gate 로 검증.
     """
     text = wf_path.read_text(encoding="utf-8")
     jobs = _parse_jobs(text)
@@ -150,9 +195,9 @@ def test_every_deploy_job_has_deploy_enabled_gate(wf_path: pathlib.Path) -> None
         assert if_cond is not None, (
             f"{wf_path.name}: job '{job_name}' 에 if: 조건 없음 — DEPLOY_ENABLED 게이트 필수"
         )
-        assert re.search(r"vars\.DEPLOY_ENABLED\s*==\s*['\"]true['\"]", if_cond), (
-            f"{wf_path.name}: job '{job_name}' if 조건이 "
-            f"'vars.DEPLOY_ENABLED == true' 형식이 아님: {if_cond!r}"
+        assert _is_strict_deploy_gate(if_cond), (
+            f"{wf_path.name}: job '{job_name}' if 조건이 엄격 게이트 형식이 아님: {if_cond!r}\n"
+            "  → 정확히 `vars.DEPLOY_ENABLED == 'true'` 만 허용 (OR/AND 확장 불허, #238)"
         )
 
 

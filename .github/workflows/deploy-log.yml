@@ -25,6 +25,8 @@ permissions:
 jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
+    # F-03(#232): production 환경 게이트 — repo 환경설정에 required reviewers 지정 시 배포 전 수동 승인.
+    environment: production
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
