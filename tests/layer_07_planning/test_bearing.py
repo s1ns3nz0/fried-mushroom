@@ -1,4 +1,9 @@
+import math
+
+import pytest
+
 from onboard.layer_07_planning.bearing import compute_bearing
+from onboard.run import _compute_terrain_bearings
 
 
 def test_physical_with_bearing():
@@ -46,3 +51,29 @@ def test_navigation():
 
 def test_none_category():
     assert compute_bearing(None, None, {}) == (None, None)
+
+
+def test_terrain_bearing_rounded_for_cross_python_portability():
+    """_compute_terrain_bearings 반환값은 소수 6자리로 반올림돼야 한다.
+
+    math.atan2/cos 의 마지막 ULP 는 libm(Python/플랫폼) 버전마다 다르다.
+    풀정밀 float 을 골든에 박으면 CI(3.11) vs 로컬(3.13) 이 어긋난다.
+    6자리 반올림(≈0.1m 손실)으로 이식성 확보.
+    """
+    mb = {
+        "corridor": {
+            "waypoints": [
+                {"lat": 37.5, "lon": 127.0},
+                {"lat": 37.6, "lon": 127.1},
+            ]
+        }
+    }
+    result = _compute_terrain_bearings(mb)
+    optimal = result["optimal_terrain_bearing_deg"]
+    lowest = result["lowest_exposure_bearing_deg"]
+
+    assert optimal == round(optimal, 6), "optimal_terrain_bearing_deg 는 6자리 이하여야 한다"
+    assert lowest == round(lowest, 6), "lowest_exposure_bearing_deg 는 6자리 이하여야 한다"
+    # 값이 0이 아닌 실수여야 한다 (waypoints 2개 이상이므로)
+    assert optimal != 0.0
+    assert lowest != 0.0

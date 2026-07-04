@@ -82,8 +82,8 @@ def _compute_terrain_bearings(mission_brief: dict) -> dict:
         dlon = wps[-1]["lon"] - wps[0]["lon"]
         mean_lat = math.radians((wps[0]["lat"] + wps[-1]["lat"]) / 2)
         dlon_corr = dlon * math.cos(mean_lat)
-        optimal = math.degrees(math.atan2(dlon_corr, dlat)) % 360
-        lowest = (optimal + 90) % 360
+        optimal = round(math.degrees(math.atan2(dlon_corr, dlat)) % 360, 6)
+        lowest = round((optimal + 90) % 360, 6)
     else:
         optimal = 0.0
         lowest = 0.0
