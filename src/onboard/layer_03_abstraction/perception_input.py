@@ -88,7 +88,8 @@ def _safe_int(value, default: int) -> int:
     """치수 필드 → int. 비숫자/None/float-str 등 malformed 는 default(크래시 대신 그레이스풀)."""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: value 가 이미 float("inf") 면 첫 int() 에서 발생.
         try:
             return int(float(value))  # "4.5" 류는 절삭 수용.
         except (TypeError, ValueError, OverflowError):
