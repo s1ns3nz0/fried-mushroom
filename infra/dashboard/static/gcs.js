@@ -1,15 +1,19 @@
 "use strict";
 
 // D4D 관측소(GCS) 탭 — METT+TC mission_brief 빌더 + 온보드 파이프라인 실행기.
-// GCS layer 01(src/gcs) 미구현 대체 UI: 운용자가 임무 브리핑을 조립해
-// POST /gcs/run 으로 전달한다. 판단은 온보드 파이프라인이 수행하고,
-// 이 탭은 조립·전달·결과 요약 표시만 담당한다(관측 전용).
+// GCS layer 01(src/gcs) 이 구현·배선됨(#111): 운용자는 set_mission(지시서 등)을
+// 넘겨 실 layer 01 로 브리핑을 조립(assembleFromSetMission)하거나, 폼으로 직접
+// 브리핑을 만들어 POST /gcs/run 할 수 있다. 판단은 온보드 파이프라인이 수행한다.
 //
 // 계약 (로그수집기 :8500 이 서빙 — collectorHttpUrl 기준):
-//   GET  /gcs/scenarios      → [{tag, sortie_id, mission_context}]
-//   GET  /gcs/scenario/{tag} → {raw, mission_brief}
-//   POST /gcs/run            → {result, log_published, correlation_id}
+//   GET  /gcs/scenarios       → [{tag, sortie_id, mission_context}]
+//   GET  /gcs/scenario/{tag}  → {raw, mission_brief}
+//   GET  /gcs/set-missions    → [{tag, sortie_id, mission_context}]   (layer 01 입력)
+//   GET  /gcs/set-mission/{tag}→ set_mission 번들
+//   POST /gcs/assemble        → {draft_brief, signal_cards, warnings, correlation_id}
+//   POST /gcs/run             → {result, log_published, correlation_id}
 // 폼 ↔ JSON 라운드트립: 편집 → collectBrief() → 미리보기 = 전송 body.
+// assemble→run 시 correlation_id 를 이어주면 조립·사이클 로그가 대시보드에서 연결된다.
 
 (function () {
   const $ = (id) => document.getElementById(id);
@@ -39,6 +43,34 @@
       .then((cfg) => (cfg && cfg.collectorHttpUrl) || DEFAULT_COLLECTOR_HTTP_URL)
       .then((base) => fetch(base + path, opts));
   }
+
+  /**
+   * #111: set_mission 태그 → 실 layer 01 조립.
+   * GET /gcs/set-mission/{tag} → POST /gcs/assemble.
+   * 반환 {draft_brief, signal_cards, warnings, correlation_id}.
+   * draft_brief 는 6-필드 mission_brief 이므로 그대로 /gcs/run 에 투입 가능
+   * (correlation_id 를 함께 넘기면 조립·사이클 로그가 연결됨).
+   */
+  function assembleFromSetMission(tag) {
+    return collectorFetch("/gcs/set-mission/" + encodeURIComponent(tag))
+      .then((r) => {
+        if (!r.ok) throw new Error("set_mission 로드 실패: " + tag);
+        return r.json();
+      })
+      .then((setMission) =>
+        collectorFetch("/gcs/assemble", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ set_mission: setMission }),
+        }),
+      )
+      .then((r) => {
+        if (!r.ok) throw new Error("assemble 실패");
+        return r.json();
+      });
+  }
+  // 외부(향후 리뷰 패널 UI)에서 참조 가능하도록 노출.
+  if (typeof window !== "undefined") window.assembleFromSetMission = assembleFromSetMission;
 
   const DEFAULT_BRIEF = {
     sortie_id: "",
