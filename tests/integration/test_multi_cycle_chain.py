@@ -143,7 +143,11 @@ def test_run_cycle_chain_t5_fires_in_second_cycle():
 
 
 def test_run_cycle_chain_matches_manual_loop():
-    """run_cycle_chain 결과 == 수동 루프 결과 (결정론 보장)."""
+    """run_cycle_chain core 판정 키 == 수동 run_cycle 결과 (결정론 보장).
+
+    run_cycle_chain 은 cross-cycle advisory(link_loss/nav_integrity)를 추가하므로
+    전체 dict 동등 비교 대신 core 판정 키만 비교한다.
+    """
     pairs = [(_raw_hi(), _brief()), (_raw_t5(), _brief())]
 
     # 수동 루프
@@ -151,8 +155,9 @@ def test_run_cycle_chain_matches_manual_loop():
     r2 = run_cycle(_raw_t5(), _brief(), previous_qualities=extract_qualities(r1))
 
     chain = run_cycle_chain(pairs)
-    assert chain[0] == r1
-    assert chain[1] == r2
+    for key in ("abstraction", "threat", "risk", "response", "flight_plan", "flight_plan_state"):
+        assert chain[0][key] == r1[key], f"cycle 0 {key} 불일치"
+        assert chain[1][key] == r2[key], f"cycle 1 {key} 불일치"
 
 
 # ── 3. CLI --prev-qualities 2-run 시나리오 ─────────────────────────────────────
