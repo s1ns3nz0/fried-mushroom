@@ -86,3 +86,39 @@ def test_proximity_no_degraded_reason_keeps_high_quality():
     ch = _channel(run(raw), "proximity_object")
     assert ch["quality"] == 0.9
     assert ch["payload"]["degraded_reason"] is None
+
+
+# --- proximity_object 상태 결정 매트릭스 커버리지 ---
+# anomaly ⟺ weapon_shape OR (closing AND cls ∈ {person, vehicle, drone}).
+# 기존은 person 접근/무기(t3/t4)만 커버 — vehicle/drone·무기단독·클래스게이트를 잠근다.
+
+
+def _proximity_state(**label):
+    base = {"class": None, "weapon_shape": False, "closing": False,
+            "closure_rate_mps": 0.0, "bearing_deg": None, "degraded_reason": None}
+    base.update(label)
+    return _channel(run(_raw_with_object_label(**base)), "proximity_object")["state"]
+
+
+def test_proximity_vehicle_closing_is_anomaly():
+    assert _proximity_state(**{"class": "vehicle", "closing": True, "closure_rate_mps": 6.0}) == "anomaly"
+
+
+def test_proximity_drone_closing_is_anomaly():
+    assert _proximity_state(**{"class": "drone", "closing": True, "closure_rate_mps": 9.0}) == "anomaly"
+
+
+def test_proximity_weapon_shape_alone_is_anomaly_even_if_not_closing():
+    # 무기 형태 단독이면 접근/클래스 무관하게 anomaly.
+    assert _proximity_state(**{"class": "person", "weapon_shape": True, "closing": False}) == "anomaly"
+    assert _proximity_state(**{"class": None, "weapon_shape": True, "closing": False}) == "anomaly"
+
+
+def test_proximity_threat_class_not_closing_is_normal():
+    # 위협 클래스여도 접근하지 않고 무기 없으면 normal.
+    assert _proximity_state(**{"class": "person", "closing": False}) == "normal"
+
+
+def test_proximity_non_threat_class_closing_is_normal():
+    # 접근 중이어도 위협 클래스({person,vehicle,drone})가 아니면 normal (클래스 게이트).
+    assert _proximity_state(**{"class": "animal", "closing": True, "closure_rate_mps": 5.0}) == "normal"
