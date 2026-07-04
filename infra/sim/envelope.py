@@ -1,15 +1,9 @@
-"""infra/sim envelope 합성 — world 상태 → RawSensorEnvelope.
-
-온보드 `build_normal_envelope`(02) 를 baseline 으로 재사용하고, world 의 위치/헤딩/
-속도를 주입한다. 적 조우 시 `threat_object`(imagery.object_label)를 실어 03/04 위협
-판정을 유발한다. **src/onboard 무수정** — import 재사용만.
-
-주의: gps 와 imu 관성추정(est_lat/est_lon)을 **동일 위치**로 맞춰 position_consistency
-잔차를 0 으로 둔다(월드 이동이 T1 GPS-스푸핑 오탐을 내지 않도록).
+"""Synthesizes a RawSensorEnvelope (02 Sensor Layer input) from a live sim
+World snapshot (world.py) plus a route bbox (route.py), reusing
+onboard.layer_02_sensor.mock_source's deterministic normal baseline and
+scenario override values so the resulting envelope trips the same 04 Threat
+Modeling thresholds that mock_source's fixtures trip.
 """
-
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -18,33 +12,121 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from onboard.layer_02_sensor.mock_source import build_normal_envelope  # noqa: E402
+from onboard.layer_02_sensor.schema import REQUIRED_KEYS  # noqa: E402
+
+import route  # noqa: E402
 
 
-def world_to_envelope(
-    sortie_id: str,
-    seq: int,
-    ts_ms: int,
-    world_state: dict,
-    *,
-    threat_object: dict | None = None,
-) -> dict:
-    """world 상태 → RawSensorEnvelope. threat_object 지정 시 근접 위협 주입."""
-    env = build_normal_envelope(sortie_id, seq, ts_ms)
-    pos = world_state["pos"]
-    heading = world_state.get("heading_deg", 90.0)
-    speed = world_state.get("speed_mps", 17.0)
+def _apply_t1_jamming(env: dict) -> None:
+    env["navigation"]["gps"].update(
+        {"lat": 37.5006, "lon": 127.0006, "hdop": 1.9, "vdop": 2.4}
+    )
+    env["ew"].update(
+        {
+            "gnss_confidence": 0.32,
+            "gnss_position_jump_m": 88.0,
+            "satellite_count": 5,
+            "cn0_avg_db": 27.0,
+            "rf_wideband_scan": {"wideband_anomaly": True},
+            "rf_bearing_deg": 210.0,
+        }
+    )
+    env["mission_status"]["flight_mode"] = "AUTO"
 
-    gps = env["navigation"]["gps"]
-    gps["lat"], gps["lon"], gps["alt_m"] = pos["lat"], pos["lon"], pos["alt_m"]
-    imu = env["navigation"]["imu"]
-    # 관성추정을 gps 와 일치시켜 잔차 0 (T1 오탐 방지).
-    imu["est_lat"], imu["est_lon"] = pos["lat"], pos["lon"]
-    imu["heading_deg"] = heading
-    imu["est_speed_mps"] = speed
-    env["navigation"]["magnetometer"]["heading_deg"] = heading
-    env["navigation"]["baro"]["alt_m"] = pos["alt_m"]
-    env["mission_status"]["ground_speed_mps"] = speed
 
-    if threat_object is not None:
-        env["imagery"]["object_label"] = dict(threat_object)
+def _apply_t2_link_degrade(env: dict) -> None:
+    env["c2_link"].update(
+        {
+            "encryption_mode": "NONE",
+            "downgrade_detected": True,
+            "checksum_fail_rate": 0.12,
+            "seq_gap_count": 3,
+            "packet_loss_rate": 0.08,
+            "latency_ms": 260,
+        }
+    )
+    env["mission_status"]["flight_mode"] = "AUTO"
+
+
+def _apply_t3_ambush(env: dict) -> None:
+    env["imagery"]["object_label"] = {
+        "class": "person",
+        "weapon_shape": True,
+        "closing": True,
+        "closure_rate_mps": 3.2,
+        "bearing_deg": 142.3,
+        "degraded_reason": None,
+    }
+    env["acoustic"].update(
+        {
+            "mic_waveform_ref": "buf://mic/gunshot",
+            "peak_db": 118.0,
+            "rise_time_ms": 1.5,
+            "bandwidth_hz": 6000.0,
+            "bearing_deg": 139.8,
+        }
+    )
+    env["mission_status"]["flight_mode"] = "LOITER"
+    env["mission_status"]["ground_speed_mps"] = 0.5
+    env["navigation"]["imu"]["est_speed_mps"] = 0.5
+
+
+def _apply_t4_capture(env: dict) -> None:
+    env["imagery"]["object_label"] = {
+        "class": "person",
+        "weapon_shape": False,
+        "closing": True,
+        "closure_rate_mps": 2.5,
+        "bearing_deg": 95.0,
+        "degraded_reason": None,
+    }
+    env["mission_status"]["flight_mode"] = "AUTO"
+    env["mission_status"]["ground_speed_mps"] = 1.5
+    env["navigation"]["imu"].update({"est_speed_mps": 1.5, "gyro_dps": [0.0, 0.0, 25.0]})
+    env["c2_link"].update({"rssi_dbm": -98, "packet_loss_rate": 0.25, "latency_ms": 320})
+
+
+def _apply_t7_obstacle(env: dict) -> None:
+    env["lidar"] = {"distance_m": 15.0, "closure_rate_mps": 8.0}
+    env["mission_status"]["flight_mode"] = "LAND"
+    env["mission_status"]["ground_speed_mps"] = 4.0
+    env["environment"]["alt_agl_m"] = 20.0
+    env["navigation"]["gps"]["alt_m"] = 40.0
+    env["navigation"]["imu"]["est_speed_mps"] = 4.0
+
+
+_EVENT_APPLIERS = {
+    "T1_jamming": _apply_t1_jamming,
+    "T2_link_degrade": _apply_t2_link_degrade,
+    "T3_ambush": _apply_t3_ambush,
+    "T4_capture": _apply_t4_capture,
+    "T7_obstacle": _apply_t7_obstacle,
+}
+
+
+def synthesize(snapshot: dict, sortie_id: str, bbox: dict) -> dict:
+    """Build a RawSensorEnvelope for one sim tick.
+
+    `bbox` is the lat/lon bounding box dict produced by route.compute_bbox()
+    (the same one used to build the route via route.generate_route) — it is
+    the piece of route state needed to convert snapshot["x"]/["y"] (normalized
+    plane coords) back to lat/lon via route.to_geo(x, y, bbox).
+    """
+    env = build_normal_envelope(sortie_id, snapshot["seq"], snapshot["ts_ms"])
+
+    lat, lon = route.to_geo(snapshot["x"], snapshot["y"], bbox)
+    env["navigation"]["gps"]["lat"] = lat
+    env["navigation"]["gps"]["lon"] = lon
+    env["navigation"]["gps"]["alt_m"] = snapshot["alt_m"]
+    env["navigation"]["baro"]["alt_m"] = snapshot["alt_m"]
+    env["environment"]["alt_agl_m"] = snapshot["alt_m"] - snapshot["terrain_m"]
+    env["mission_status"]["ground_speed_mps"] = snapshot["speed_mps"]
+    env["health"]["battery"]["pct"] = snapshot["battery_pct"]
+    env["navigation"]["imu"]["heading_deg"] = snapshot["heading_deg"]
+
+    for event in snapshot["active_events"]:
+        applier = _EVENT_APPLIERS.get(event["type"])
+        if applier is not None:
+            applier(env)
+
     return env
