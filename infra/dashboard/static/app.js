@@ -297,15 +297,18 @@ function emitPeriodicSysLog() {
 
 const MAX_DECISION_EVENTS = 30;
 
+// 4단계 파이프라인 순서: 탐지(03 감지/추상화) → 위협(04 위협 모델링)
+// → 평가(05 위험 평가) → 대응(06 대응 결정). 재계획/재개는 같은 조우 박스에 추가된다.
 const DECISION_TYPES = {
   detect: { label: "탐지", cls: "badge-detect" },
+  threat: { label: "위협", cls: "badge-threat" },
   assess: { label: "평가", cls: "badge-assess" },
   respond: { label: "대응", cls: "badge-respond" },
   replan: { label: "재계획", cls: "badge-replan" },
   resume: { label: "재개", cls: "badge-resume" },
 };
 
-// 열린 이벤트 박스 — 탐지에서 시작해 평가/대응/재계획/재개가 같은 박스에 쌓인다.
+// 열린 이벤트 박스 — 탐지에서 시작해 위협/평가/대응/재계획/재개가 같은 박스에 쌓인다.
 const decisionEvt = { seq: 0, openStages: null };
 
 /** 새 조우 이벤트 박스를 #decision-list 에 append 하고 stage 컨테이너를 연다. */
@@ -380,6 +383,7 @@ function pushDecision(type, message) {
  * 향후 대시보드 /ws 의 decision_log 타입 메시지 핸들러(스텁).
  * TODO(연동): 실제 온보드 파이프라인이 decision_log 이벤트를 WS로 보내면
  * 여기서 msg.type/msg.message 를 pushDecision 에 그대로 연결한다.
+ * type ∈ detect(탐지)/threat(위협)/assess(평가)/respond(대응)/replan(재계획)/resume(재개).
  * 현재는 WS 연결을 구현하지 않고 mock 시나리오 이벤트만 pushDecision 을 직접 호출한다.
  */
 function handleDecisionLog(msg) {
@@ -498,7 +502,7 @@ const mock = {
   battery: 97, gps: 0.98, comms: 3, rac: 0,
   odo: 0, trailProfile: [], pos: { x: PATH[0].x, y: PATH[0].y }, head: 0,
   enemyActive: false, alt: 0, terr: 0, dEnemy: 1,
-  _assessed: false, _responded: false, _failsafed: false,
+  _threatened: false, _assessed: false, _responded: false, _failsafed: false,
   chanQ: {}, // 채널별 이전 quality(quality_delta = quality(t) - quality(t-1) 계산용).
   speedMps: UAV_CRUISE_MPS, // 현재 프레임 UAV 대지속도(m/s) — updateMock에서 phase별로 갱신.
   att: { roll: 0, pitch: 0, yaw: 0 }, // FC 자세(deg) — 운동상태에서 유도(updateMock, 저역통과).
@@ -684,7 +688,7 @@ function updateMock(dt) {
   if (mock.phase === "NORMAL") {
     if (mock.dir > 0 && dEnemy < ENEMY.r) {
       mock.phase = "ENCOUNTER"; mock.phaseT = 0;
-      pushDecision("detect", "위협 감지 — T3 근접 위협 탐지 (proximity_object anomaly)");
+      pushDecision("detect", "근접 이상 감지 — proximity_object anomaly (weapon_shape)");
       const brg = Math.round(((Math.atan2(ENEMY.y - p.y, ENEMY.x - p.x) * 180) / Math.PI + 360) % 360);
       emitSys("FC", "mode AUTO→GUIDED (evasive)", "warn");
       emitSys("CAN", "[0x1A0] ESC cmd rpm↑ " +
@@ -692,13 +696,18 @@ function updateMock(dt) {
       emitSys("GIMBAL", "slew brg=" + brg + "° (track target)");
     }
   } else if (mock.phase === "ENCOUNTER") {
-    if (!mock._assessed && mock.phaseT > 0.5) {
-      mock._assessed = true;
-      pushDecision("assess", "위험 평가 — RAC=Serious (L=B, S=Critical) priority 1");
+    // 4단계 결정 로그 — 조우 창(~1.6s, simDt 기준)에 탐지→위협→평가→대응 순서로 발화.
+    if (!mock._threatened && mock.phaseT > 0.4) {
+      mock._threatened = true;
+      pushDecision("threat", "T3 근접 소화기 식별 — conf 0.92 · killchain 후기");
     }
-    if (!mock._responded && mock.phaseT > 0.9) {
+    if (!mock._assessed && mock.phaseT > 0.8) {
+      mock._assessed = true;
+      pushDecision("assess", "위험 평가 — RAC=Serious · urgency 0.85 · priority 1");
+    }
+    if (!mock._responded && mock.phaseT > 1.2) {
       mock._responded = true;
-      pushDecision("respond", "대응 결정 — flight_action=RTL, comms_level=SILENT");
+      pushDecision("respond", "대응 결정 — flight_action=RTL · comms_level=SILENT");
     }
     // One-shot failsafe check when the C2 link degrades during the encounter.
     if (!mock._failsafed && mock.comms < 1.5) {
@@ -706,7 +715,7 @@ function updateMock(dt) {
       const rssi = Math.round(-62 - ((3 - mock.comms) / 3) * 30);
       emitSys("FC", "failsafe check: C2 link degraded (rssi=" + rssi + "dBm) — GUIDED hold", "error");
     }
-    if (mock.phaseT > 1.4) {
+    if (mock.phaseT > 1.6) {
       mock.phase = "RTL"; mock.dir = -1; mock.phaseT = 0;
       pushDecision("replan", "재계획 — 복귀 경로 재계획 (reroute)");
       emitSys("FC", "mode GUIDED→RTL", "warn");
@@ -717,7 +726,7 @@ function updateMock(dt) {
       // 복귀 완료 → 신규 임무 재시작. 고도 프로파일 trail 도 새 사이클로 리셋.
       mock.phase = "NORMAL"; mock.dir = 1; mock.phaseT = 0;
       mock.battery = 96;
-      mock._assessed = false; mock._responded = false; mock._failsafed = false;
+      mock._threatened = false; mock._assessed = false; mock._responded = false; mock._failsafed = false;
       mock.trailProfile = [];
       pushDecision("resume", "임무 재개 — 경로 복행");
       emitSys("FC", "mode RTL→AUTO resume wp=" + wpLabel(), "warn");

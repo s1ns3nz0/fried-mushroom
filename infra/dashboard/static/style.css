@@ -363,7 +363,7 @@ body {
   font-family: var(--mono);
 }
 
-/* 이벤트 박스 — 탐지→평가→대응(+재계획/재개)이 하나의 조우 이벤트로 묶인다 */
+/* 이벤트 박스 — 탐지→위협→평가→대응(+재계획/재개)이 하나의 조우 이벤트로 묶인다 */
 .decision-event {
   background: var(--surface-2);
   border: 1px solid var(--border-2);
@@ -438,20 +438,30 @@ body {
   flex: none;
 }
 
+/* 6단계 배지 — 탐지(muted) → 위협(anomaly) → 평가(degraded) → 대응(accent-strong)
+   → 재계획(accent/muted 혼합) → 재개(normal). 평가/대응 은 외곽선+두께로 추가 구분. */
 .badge-detect {
-  background: var(--degraded);
+  background: var(--muted);
 }
 
-.badge-assess {
+.badge-threat {
   background: var(--anomaly);
 }
 
+.badge-assess {
+  background: var(--degraded);
+}
+
 .badge-respond {
-  background: var(--accent);
+  background: var(--accent-strong);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  font-weight: 700;
 }
 
 .badge-replan {
   background: var(--muted);
+  background: color-mix(in srgb, var(--accent) 45%, var(--muted));
 }
 
 .badge-resume {
