@@ -1,9 +1,11 @@
-"""acoustic_event — 🔵 1차 임계값 매칭 (YAMNet 2차는 step4).
+"""acoustic_event — 🔵 1차 임계값 매칭 + 🟡 YAMNet 2차(게이팅).
 
-peak_db·rise_time_ms 로 총성을 1차 확정한다. 애매 케이스는 event_type="ambiguous",
-detection_stage="threshold_only" 로 남겨 step4 의 YAMNet 2차 승격이 덮어쓰게 한다.
+peak_db·rise_time_ms 로 총성을 1차 확정한다. 1차가 애매한 경우(event_type="ambiguous")
+에만 YAMNet stub 을 2차로 호출해 덮어쓴다 — 트리거 기반 게이팅(SWaP 예산, 03 문서).
+명확한 케이스에는 stub 을 호출하지 않는다.
 """
 
+from onboard.ai_stubs.yamnet_stub import classify_acoustic
 from onboard.layer_03_abstraction._common import make_output
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 from onboard.shared.schemas import ChannelOutput
@@ -11,6 +13,21 @@ from onboard.shared.schemas import ChannelOutput
 _GUNSHOT_PEAK_DB = 90.0
 _GUNSHOT_RISE_MS = 3.0
 _AMBIGUOUS_PEAK_DB = 75.0
+
+# YAMNet event_type → A-1 어휘 정규화.
+_YAMNET_EVENT_MAP = {
+    "gunshot": "gunshot",
+    "explosion": "explosion",
+    "propeller": "propeller_approach",
+    "unknown": "ambiguous",
+}
+# 2차 결과 event_type → 채널 state.
+_EVENT_TO_STATE = {
+    "gunshot": "anomaly",
+    "explosion": "anomaly",
+    "propeller_approach": "degraded",
+    "ambiguous": "degraded",
+}
 
 
 def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> ChannelOutput:
@@ -21,7 +38,7 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
     if peak_db > _GUNSHOT_PEAK_DB and rise_time_ms < _GUNSHOT_RISE_MS:
         event_type, state, quality = "gunshot", "anomaly", 0.92
     elif peak_db >= _AMBIGUOUS_PEAK_DB:
-        # 1차만으로 애매 — step4 YAMNet 2차 대상.
+        # 1차만으로 애매 — YAMNet 2차 대상.
         event_type, state, quality = "ambiguous", "degraded", 0.6
     else:
         event_type, state, quality = "none", "normal", 0.9
@@ -32,4 +49,15 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
         "peak_db": peak_db,
         "bearing_deg": acoustic["bearing_deg"],
     }
+
+    # 게이팅: 애매한 경우에만 YAMNet 2차 승격.
+    if event_type == "ambiguous":
+        secondary = classify_acoustic(acoustic)
+        resolved = _YAMNET_EVENT_MAP.get(secondary["event_type"], "ambiguous")
+        payload["event_type"] = resolved
+        payload["detection_stage"] = "yamnet_secondary"
+        payload["yamnet_confidence"] = secondary["yamnet_confidence"]
+        state = _EVENT_TO_STATE.get(resolved, "degraded")
+        quality = secondary["yamnet_confidence"]
+
     return make_output("acoustic_event", state, quality, payload, previous_quality)
