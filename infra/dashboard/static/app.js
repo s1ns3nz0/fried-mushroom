@@ -744,7 +744,10 @@ function advanceWizard() {
 function finishWizard() {
   wizard.active = false;
   wizard.spot = null;
-  wizardPostPaused(false);
+  // 마법사 진입 시 UAV 를 멈추지만(/control), 종료 시 무조건 재개하면 운용자가
+  // 마법사 중 수동 일시정지한 경우를 덮어써 UI(mock.paused)와 불일치한다.
+  // 운용자의 현재 pause 의도(mock.paused, play/pause 버튼이 유지)로 복원한다.
+  wizardPostPaused(mock.paused);
   WIZARD_STEPS.forEach((s) => {
     const stepEl = document.getElementById(s.el);
     if (stepEl) stepEl.classList.remove("wiz-active", "wiz-dim");
