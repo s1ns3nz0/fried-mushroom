@@ -1,0 +1,37 @@
+{
+  "sortie_id": "scenario-t7",
+  "mission_context": "타격",
+  "posture": {
+    "watchcon": 3,
+    "defcon": 3
+  },
+  "drone_profile": {
+    "spare_asset_available": true,
+    "armament": [
+      {
+        "expendable": true,
+        "type": "leaflet"
+      }
+    ]
+  },
+  "corridor": {
+    "bases": [
+      {
+        "name": "HOME",
+        "lat": 37.49,
+        "lon": 126.98
+      }
+    ],
+    "roi": {
+      "lat": 37.5,
+      "lon": 127.0,
+      "radius_m": 500
+    }
+  },
+  "weights": {
+    "stealth": 0.2,
+    "survival": 0.3,
+    "info_value": 0.2,
+    "timeliness": 0.3
+  }
+}

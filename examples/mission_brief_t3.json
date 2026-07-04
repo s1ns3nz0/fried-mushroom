@@ -1,0 +1,32 @@
+{
+  "sortie_id": "scenario-t3",
+  "mission_context": "정찰",
+  "posture": {
+    "watchcon": 3,
+    "defcon": 3
+  },
+  "drone_profile": {
+    "spare_asset_available": false,
+    "armament": []
+  },
+  "corridor": {
+    "bases": [
+      {
+        "name": "HOME",
+        "lat": 37.49,
+        "lon": 126.98
+      }
+    ],
+    "roi": {
+      "lat": 37.5,
+      "lon": 127.0,
+      "radius_m": 500
+    }
+  },
+  "weights": {
+    "stealth": 0.4,
+    "survival": 0.2,
+    "info_value": 0.3,
+    "timeliness": 0.1
+  }
+}
