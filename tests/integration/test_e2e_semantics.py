@@ -63,7 +63,7 @@ def test_t1_gps_spoof_remote() -> None:
     assert out["response"]["comms_level"] == "L1"
     assert out["response"]["nav_mode"] is None
     assert out["flight_plan"]["replan_scope"] == "NONE"
-    assert out["flight_plan"]["reroute_anchor"] == "last_known_good_position"
+    assert out["flight_plan"]["reroute_anchor"] is None  # MAINTAIN → 재계획 없으므로 anchor 불필요
 
 
 def test_t2_cyber_hijack_remote() -> None:
@@ -81,12 +81,14 @@ def test_t2_cyber_hijack_remote() -> None:
 
 
 def test_t7_terrain_navigation() -> None:
-    """t7(지형충돌, 수송): NAVIGATION 위협으로 분류, MAINTAIN (rac=Medium, #24 보류)."""
+    """t7(지형충돌, 수송): NAVIGATION, 07 CFIT override → TTC<3s이므로 altitude_delta_m>0."""
     out = _run("t7")
     assert out["response"]["primary_threat_event"] == "T7"
     assert out["response"]["threat_category"] == "NAVIGATION"
     assert out["response"]["rac"] == "Medium"
-    # flight_action/altitude: #24(T7 CFIT 즉시상승 vs MAINTAIN 스펙 판정) 해소 후 확정
+    assert out["flight_plan"]["flight_action"] == "ALTITUDE_CHANGE"
+    assert out["flight_plan"]["altitude_delta_m"] > 0
+    assert out["flight_plan"]["replan_scope"] == "LOCAL"
 
 
 def test_strike_high_rac_triggers_payload_overrides() -> None:

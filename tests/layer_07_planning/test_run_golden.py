@@ -87,3 +87,32 @@ def test_remote_reroute_no_bearing_anchor():
     assert out["reroute_anchor"] == "last_known_good_position"
     assert out["target_bearing_deg"] is None
     assert out["replan_scope"] == "FULL"
+
+
+def test_cfit_override_maintain_to_altitude_change():
+    """TTC<3s + MAINTAIN → ALTITUDE_CHANGE 결정론적 override (RAC 무관)."""
+    response = _make_response("MAINTAIN", "NAVIGATION", rac="Medium", kill_chain_stage=None)
+    ctx = {**_CYCLE_CTX, "obstacle_ttc_s": 1.875}
+    out = run(response, None, ctx)
+    assert out["flight_action"] == "ALTITUDE_CHANGE"
+    assert out["altitude_delta_m"] == 15
+    assert out["replan_scope"] == "LOCAL"
+
+
+def test_cfit_override_not_triggered_when_ttc_safe():
+    """TTC>=3s → override 없음, MAINTAIN 유지."""
+    response = _make_response("MAINTAIN", None, rac="Low", kill_chain_stage=None)
+    ctx = {**_CYCLE_CTX, "obstacle_ttc_s": 5.0}
+    out = run(response, None, ctx)
+    assert out["flight_action"] == "MAINTAIN"
+    assert out["altitude_delta_m"] == 0
+    assert out["replan_scope"] == "NONE"
+
+
+def test_cfit_override_not_triggered_when_already_climbing():
+    """TTC<3s 이지만 이미 ALTITUDE_CHANGE_REROUTE → 더 적극적 기존 action 유지."""
+    response = _make_response("ALTITUDE_CHANGE_REROUTE", "NAVIGATION")
+    ctx = {**_CYCLE_CTX, "obstacle_ttc_s": 1.0}
+    out = run(response, None, ctx)
+    assert out["flight_action"] == "ALTITUDE_CHANGE_REROUTE"
+    assert out["altitude_delta_m"] == 50
