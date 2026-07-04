@@ -20,8 +20,9 @@ def _load_raw(scenario):
 
 
 def test_normal_envelope_all_channels_normal():
+    # step4 에서 AI stub 2채널(proximity_object/terrain_class)이 추가돼 11채널.
     out = run(build_normal_envelope("s", 0, 0))
-    assert len(out["channels"]) == 9
+    assert len(out["channels"]) == 11
     assert all(c["state"] == "normal" for c in out["channels"])
 
 
