@@ -30,6 +30,21 @@ from onboard.run import (
 _EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 
 
+def _raw_link_lost(seq: int) -> dict:
+    """C2 링크 완전두절 raw (rssi_dbm=-98, packet_loss_rate=1.0) — link_status anomaly 유발."""
+    raw = build_normal_envelope("LL", seq, seq * 1000)
+    raw["c2_link"].update({"rssi_dbm": -98, "packet_loss_rate": 1.0, "latency_ms": 400})
+    return raw
+
+
+def _raw_nav_lost(seq: int) -> dict:
+    """GPS 스푸핑/무결성 상실 raw (hdop=10, 위치 대편차) — position_consistency anomaly 유발."""
+    raw = build_normal_envelope("NL", seq, seq * 1000)
+    raw["navigation"]["gps"]["hdop"] = 10.0
+    raw["navigation"]["gps"]["lat"] = 38.0  # GPS↔IMU 큰 잔차 → anomaly
+    return raw
+
+
 def _load(name: str) -> dict:
     return json.loads((_EXAMPLES / name).read_text(encoding="utf-8"))
 
@@ -199,3 +214,71 @@ def test_single_run_cycle_not_affected():
     out = run_cycle(_raw_normal(0), _brief())
     assert "link_loss" not in out, "단일 run_cycle 에 link_loss 추가됨 — single-cycle 계약 위반"
     assert "nav_integrity" not in out, "단일 run_cycle 에 nav_integrity 추가됨 — single-cycle 계약 위반"
+
+
+# ── 5. 에스컬레이션 시나리오 — 실 파이프라인 채널 출력 기반 ─────────────────────
+
+
+def test_link_loss_hold_after_5_cycles():
+    """5사이클 C2 두절(anomaly) → link_loss HOLD 권고 (두절 5s, 임계 3s 초과)."""
+    pairs = [(_raw_link_lost(i), _brief()) for i in range(5)]
+    results = run_cycle_chain(pairs)
+    out = results[-1]["link_loss"]
+    assert out["advisory_only"] is True
+    assert out["recommended_action"] == "HOLD", f"5s 두절 → HOLD 예상, got {out['recommended_action']}"
+    assert out["outage_seconds"] == pytest.approx(5.0, abs=0.1)
+
+
+def test_link_loss_rtl_after_15_cycles():
+    """15사이클 C2 두절 → link_loss RTL 권고 (두절 15s, 10s RTL 임계 초과)."""
+    pairs = [(_raw_link_lost(i), _brief()) for i in range(15)]
+    results = run_cycle_chain(pairs)
+    out = results[-1]["link_loss"]
+    assert out["recommended_action"] == "RTL", f"15s 두절 → RTL 예상, got {out['recommended_action']}"
+    assert out["outage_seconds"] == pytest.approx(15.0, abs=0.1)
+
+
+def test_link_loss_recovers_to_continue():
+    """C2 두절 후 복구 → 마지막 사이클 CONTINUE."""
+    pairs = (
+        [(_raw_link_lost(i), _brief()) for i in range(5)]
+        + [(_raw_normal(i + 5), _brief()) for i in range(3)]
+    )
+    results = run_cycle_chain(pairs)
+    # 복구 후 마지막 사이클: 두절 스트릭 0 → CONTINUE
+    out = results[-1]["link_loss"]
+    assert out["recommended_action"] == "CONTINUE", f"복구 후 CONTINUE 예상, got {out['recommended_action']}"
+
+
+def test_nav_integrity_rtl_after_10_cycles():
+    """10사이클 GPS 무결성 상실 → nav_integrity RTL 권고 (10s, RTL 임계 8s 초과)."""
+    pairs = [(_raw_nav_lost(i), _brief()) for i in range(10)]
+    results = run_cycle_chain(pairs)
+    out = results[-1]["nav_integrity"]
+    assert out["advisory_only"] is True
+    assert out["recommended_action"] == "RTL", f"10s nav 상실 → RTL 예상, got {out['recommended_action']}"
+    assert out["untrusted_seconds"] == pytest.approx(10.0, abs=0.1)
+
+
+def test_nav_integrity_recovers_to_continue():
+    """GPS 무결성 상실 후 복구 → 마지막 사이클 CONTINUE."""
+    pairs = (
+        [(_raw_nav_lost(i), _brief()) for i in range(5)]
+        + [(_raw_normal(i + 5), _brief()) for i in range(3)]
+    )
+    results = run_cycle_chain(pairs)
+    out = results[-1]["nav_integrity"]
+    assert out["recommended_action"] == "CONTINUE", f"복구 후 CONTINUE 예상, got {out['recommended_action']}"
+
+
+def test_chain_link_loss_escalates_over_cycles():
+    """사이클이 쌓일수록 두절 심각도가 단조 증가해야 한다 (CONTINUE→HOLD→RTL)."""
+    _SEVERITY = {"CONTINUE": 0, "MONITOR": 1, "HOLD": 2, "DR_HOLD": 2, "RTL": 3, "LAND": 4}
+    pairs = [(_raw_link_lost(i), _brief()) for i in range(20)]
+    results = run_cycle_chain(pairs)
+    severities = [_SEVERITY.get(r["link_loss"]["recommended_action"], -1) for r in results]
+    # 전체 시퀀스가 단조 비감소여야 한다 (일단 악화되면 줄지 않음)
+    for i in range(1, len(severities)):
+        assert severities[i] >= severities[i - 1], (
+            f"cycle {i}: severity 감소 ({severities[i-1]}→{severities[i]}) — 에스컬레이션 단조성 위반"
+        )
