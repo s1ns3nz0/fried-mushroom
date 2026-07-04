@@ -107,3 +107,14 @@ def test_reserve_and_speed_overrides_affect_margin():
 def test_note_present():
     out = assess_endurance(_raw(), _brief())
     assert out["note"]
+
+
+def test_list_base_missing_lon_skipped_no_crash():
+    """list 베이스 중 lon 결측 항목은 스킵 — 크래시 없이 유효 베이스 선택 또는 UNKNOWN."""
+    bases = [{"type": "home", "id": "bad", "lat": 37.5},          # lon 결측
+             {"type": "emergency", "id": "ok", "lat": 37.49, "lon": 127.0}]
+    out = assess_endurance(_raw(37.5, 127.0), _brief(bases=bases))
+    assert out["home_base_id"] == "ok"  # 결측 home 건너뛰고 emergency 선택
+    # 전부 결측이면 UNKNOWN(크래시 없음)
+    out2 = assess_endurance(_raw(37.5, 127.0), _brief(bases=[{"type": "home", "lat": 37.5}]))
+    assert out2["assessable"] is False and out2["recommended_action"] == "UNKNOWN"

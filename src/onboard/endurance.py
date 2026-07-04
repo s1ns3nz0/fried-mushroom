@@ -50,10 +50,10 @@ def _pick_home(bases: Any) -> dict | None:
         by_type = {b.get("type"): b for b in bases if isinstance(b, dict)}
         for key in _BASE_PRIORITY:
             b = by_type.get(key)
-            if b and b.get("lat") is not None:
+            if b and b.get("lat") is not None and b.get("lon") is not None:
                 return b
         for b in bases:
-            if isinstance(b, dict) and b.get("lat") is not None:
+            if isinstance(b, dict) and b.get("lat") is not None and b.get("lon") is not None:
                 return b
     return None
 
