@@ -79,5 +79,15 @@ def test_missing_posture_imputed_not_extreme():
     assert s_partial["novelty"] < det.score(_rec("타격", 1, 0.1, threat="T7"))["novelty"]
 
 
+def test_absent_numeric_column_neutral():
+    # posture 전무 코퍼스: 학습에 없던 수치컬럼은 질의에 값이 있어도 인위적 0기준 오탐 안 냄.
+    recs = [{"mission_context": "정찰", "threat_event": "T3", "confidence": 0.9} for _ in range(12)]
+    det = fit_novelty_detector(recs)
+    # posture 를 포함한 질의 — 학습 전무 컬럼이므로 중립 처리되어 이례로 튀지 않아야.
+    q = {"mission_context": "정찰", "posture": {"defcon": 1, "watchcon": 1, "infocon": 1},
+         "threat_event": "T3", "confidence": 0.9}
+    assert det.score(q)["is_novel"] is False
+
+
 def test_unfitted_score_none():
     assert NoveltyDetector(None).score(_rec("정찰", 5, 0.9)) is None

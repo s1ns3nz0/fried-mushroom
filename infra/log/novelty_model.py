@@ -64,6 +64,7 @@ class NoveltyDetector:
         num = np.array(_numeric_row(record), dtype=float)
         num = np.where(np.isnan(num), s["mean"], num)  # 결측 → 학습평균 대치
         num = (num - s["mean"]) / s["std"]
+        num = num * s["num_active"]  # 학습 전무 컬럼(all-NaN)은 중립(0) — 인위적 0기준 오탐 방지
         cats: list[float] = []
         for c in _CATEGORICAL:
             val = record.get(c)
@@ -129,8 +130,8 @@ def fit_novelty_detector(records: list[dict[str, Any]]) -> NoveltyDetector:
     std[std == 0] = 1.0  # 상수/전열결측 피처 div0 방지
 
     k = min(_K, len(samples) - 1)  # 자기 제외 후 남는 이웃 수 보장
-    state = {"X": None, "mean": mean, "std": std, "vocab": vocab, "cat_freq": cat_freq,
-             "k": k, "threshold": 0.0, "self_dists": None}
+    state = {"X": None, "mean": mean, "std": std, "num_active": (~all_nan).astype(float),
+             "vocab": vocab, "cat_freq": cat_freq, "k": k, "threshold": 0.0, "self_dists": None}
     det = NoveltyDetector(state)
     X = np.array([det._vectorize(r) for r in samples], dtype=float)
     state["X"] = X
