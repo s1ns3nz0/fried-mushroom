@@ -65,3 +65,26 @@ def test_tick_payload_shape():
     for k in ("abstraction", "threat", "risk", "response", "flight_plan"):
         assert k in p
     assert "channels" in p["abstraction"]
+
+
+# --- CLI (TODO 7): 폐루프 실행 → tick payload 출력/전송 (--collector 없으면 stdout) ---
+
+
+def test_cli_dry_run_prints_tick_payloads(capsys, tmp_path):
+    import json as _json
+    brief_p = tmp_path / "brief.json"
+    brief_p.write_text(_json.dumps(_BRIEF), encoding="utf-8")
+    from runner import main
+    rc = main(["--seed", "42", "--ticks", "3", "--brief", str(brief_p)])
+    assert rc == 0
+    out = capsys.readouterr().out.strip().splitlines()
+    # tick 라인 3개, 각 JSON tick payload.
+    ticks = [l for l in out if '"type": "tick"' in l or '"type":"tick"' in l]
+    assert len(ticks) == 3
+    p = _json.loads(ticks[0])
+    assert p["type"] == "tick" and "world" in p and "flight_plan" in p
+
+
+def test_cli_missing_brief_errors():
+    from runner import main
+    assert main(["--seed", "1", "--ticks", "1", "--brief", "/no/such.json"]) == 2

@@ -10,7 +10,10 @@ seed 기반 결정론(난수 없음) — 같은 seed = 동일 적·이벤트·�
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
+import time
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -131,3 +134,66 @@ def build_tick_payload(seq: int, ts_ms: int, correlation_id: str,
         "response": result["response"],
         "flight_plan": result["flight_plan"],
     }
+
+
+DEFAULT_COLLECTOR_TICK_URL = "http://localhost:8500/tick"
+
+
+def _post_tick(collector_url: str, payload: dict) -> bool:
+    """tick payload 를 수집기에 POST. httpx 는 지연 import(코어 테스트는 stdlib 만)."""
+    import httpx  # noqa: E402  — CLI --collector 사용 시에만 필요
+
+    try:
+        resp = httpx.post(collector_url, json=payload, timeout=3.0)
+        return 200 <= resp.status_code < 300
+    except Exception as exc:  # 연결 실패는 보고 후 계속
+        print(f"[runner] POST {collector_url} 실패: {exc}", file=sys.stderr)
+        return False
+
+
+def main(argv: list[str] | None = None) -> int:
+    """폐루프 CLI — seed 시나리오를 tick 단위로 실행해 tick payload 를 출력/전송한다."""
+    parser = argparse.ArgumentParser(description="infra/sim 폐루프 러너 (#151)")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--brief", required=True, help="mission_brief JSON 경로")
+    parser.add_argument("--ticks", type=int, default=20)
+    parser.add_argument("--dt", type=float, default=1.0)
+    parser.add_argument("--rate", type=float, default=0.0, help="tick 간 실시간 지연(초)")
+    parser.add_argument("--collector", default=None,
+                        help=f"지정 시 tick 을 POST (기본 {DEFAULT_COLLECTOR_TICK_URL})")
+    args = parser.parse_args(argv)
+
+    brief_path = Path(args.brief)
+    if not brief_path.exists():
+        print(f"error: --brief 파일 없음: {args.brief}", file=sys.stderr)
+        return 2
+    mission_brief = json.loads(brief_path.read_text(encoding="utf-8"))
+
+    scen = build_scenario(mission_brief, args.seed)
+    frames = run_closed_loop(mission_brief, args.seed, args.ticks, dt=args.dt)
+    sortie = mission_brief.get("sortie_id", "SIM")
+    collector_url = (args.collector if args.collector not in (None, "")
+                     else None)
+    if args.collector == "":
+        collector_url = DEFAULT_COLLECTOR_TICK_URL
+
+    posted = 0
+    for seq, f in enumerate(frames):
+        payload = build_tick_payload(
+            seq, seq * int(args.dt * 1000) if args.dt else seq,
+            f"{sortie}-{seq:04d}", f["world"], f["result"], scen["enemies"],
+        )
+        if collector_url:
+            posted += 1 if _post_tick(collector_url, payload) else 0
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        if args.rate:
+            time.sleep(args.rate)
+    if collector_url:
+        print(f"[runner] {posted}/{len(frames)} ticks posted → {collector_url}",
+              file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
