@@ -287,5 +287,15 @@
     "battery_pct": 78,
     "home_base_id": "base_emergency",
     "note": "홈까지 27511m — 내구/배터리 정보 부재로 여유 계산 불가."
+  },
+  "corridor": {
+    "assessable": true,
+    "deviation_m": 28387.7,
+    "within_corridor": false,
+    "threshold_m": 150.0,
+    "threshold_source": "default",
+    "nearest_segment_index": 0,
+    "advisory_only": true,
+    "note": "⚠ 코리더 이탈 28388m > 임계 150m (세그먼트 0) — 표류/스푸핑/무단이탈 점검 요망."
   }
 }
