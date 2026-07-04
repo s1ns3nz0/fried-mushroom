@@ -24,6 +24,19 @@ _USAGE = (
     "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>]"
 )
 
+_RAW_REQUIRED = frozenset({
+    "ts_ms", "navigation", "ew", "health", "environment",
+    "c2_link", "acoustic", "imagery", "lidar", "mission_status",
+})
+_BRIEF_REQUIRED = frozenset({"mission_context", "posture", "drone_profile"})
+
+
+def _check_keys(data: dict, required: frozenset, label: str) -> str | None:
+    missing = sorted(required - data.keys())
+    if missing:
+        return f"error: {label} 필수 키 누락: {', '.join(missing)}"
+    return None
+
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
@@ -65,6 +78,10 @@ def main(argv: list[str] | None = None) -> int:
     except json.JSONDecodeError as exc:
         print(f"error: raw JSON 파싱 실패 ({args[0]}): {exc}", file=sys.stderr)
         return 2
+    err = _check_keys(raw, _RAW_REQUIRED, f"raw ({args[0]})")
+    if err:
+        print(err, file=sys.stderr)
+        return 2
 
     try:
         brief_text = Path(args[1]).read_text(encoding="utf-8")
@@ -75,6 +92,10 @@ def main(argv: list[str] | None = None) -> int:
         mission_brief = json.loads(brief_text)
     except json.JSONDecodeError as exc:
         print(f"error: mission_brief JSON 파싱 실패 ({args[1]}): {exc}", file=sys.stderr)
+        return 2
+    err = _check_keys(mission_brief, _BRIEF_REQUIRED, f"mission_brief ({args[1]})")
+    if err:
+        print(err, file=sys.stderr)
         return 2
 
     previous_qualities: dict | None = None

@@ -126,11 +126,6 @@ def test_schema_violation_brief_exits_nonzero(tmp_path):
     assert rc != 0
 
 
-@pytest.mark.xfail(
-    reason="파이프라인 내부 KeyError 가 스택트레이스로 노출됨 — "
-           "CLI 입력 스키마 검증 추가는 #204 follow-up 이슈 대상",
-    strict=False,
-)
 def test_schema_violation_brief_graceful_message(tmp_path):
     """필수 키 누락 brief → 어떤 키가 누락인지 명시하는 에러 메시지 (스택트레이스 아님)."""
     minimal = tmp_path / "minimal_brief.json"
@@ -139,6 +134,41 @@ def test_schema_violation_brief_graceful_message(tmp_path):
     assert rc != 0
     assert "Traceback" not in err, f"스택트레이스 노출: {err[:300]}"
     assert "error" in err.lower()
+
+
+def test_schema_violation_brief_names_missing_keys(tmp_path):
+    """필수 키 누락 brief → 에러 메시지에 누락된 키 이름 포함."""
+    minimal = tmp_path / "minimal_brief.json"
+    minimal.write_text(json.dumps({"sortie_id": "x"}))
+    rc, _, err = _run(str(_EXAMPLES / "raw_t3.json"), str(minimal))
+    assert rc != 0
+    assert any(k in err for k in ("mission_context", "posture", "drone_profile")), (
+        f"누락 키 이름이 에러 메시지에 없음: {err[:300]}"
+    )
+
+
+# ── 3b. 스키마 위반 raw (필수 키 누락) ────────────────────────────────────────
+
+
+def test_schema_violation_raw_exits_nonzero(tmp_path):
+    """필수 키 누락 raw → 비-0 exit."""
+    minimal = tmp_path / "minimal_raw.json"
+    minimal.write_text(json.dumps({"ts_ms": 1000}))
+    rc, _, _ = _run(str(minimal), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+
+
+def test_schema_violation_raw_graceful_message(tmp_path):
+    """필수 키 누락 raw → 스택트레이스 아닌 명확한 에러 메시지."""
+    minimal = tmp_path / "minimal_raw.json"
+    minimal.write_text(json.dumps({"ts_ms": 1000}))
+    rc, _, err = _run(str(minimal), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+    assert "Traceback" not in err, f"스택트레이스 노출: {err[:300]}"
+    assert "error" in err.lower()
+    assert any(k in err for k in ("navigation", "ew", "health", "environment", "c2_link")), (
+        f"누락 키 이름이 에러 메시지에 없음: {err[:300]}"
+    )
 
 
 # ── 4. 인자 개수 오류 ─────────────────────────────────────────────────────────
