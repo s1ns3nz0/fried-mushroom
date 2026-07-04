@@ -120,7 +120,11 @@ class CorpusStore:
         """메타필터 회수 (mission_context/posture/threat_event AND). 최신·고확신 우선.
 
         → 회수 계약: docs/RAG-corpus.md §6. 반환 dict는 학습레코드 스키마(posture는 dict 역직렬화).
+        top_k는 0 이상이어야 한다 (음수는 SQLite `LIMIT -1`로 해석되어 전체 반환되므로 거부).
         """
+        if top_k < 0:
+            raise ValueError("top_k must be non-negative")
+
         clauses: list[str] = []
         params: list[Any] = []
         if mission_context is not None:

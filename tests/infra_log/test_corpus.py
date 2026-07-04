@@ -1,9 +1,14 @@
-"""corpus 변환기 + 회수 단위 테스트 (임시 sqlite, 네트워크 없음)."""
+"""corpus 변환기 + 회수 단위 테스트 (임시 sqlite, 네트워크 없음).
+
+이 테스트는 루트 CI(`python -m pytest`, testpaths=["tests"])가 수집하도록 tests/
+아래에 둔다 — infra/log 의 corpus 는 sys.path 로 임포트한다(파이프라인 무변경).
+corpus.py 는 표준 라이브러리만 쓰므로 httpx/fastapi 불필요.
+"""
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
 
 import pytest
 from corpus import CorpusStore, episode_to_corpus_records
@@ -159,3 +164,18 @@ def test_retrieve_ordered_by_ts_then_confidence_desc(store):
 def test_retrieve_respects_top_k(store):
     store.ingest_episode(_episode())
     assert len(store.retrieve(top_k=1)) == 1
+
+
+def test_retrieve_negative_top_k_raises(store):
+    with pytest.raises(ValueError):
+        store.retrieve(top_k=-1)
+
+
+def test_retrieve_top_k_bounds_large_corpus(store):
+    episode = _episode()
+    episode["threat_judgments"] = [
+        {"threat_event": f"T{i}", "confidence": 0.5, "kill_chain_stage": "초기"}
+        for i in range(30)
+    ]
+    store.ingest_episode(episode)
+    assert len(store.retrieve(top_k=5)) == 5
