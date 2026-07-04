@@ -19,7 +19,11 @@ class RawSensorEnvelope(TypedDict):
     sortie_id: str
     seq: int
     ts_ms: int
-    imagery: dict            # EO/IR raw frame refs, gimbal_deg, (mock) 객체 라벨 hint
+    imagery: dict            # EO/IR raw frame refs, gimbal_deg, (mock) 객체 라벨 hint.
+    #                          선택(#355, 하위호환): eo_frame = 실 프레임 소스
+    #                          {kind, fmt, width, height, channels, bytes_b64|path, meta}
+    #                          → layer_03.perception_input.resolve_frame() 이 PerceptionFrame
+    #                          으로 정규화(실모델 입력). 없으면 mock 힌트 폴백(골든 무변경).
     navigation: dict         # gps, imu, baro, magnetometer, airspeed, waypoint_telemetry
     c2_link: dict            # rssi_dbm, noise_floor_dbm, freq_mhz, packet_loss_rate, latency_ms, checksum_fail_rate, seq_gap_count, encryption_mode, downgrade_detected
     ew: dict                 # gnss_confidence, gnss_position_jump_m, satellite_count, cn0_avg_db, rf_wideband_scan, rf_bearing_deg
