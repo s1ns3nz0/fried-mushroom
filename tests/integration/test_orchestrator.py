@@ -174,6 +174,40 @@ class TestLayerWiring:
         run_cycle(_raw(), _brief())
         assert seen["primary_context"] is None
 
+    def test_terrain_bearing_derived_from_corridor_waypoints(self, monkeypatch) -> None:
+        seen: dict = {}
+
+        def plan_run(response, primary_context, cycle_context):
+            seen["ctx"] = cycle_context
+            return _canned_flight_plan()
+
+        _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
+        brief = {
+            **_brief(),
+            "corridor": {
+                "waypoints": [
+                    {"id": "wp1", "lat": 37.7, "lon": 127.2, "alt_m": 60},
+                    {"id": "wp2", "lat": 37.72, "lon": 127.22, "alt_m": 60},
+                ],
+                "bases": {},
+            },
+        }
+        run_cycle(_raw(), brief)
+        assert seen["ctx"]["optimal_terrain_bearing_deg"] == pytest.approx(45.0, abs=0.5)
+        assert seen["ctx"]["lowest_exposure_bearing_deg"] == pytest.approx(135.0, abs=0.5)
+
+    def test_terrain_bearing_fallback_when_no_waypoints(self, monkeypatch) -> None:
+        seen: dict = {}
+
+        def plan_run(response, primary_context, cycle_context):
+            seen["ctx"] = cycle_context
+            return _canned_flight_plan()
+
+        _inject(monkeypatch, {"onboard.layer_07_planning.run": plan_run})
+        run_cycle(_raw(), _brief())  # _brief() has empty waypoints
+        assert seen["ctx"]["optimal_terrain_bearing_deg"] == 0.0
+        assert seen["ctx"]["lowest_exposure_bearing_deg"] == 0.0
+
 
 class TestCli:
     def test_main_prints_result_json_with_five_keys(self, tmp_path, capsys) -> None:
