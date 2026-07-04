@@ -40,9 +40,9 @@ def cross_check(
 
     warnings: list[dict] = []
 
-    # (2a) 예비기체 보유여부 대조 (등록값 검증).
-    reg_spare = drone_profile.get("spare_available")
-    c4i_spare = c4i.get("asset_management", {}).get("spare_available")
+    # (2a) 예비기체 보유여부 대조 (등록값 검증). 온보드 계약 키 spare_asset_available.
+    reg_spare = drone_profile.get("spare_asset_available")
+    c4i_spare = c4i.get("asset_management", {}).get("spare_asset_available")
     if reg_spare is not None and c4i_spare is not None and reg_spare != c4i_spare:
         warnings.append({
             "field": "spare_available",

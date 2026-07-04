@@ -29,8 +29,8 @@ def test_uncorroborated_threat_confidence_unchanged() -> None:
 
 def test_spare_mismatch_is_warning_not_confidence() -> None:
     sigs = [_threat_signal(0.85)]
-    dp = {"spare_available": True}
-    c4i = {"asset_management": {"spare_available": False}}
+    dp = {"spare_asset_available": True}
+    c4i = {"asset_management": {"spare_asset_available": False}}
     adjusted, warnings = cross_check(sigs, dp, "정찰", c4i)
     spare_w = [w for w in warnings if w["field"] == "spare_available"]
     assert len(spare_w) == 1
@@ -39,7 +39,7 @@ def test_spare_mismatch_is_warning_not_confidence() -> None:
 
 
 def test_spare_match_no_warning() -> None:
-    _, warnings = cross_check([], {"spare_available": False}, "정찰", {"asset_management": {"spare_available": False}})
+    _, warnings = cross_check([], {"spare_asset_available": False}, "정찰", {"asset_management": {"spare_asset_available": False}})
     assert [w for w in warnings if w["field"] == "spare_available"] == []
 
 
@@ -55,6 +55,6 @@ def test_mission_match_no_warning() -> None:
 
 def test_no_c4i_no_adjustment_no_warnings() -> None:
     sigs = [_threat_signal(0.85)]
-    adjusted, warnings = cross_check(sigs, {"spare_available": True}, "정찰", {})
+    adjusted, warnings = cross_check(sigs, {"spare_asset_available": True}, "정찰", {})
     assert adjusted[0]["confidence"] == 0.85
     assert warnings == []

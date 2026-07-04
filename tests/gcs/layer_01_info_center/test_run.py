@@ -12,12 +12,12 @@ def _inputs(**over):
         "directive_text": "적 저격조 첩보 확인됨. 가용 예비기체 없음.",
         "mission_context": "정찰",
         "posture": {"watchcon": 3, "defcon": 3, "infocon": 4},
-        "drone_profile": {"spare_available": True, "armament": [], "battery_pct": 65},
+        "drone_profile": {"spare_asset_available": True, "armament": [], "battery_pct": 65},
         "corridor": {"waypoints": [], "bases": {}},
         "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
         "c4i": {
             "enemy_situation": ["적 저격조 활동 확인"],
-            "asset_management": {"spare_available": False},
+            "asset_management": {"spare_asset_available": False},
             "known_mission": "정찰 감시",
         },
     }
