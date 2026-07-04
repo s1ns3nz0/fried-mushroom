@@ -24,8 +24,6 @@ _SRC = Path(__file__).resolve().parents[2] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-import httpx  # noqa: E402
-
 from onboard.run import run_cycle  # noqa: E402
 
 DEFAULT_COLLECTOR_URL = "http://localhost:8500/log"
@@ -90,6 +88,9 @@ def _response_log(layer_out: dict) -> tuple[str, str]:
     flight_action = layer_out.get("flight_action")
     comms_level = layer_out.get("comms_level", "-")
     log = f"06 대응 · {flight_action or '-'} comms={comms_level}"
+    payload_action = layer_out.get("payload_action") or []
+    if payload_action:
+        log += f" actions=[{','.join(payload_action)}]"
     nav_mode = layer_out.get("nav_mode")
     if nav_mode:
         log += f" nav={nav_mode}"
@@ -144,6 +145,7 @@ def cycle_to_log_entries(correlation_id: str, result: dict) -> list[dict]:
 
 def post_entries(entries, collector_url: str = DEFAULT_COLLECTOR_URL, *, client=None) -> int:
     """entry 들을 collector 에 POST. 2xx 건수 반환 (연결 실패는 stderr 보고 후 계속)."""
+    import httpx  # lazy — 테스트 환경에서 미설치 시 임포트 에러 방지
     owns_client = client is None
     if owns_client:
         client = httpx.Client(timeout=3.0)
