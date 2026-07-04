@@ -23,10 +23,11 @@ data "aws_iam_policy_document" "github_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # F-02(#232): sub 를 특정 ref 로 고정 — 와일드카드(:*) 제거로 PR/fork/타 브랜치 assume 차단.
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_org}/${var.github_repo}:*"]
+      values   = ["repo:${var.github_org}/${var.github_repo}:ref:${var.github_deploy_ref}"]
     }
   }
 }
