@@ -76,3 +76,40 @@ def terrain_elev_m(lat: float, lon: float, bbox: dict) -> float:
     h = height_at(x, y)
     elev = TERRAIN_ELEV_BASE_M + (h - 0.1) / 0.9 * TERRAIN_ELEV_MAX_M
     return round(elev, 6)
+
+
+def segment_min_clearance(
+    p1: dict, p2: dict, bbox: dict, *, samples: int = 20
+) -> dict:
+    """선분 p1→p2 를 따라 지형표고를 샘플링해 **구간 최저 clearance** 를 찾는다 (#341 후속).
+
+    route.py 의 waypoint별 clearance 는 끝점만 보므로, 봉우리가 두 waypoint **사이**에
+    있으면 놓친다(CFIT 위험 과소평가). 이 함수는 선분을 samples 등분해 lat/lon·alt 를
+    선형 보간하며 각 지점의 clearance(=alt - terrain_elev)를 계산, 최저값을 반환한다.
+    경로 출력을 바꾸지 않는 **분석 헬퍼**(골든 불변) — CFIT 판정/프로파일에서 소비.
+
+    p1/p2: {lat, lon, alt_m}. 반환: {min_clearance_m, min_at_frac, terrain_max_m}.
+    """
+    n = max(2, int(samples))
+    lat1, lon1, alt1 = float(p1["lat"]), float(p1["lon"]), float(p1.get("alt_m", 0.0))
+    lat2, lon2, alt2 = float(p2["lat"]), float(p2["lon"]), float(p2.get("alt_m", 0.0))
+    min_clr = float("inf")
+    min_frac = 0.0
+    terrain_max = float("-inf")
+    for i in range(n + 1):
+        t = i / n
+        lat = lat1 + t * (lat2 - lat1)
+        lon = lon1 + t * (lon2 - lon1)
+        alt = alt1 + t * (alt2 - alt1)
+        elev = terrain_elev_m(lat, lon, bbox)
+        clr = alt - elev
+        if clr < min_clr:
+            min_clr = clr
+            min_frac = t
+        if elev > terrain_max:
+            terrain_max = elev
+    return {
+        "min_clearance_m": round(min_clr, 6),
+        "min_at_frac": round(min_frac, 6),
+        "terrain_max_m": round(terrain_max, 6),
+    }
