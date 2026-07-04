@@ -225,3 +225,29 @@ def test_valid_input_with_prev_qualities_exits_zero():
     )
     assert rc == 0, f"--prev-qualities 정상 경로 비-0 exit: {err}"
     assert "flight_plan" in json.loads(out)
+
+
+# ── 3c. 센서 nested 필드 비-dict (malformed 타입) ─────────────────────────────
+
+
+def _valid_raw():
+    import copy
+    return copy.deepcopy(json.loads((_EXAMPLES / "raw_t3.json").read_text(encoding="utf-8")))
+
+
+def test_non_dict_sensor_field_exits_nonzero(tmp_path):
+    """센서 nested 필드가 비-dict(str/None 등) → 비-0 exit (cryptic TypeError 아님)."""
+    raw = _valid_raw(); raw["navigation"] = "BAD"
+    p = tmp_path / "bad.json"; p.write_text(json.dumps(raw))
+    rc, _, _ = _run(str(p), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+
+
+def test_non_dict_sensor_field_graceful_message(tmp_path):
+    """비-dict 센서 필드 → 어떤 필드인지 명시 + 스택트레이스 아님."""
+    raw = _valid_raw(); raw["health"] = None
+    p = tmp_path / "bad.json"; p.write_text(json.dumps(raw))
+    rc, _, err = _run(str(p), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+    assert "Traceback" not in err, f"스택트레이스 노출: {err[:300]}"
+    assert "error" in err.lower() and "health" in err

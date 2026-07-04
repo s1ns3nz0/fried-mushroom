@@ -20,6 +20,10 @@ import sys
 from pathlib import Path
 
 from onboard.layer_02_sensor.schema import REQUIRED_KEYS as RAW_REQUIRED_KEYS
+
+# 센서 nested 필드(dict 여야 함) — 비-dict 시 명확 에러(#214 연장).
+_RAW_DICT_FIELDS = ("imagery", "navigation", "c2_link", "ew", "health",
+                    "acoustic", "environment", "mission_status", "lidar")
 from onboard.run import run_cycle
 from onboard.shared.schemas import MissionBrief
 
@@ -88,6 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     missing_raw = sorted(k for k in RAW_REQUIRED_KEYS if k not in raw)
     if missing_raw:
         print(f"error: raw 필수 키 누락 ({args[0]}): {', '.join(missing_raw)}", file=sys.stderr)
+        return 2
+    # 센서 nested 필드가 dict 인지 검증 — 비-dict(str/None/list 등)면 파이프라인 내부에서
+    # cryptic TypeError('string indices...')로 새지 않게 명확 메시지 + 비-0 exit (#209/#214 연장).
+    non_dict = sorted(k for k in _RAW_DICT_FIELDS if not isinstance(raw.get(k), dict))
+    if non_dict:
+        print(f"error: raw 센서 필드가 객체(dict)가 아님 ({args[0]}): {', '.join(non_dict)}",
+              file=sys.stderr)
         return 2
 
     try:
