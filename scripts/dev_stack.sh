@@ -93,4 +93,15 @@ DASHBOARD_COLLECTOR_HTTP_URL="http://localhost:$COLLECTOR_PORT" \
 PIDS+=("$!")
 
 echo "[dev_stack] 준비 완료 — 대시보드: http://localhost:$DASH_PORT (Ctrl-C 로 전체 종료)"
-wait
+
+# 자식(collector/vizsim/dashboard) 중 하나라도 종료되면 fail-fast — 부분 스택 방지.
+# 폴링 감독(bash 3.2 호환 — macOS 기본 셸). trap cleanup 이 나머지 정리.
+while true; do
+  for pid in "${PIDS[@]}"; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      echo "[dev_stack] 컴포넌트(pid $pid) 종료 감지 — 전체 정리 후 종료합니다." >&2
+      exit 1
+    fi
+  done
+  sleep 1
+done
