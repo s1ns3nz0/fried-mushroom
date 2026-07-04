@@ -193,8 +193,9 @@ class TestLayerWiring:
             },
         }
         run_cycle(_raw(), brief)
-        assert seen["ctx"]["optimal_terrain_bearing_deg"] == pytest.approx(45.0, abs=0.5)
-        assert seen["ctx"]["lowest_exposure_bearing_deg"] == pytest.approx(135.0, abs=0.5)
+        # cos 보정: mean_lat=37.71°N → dlon_corr=0.02*cos(37.71°)≈0.01584 → atan2≈38.35°
+        assert seen["ctx"]["optimal_terrain_bearing_deg"] == pytest.approx(38.35, abs=0.5)
+        assert seen["ctx"]["lowest_exposure_bearing_deg"] == pytest.approx(128.35, abs=0.5)
 
     def test_terrain_bearing_fallback_when_no_waypoints(self, monkeypatch) -> None:
         seen: dict = {}
