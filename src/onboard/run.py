@@ -177,6 +177,28 @@ def extract_flight_plan_state(result: dict) -> dict:
     return result["flight_plan_state"]
 
 
+def extract_link_window(results: list[dict]) -> list[dict]:
+    """chain 결과 시퀀스에서 link_status 채널 출력 윈도우 추출. assess_link_loss 입력용."""
+    window = []
+    for r in results:
+        for ch in r["abstraction"]["channels"]:
+            if ch["channel"] == "link_status":
+                window.append(ch)
+                break
+    return window
+
+
+def extract_nav_window(results: list[dict]) -> list[dict]:
+    """chain 결과 시퀀스에서 position_consistency 채널 출력 윈도우 추출. assess_nav_integrity 입력용."""
+    window = []
+    for r in results:
+        for ch in r["abstraction"]["channels"]:
+            if ch["channel"] == "position_consistency":
+                window.append(ch)
+                break
+    return window
+
+
 def run_cycle_chain(
     pairs,
     previous_qualities: dict | None = None,
@@ -188,12 +210,23 @@ def run_cycle_chain(
     previous_qualities/previous_flight_plan_state 로 자동 연결한다 — CLI `--prev-qualities`
     수동 주입 없이도 quality_delta(T5 광학 교란 등)가 연속 스트림에서 자연 발화한다.
 
+    각 사이클 결과에 link_loss/nav_integrity cross-cycle advisory 를 추가한다 (#389):
+    - link_loss: 누적 link_status 윈도우 → C2 통신두절 failsafe 타임라인 advisory
+    - nav_integrity: 누적 position_consistency 윈도우 → GNSS 항법 failsafe 타임라인 advisory
+    CRITICAL: advisory_only — 결정론 판정(risk/threat/response/flight_plan) 불변(SCC-1).
+
     pairs: iterable of (raw, mission_brief). 반환: 사이클별 run_cycle 결과 리스트.
     선택 인자로 스트림 시작 시점의 직전 상태를 주입할 수 있다(체인 이어붙이기).
     """
+    from .link_loss import assess_link_loss
+    from .nav_integrity import assess_nav_integrity
+
     results: list[dict] = []
     prev_q = previous_qualities
     prev_fp = previous_flight_plan_state
+    link_window: list[dict] = []
+    nav_window: list[dict] = []
+
     for raw, mission_brief in pairs:
         result = run_cycle(
             raw,
@@ -201,6 +234,15 @@ def run_cycle_chain(
             previous_qualities=prev_q,
             previous_flight_plan_state=prev_fp,
         )
+        # cross-cycle advisory 윈도우 갱신
+        for ch in result["abstraction"]["channels"]:
+            if ch["channel"] == "link_status":
+                link_window.append(ch)
+            elif ch["channel"] == "position_consistency":
+                nav_window.append(ch)
+        result = dict(result)
+        result["link_loss"] = assess_link_loss(link_window)
+        result["nav_integrity"] = assess_nav_integrity(nav_window)
         results.append(result)
         prev_q = extract_qualities(result)
         prev_fp = extract_flight_plan_state(result)
