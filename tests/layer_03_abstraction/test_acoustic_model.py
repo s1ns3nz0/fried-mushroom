@@ -109,13 +109,18 @@ def test_resolve_audio_malformed_does_not_crash():
     assert clip is not None and clip["meta"] == {}
 
 
-def test_non_16khz_mono_falls_back(monkeypatch):
+def test_non_16khz_mono_falls_back():
     # codex #375 P2: 48kHz/스테레오는 리샘플 없이 None(폴백) — YAMNet 오분류 방지.
-    from onboard.layer_03_abstraction.perception_input import AudioClip
-    monkeypatch.setattr(acoustic_model, "_load_yamnet", lambda: object())  # 모델 있는 척
+    # (sample_rate/channels 가드는 numpy 무관 — 무-외부의존 CI 에서도 검증된다.)
     base = {"fmt": "pcm16", "raw_bytes": b"\x00\x00" * 160, "samples": None, "meta": {}}
     assert acoustic_model._decode_waveform({**base, "sample_rate": 48000, "channels": 1}) is None
     assert acoustic_model._decode_waveform({**base, "sample_rate": 16000, "channels": 2}) is None
-    # 16kHz mono 는 decode 됨(파형 반환).
+
+
+def test_16khz_mono_decodes_when_numpy_available():
+    # 16kHz mono decode 는 numpy 필요 — 없는 환경(CI 기본)에선 None(폴백)이라 skip.
+    import pytest as _pytest
+    _pytest.importorskip("numpy")
+    base = {"fmt": "pcm16", "raw_bytes": b"\x00\x00" * 160, "samples": None, "meta": {}}
     ok = acoustic_model._decode_waveform({**base, "sample_rate": 16000, "channels": 1})
     assert ok is not None
