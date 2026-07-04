@@ -14,7 +14,36 @@
 // ── 설정 ──────────────────────────────────────────────────────
 
 const DEFAULT_LOG_WS_URL = "ws://localhost:8500/logs";
+const DEFAULT_COLLECTOR_HTTP_URL = "http://localhost:8500";
 const MAX_LOG_ITEMS = 400; // 오래된 항목은 잘라 메모리 방어.
+
+// ── 공유 설정 로더 ────────────────────────────────────────────
+// /config.json(정적 — S3 배포에서도 동작) → /config(로컬 dev 백엔드) → 내장 기본값.
+// 결과 Promise 를 window.D4D_CONFIG 로 노출해 gcs.js 도 같은 설정을 쓴다.
+
+function fetchConfigJson(url) {
+  return fetch(url)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+}
+
+function loadSharedConfig() {
+  const defaults = {
+    logWsUrl: DEFAULT_LOG_WS_URL,
+    collectorHttpUrl: DEFAULT_COLLECTOR_HTTP_URL,
+  };
+  if (typeof fetch !== "function") return Promise.resolve(defaults);
+  return fetchConfigJson("/config.json")
+    .then((cfg) => (cfg && cfg.log_ws_url ? cfg : fetchConfigJson("/config")))
+    .then((cfg) => ({
+      logWsUrl: (cfg && cfg.log_ws_url) || defaults.logWsUrl,
+      collectorHttpUrl: (cfg && cfg.collector_http_url) || defaults.collectorHttpUrl,
+    }));
+}
+
+if (typeof window !== "undefined") {
+  window.D4D_CONFIG = loadSharedConfig();
+}
 
 // level → CSS 클래스.
 const LEVEL_CLASS = { info: "lvl-info", warn: "lvl-warn", error: "lvl-error" };
@@ -1325,13 +1354,14 @@ function startMockSim() {
 
 // ── 진입점 ────────────────────────────────────────────────────
 
-/** 서버 /config 에서 로그수집기 WS URL 기본값을 best-effort 로 가져온다. */
+/** 공유 설정 로더(window.D4D_CONFIG)에서 로그수집기 WS URL 을 가져온다. */
 function loadConfig() {
-  if (typeof fetch !== "function") return Promise.resolve();
-  return fetch("/config")
-    .then((r) => (r.ok ? r.json() : null))
+  const cfgPromise = typeof window !== "undefined" && window.D4D_CONFIG
+    ? window.D4D_CONFIG
+    : loadSharedConfig();
+  return cfgPromise
     .then((cfg) => {
-      if (cfg && cfg.log_ws_url) state.logWsUrl = cfg.log_ws_url;
+      if (cfg && cfg.logWsUrl) state.logWsUrl = cfg.logWsUrl;
     })
     .catch(() => { /* 설정 조회 실패 시 기본값 유지 */ });
 }

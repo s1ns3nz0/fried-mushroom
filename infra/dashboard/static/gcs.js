@@ -5,10 +5,10 @@
 // POST /gcs/run 으로 전달한다. 판단은 온보드 파이프라인이 수행하고,
 // 이 탭은 조립·전달·결과 요약 표시만 담당한다(관측 전용).
 //
-// 계약:
+// 계약 (로그수집기 :8500 이 서빙 — collectorHttpUrl 기준):
 //   GET  /gcs/scenarios      → [{tag, sortie_id, mission_context}]
 //   GET  /gcs/scenario/{tag} → {raw, mission_brief}
-//   POST /gcs/run            → {result, log_delivered, correlation_id}
+//   POST /gcs/run            → {result, log_published, correlation_id}
 // 폼 ↔ JSON 라운드트립: 편집 → collectBrief() → 미리보기 = 전송 body.
 
 (function () {
@@ -20,6 +20,25 @@
     rawTag: null,
     baseIds: { emergency: "base_emergency", alternate: "base_alternate" },
   };
+
+  // ── 수집기 API 헬퍼 ─────────────────────────────────────────
+  // /gcs/* 는 로그수집기(:8500)가 서빙 — app.js 의 공유 설정 로더(window.D4D_CONFIG)
+  // 에서 collectorHttpUrl 을 해석해 브라우저가 수집기에 직접 요청한다(정적 배포 대응).
+
+  const DEFAULT_COLLECTOR_HTTP_URL = "http://localhost:8500";
+
+  function configReady() {
+    return typeof window !== "undefined" && window.D4D_CONFIG
+      ? window.D4D_CONFIG
+      : Promise.resolve(null);
+  }
+
+  /** collectorHttpUrl + path 로 fetch — 설정 해석을 기다린 뒤 요청한다. */
+  function collectorFetch(path, opts) {
+    return configReady()
+      .then((cfg) => (cfg && cfg.collectorHttpUrl) || DEFAULT_COLLECTOR_HTTP_URL)
+      .then((base) => fetch(base + path, opts));
+  }
 
   const DEFAULT_BRIEF = {
     sortie_id: "",
@@ -221,7 +240,7 @@
   }
 
   function fetchScenario(tag) {
-    return fetch("/gcs/scenario/" + encodeURIComponent(tag)).then((r) => {
+    return collectorFetch("/gcs/scenario/" + encodeURIComponent(tag)).then((r) => {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     });
@@ -251,7 +270,7 @@
   }
 
   function loadScenarios() {
-    return fetch("/gcs/scenarios")
+    return collectorFetch("/gcs/scenarios")
       .then((r) => {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
@@ -319,7 +338,7 @@
     }
     setStatus("파이프라인 실행 중…", "");
     $("gcs-run").disabled = true;
-    fetch("/gcs/run", {
+    collectorFetch("/gcs/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ raw: gcs.raw, mission_brief: brief }),
@@ -346,7 +365,7 @@
         setStatus(
           "[" + data.correlation_id + "] primary=" + primary + " · RAC=" + rac +
             " · flight_action=" + action +
-            (data.log_delivered ? " · 로그 전송됨 → 관측 탭" : " · 로그 미전송(수집기 확인)"),
+            (data.log_published ? " · 로그 발행됨 → 관측 탭" : " · 로그 미발행(수집기 확인)"),
           "ok"
         );
         // 요약 확인 여유 후 관측 탭으로 전환(시스템 로그에 사이클 로그가 흐른다).

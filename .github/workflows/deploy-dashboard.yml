@@ -34,7 +34,13 @@ jobs:
         env:
           # terraform output dashboard_bucket 값을 repo variable로 등록
           BUCKET: ${{ vars.DASHBOARD_BUCKET }}
-        run: aws s3 sync infra/dashboard/static/ "s3://$BUCKET/" --delete
+        # Split layout: JS/CSS assets go under /static/ (index.html references
+        # them as /static/...), while index.html and config.json sit at the
+        # bucket root (frontend fetches /config.json; CloudFront DefaultRootObject=index.html).
+        run: |
+          aws s3 sync infra/dashboard/static/ "s3://$BUCKET/static/" --delete --exclude "index.html" --exclude "config.json"
+          aws s3 cp infra/dashboard/static/index.html "s3://$BUCKET/index.html"
+          aws s3 cp infra/dashboard/static/config.json "s3://$BUCKET/config.json"
 
       - name: Invalidate CloudFront cache
         if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}

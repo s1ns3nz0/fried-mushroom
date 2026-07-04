@@ -40,6 +40,23 @@ def test_config_returns_log_ws_url() -> None:
         assert "log_ws_url" in body
         assert "ws://" in body["log_ws_url"]
         assert "/logs" in body["log_ws_url"]
+        assert "collector_http_url" in body
+        assert body["collector_http_url"].startswith("http")
+
+
+def test_config_json_static_served() -> None:
+    with TestClient(main.app) as client:
+        resp = client.get("/config.json")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "log_ws_url" in body
+        assert "collector_http_url" in body
+
+
+def test_no_gcs_routes_on_dashboard() -> None:
+    """GCS 엔드포인트는 로그수집기로 이전됨 — 대시보드는 정적 서빙 전용."""
+    paths = {route.path for route in main.app.routes}
+    assert not any(p.startswith("/gcs") for p in paths)
 
 
 def test_ws_fanout_between_two_clients() -> None:

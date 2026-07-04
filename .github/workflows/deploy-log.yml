@@ -40,7 +40,8 @@ jobs:
           REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE: fried-mushroom-uav/log
         run: |
-          docker build -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" infra/log
+          # 빌드 컨텍스트 = repo 루트 — 이미지에 src/onboard + examples/ 포함(Dockerfile 참고).
+          docker build -f infra/log/Dockerfile -t "$REGISTRY/$IMAGE:${{ github.sha }}" -t "$REGISTRY/$IMAGE:latest" .
           docker push "$REGISTRY/$IMAGE:${{ github.sha }}"
           docker push "$REGISTRY/$IMAGE:latest"
 
