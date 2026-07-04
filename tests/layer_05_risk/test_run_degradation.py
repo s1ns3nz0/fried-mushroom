@@ -49,7 +49,8 @@ class TestGracefulDegradation:
         assert_matches_schema(out, RiskAssessmentOutput)
         assert_json_serializable(out)
 
-    def test_ambient_medium_when_high_exposure(self):
+    def test_ambient_low_even_when_high_exposure(self):
+        # issue #24 Lead 결정: exposure 기반 Medium 승격 폐기 → candidates 비면 항상 Low.
         threat = {
             "declared_phase": "unknown",
             "mission_phase_confidence": 0.0,
@@ -58,11 +59,11 @@ class TestGracefulDegradation:
             "background_exposure_score": 0.8,
         }
         out = run(threat, _BRIEF, link_quality=None)
-        assert out["ambient_rac"] == "Medium"
+        assert out["ambient_rac"] == "Low"
 
     def test_ambient_threshold_boundary(self):
         threat = {"candidates": [], "primary": None, "background_exposure_score": 0.7}
-        assert run(threat, _BRIEF, link_quality=None)["ambient_rac"] == "Medium"
+        assert run(threat, _BRIEF, link_quality=None)["ambient_rac"] == "Low"
 
     def test_missing_background_key_defaults_low(self):
         # background_exposure_score 키 자체가 없어도 예외 없이 Low.
