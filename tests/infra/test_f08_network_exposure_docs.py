@@ -32,13 +32,17 @@ def test_log_readme_has_security_section():
 
 
 def test_log_readme_mentions_ports_and_auth_tradeoff():
-    """infra/log/README.md 가 포트 번호와 인증/무인증 트레이드오프를 언급해야 한다."""
+    """infra/log/README.md 가 3포트 전체와 인증/무인증 트레이드오프를 언급해야 한다.
+
+    #280: any(8400/8500/8181) → 포트별 개별 assert — 1개 누락도 탐지.
+    F-08 은 3포트 전체 노출 문서화가 목적이므로 all 검증 필요.
+    """
     text = _LOG_README.read_text(encoding="utf-8")
 
-    port_mentioned = any(p in text for p in ("8400", "8500", "8181"))
-    assert port_mentioned, (
-        "infra/log/README.md: 포트 번호(8400/8500/8181) 언급 없음 — 노출 범위 명시 필요"
-    )
+    for port in ("8400", "8500", "8181"):
+        assert port in text, (
+            f"infra/log/README.md: 포트 {port} 언급 없음 — F-08 3포트 전체 노출 명시 필요"
+        )
 
     auth_tradeoff = bool(
         re.search(
