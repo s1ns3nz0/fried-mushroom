@@ -6,7 +6,9 @@ exposure_score 는 04 의 T6(배경노출도) 판정에 쓰인다.
 """
 
 from onboard.ai_stubs.segmentation_stub import classify_terrain
+from onboard.layer_03_abstraction import perception_model
 from onboard.layer_03_abstraction._common import make_output
+from onboard.layer_03_abstraction.perception_input import has_real_frame, resolve_frame
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 from onboard.shared.schemas import ChannelOutput
 
@@ -16,10 +18,24 @@ _DEFAULT_EXPOSURE = 0.5
 _GIS_LAST_UPDATED = "2025-11"
 
 
+def _classify_terrain(imagery: dict) -> dict:
+    """opt-in 실 segmentation(실프레임 존재 시) 우선, 실패/미가용/미활성 시 stub 폴백 (#364).
+
+    실모델은 stub 과 동일 키셋을 반환하므로 아래 GIS 대조/노출도 로직 무변경(결정론·골든 유지).
+    """
+    if perception_model.enabled() and has_real_frame(imagery):
+        frame = resolve_frame(imagery)
+        if frame is not None:
+            cam = perception_model.classify_terrain_model(frame)
+            if cam is not None:
+                return cam
+    return classify_terrain(imagery)
+
+
 def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> ChannelOutput:
     # GIS 조회(mock): environment.mock_gis_class 있으면 사용, 없으면 open_field 기본.
     gis_class = raw["environment"].get("mock_gis_class", "open_field")
-    cam = classify_terrain(raw["imagery"])
+    cam = _classify_terrain(raw["imagery"])
     cam_class = cam["dominant_class"]
 
     camera_mismatch = cam_class != gis_class

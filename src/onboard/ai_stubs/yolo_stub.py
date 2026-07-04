@@ -19,7 +19,7 @@ _DEFAULT = {
 def detect_proximity(raw_imagery: dict) -> dict:
     """imagery.object_label 힌트 → 탐지 결과. 힌트 없으면 안전한 기본값(class=None)."""
     label = raw_imagery.get("object_label")
-    if not label:
+    if not isinstance(label, dict):  # 힌트 없음/malformed(비-dict) → 안전 기본값(크래시 방지).
         return dict(_DEFAULT)
 
     cls = label.get("class")

@@ -32,9 +32,11 @@ RESULT_SCHEMA = {
     "flight_plan": FlightPlanOutput,
 }
 
-# run_cycle 반환 dict 의 전체 top-level 키(스키마 검증 대상 5개 + 07 디바운스 상태 채널 1개).
+# run_cycle 반환 dict 의 전체 top-level 키(스키마 검증 대상 5개 + 07 디바운스 상태 채널 1개
+# + endurance advisory 채널 1개).
 # flight_plan_state 는 FlightPlanOutput 스키마에 속하지 않는 별도 채널(ADR-004 07 한정 예외).
-RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state"]
+# endurance 는 advisory_only 채널(#360) — 결정론 판정에 영향 없음(SCC-1).
+RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state", "endurance", "corridor"]
 RESULT_KEYS = set(RESULT_KEYS_ORDERED)
 
 
@@ -82,7 +84,7 @@ def _inject(monkeypatch, mapping: dict) -> None:
 
 
 class TestRunCycleShape:
-    def test_returns_five_named_layer_outputs(self) -> None:
+    def test_returns_eight_named_layer_outputs(self) -> None:
         result = run_cycle(_raw(), _brief())
         assert set(result) == RESULT_KEYS
 
@@ -308,7 +310,7 @@ class TestLayerWiring:
 
 
 class TestCli:
-    def test_main_prints_result_json_with_six_keys(self, tmp_path, capsys) -> None:
+    def test_main_prints_result_json_with_eight_keys(self, tmp_path, capsys) -> None:
         raw_p = tmp_path / "raw.json"
         brief_p = tmp_path / "brief.json"
         raw_p.write_text(json.dumps(_raw()), encoding="utf-8")

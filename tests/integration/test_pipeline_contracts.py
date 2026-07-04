@@ -72,7 +72,8 @@ def test_each_layer_output_matches_schema(sid, raw, brief) -> None:
     out = _run(raw, brief)
     # flight_plan_state: 07 RAC 완화 디바운스 상태(ADR-004 07 한정 예외) — 별도 채널이라
     # 레이어 스키마(_LAYER_SCHEMA) 검증 대상이 아니다. 존재 여부만 확인한다.
-    assert set(out) == set(_LAYER_SCHEMA) | {"flight_plan_state"}
+    # endurance: advisory_only 채널(#360) — 결정론 판정에 영향 없음(SCC-1).
+    assert set(out) == set(_LAYER_SCHEMA) | {"flight_plan_state", "endurance", "corridor"}
     assert isinstance(out["flight_plan_state"], dict)
     for layer, schema in _LAYER_SCHEMA.items():
         assert_matches_schema(out[layer], schema)

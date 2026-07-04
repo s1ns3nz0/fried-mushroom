@@ -237,5 +237,29 @@
     "committed_kill_chain_stage": "중기",
     "candidate_rac_order": null,
     "candidate_streak": 0
+  },
+  "endurance": {
+    "assessable": false,
+    "recommended_action": "UNKNOWN",
+    "advisory_only": true,
+    "rtl_required": false,
+    "margin_s": null,
+    "dist_home_m": 1179.9,
+    "rtl_time_s": 69.4,
+    "remaining_endurance_s": null,
+    "reserve_s": null,
+    "battery_pct": 78,
+    "home_base_id": "base_emergency",
+    "note": "홈까지 1180m — 내구/배터리 정보 부재로 여유 계산 불가."
+  },
+  "corridor": {
+    "assessable": true,
+    "deviation_m": 0.0,
+    "within_corridor": true,
+    "threshold_m": 150.0,
+    "threshold_source": "default",
+    "nearest_segment_index": 0,
+    "advisory_only": true,
+    "note": "코리더 이탈 0m ≤ 임계 150m — 정상 경로."
   }
 }
