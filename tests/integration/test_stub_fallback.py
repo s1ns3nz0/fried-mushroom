@@ -60,3 +60,10 @@ def test_non_callable_run_falls_back_to_stub(monkeypatch) -> None:
 
     assert set(out) == _KEYS
     assert out["response"] == _STUB_OUTPUT["06"]()  # 06 run 비호출가능 → canned stub
+
+
+def test_layer07_fallback_stub_includes_route_field() -> None:
+    """07 fallback stub 이 FlightPlanOutput required 필드 route 를 포함해야 한다."""
+    stub = _STUB_OUTPUT["07"]()
+    assert "route" in stub, "07 fallback stub 에 route 필드 누락 — 스키마 위반"
+    assert stub["route"] == [], f"route 는 빈 리스트여야 함, 실제: {stub['route']}"
