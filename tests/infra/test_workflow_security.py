@@ -101,7 +101,7 @@ _FORBIDDEN: dict[str, tuple[str, str]] = {
         "CloudFront 배포 ID 리터럴 금지 — vars.CLOUDFRONT_DISTRIBUTION_ID 로 참조",
     ),
     "s3_bucket_literal": (
-        r"s3://[a-z0-9][a-z0-9\-\.]{2,62}/",
+        r"s3://[a-z0-9][a-z0-9\-\.]{2,62}(?=[/\s\"'\n]|$)",
         "S3 버킷 리터럴 금지 — vars.DASHBOARD_BUCKET 등으로 참조",
     ),
 }
@@ -150,8 +150,9 @@ def test_every_deploy_job_has_deploy_enabled_gate(wf_path: pathlib.Path) -> None
         assert if_cond is not None, (
             f"{wf_path.name}: job '{job_name}' 에 if: 조건 없음 — DEPLOY_ENABLED 게이트 필수"
         )
-        assert "DEPLOY_ENABLED" in if_cond, (
-            f"{wf_path.name}: job '{job_name}' if 조건에 DEPLOY_ENABLED 없음: {if_cond!r}"
+        assert re.search(r"vars\.DEPLOY_ENABLED\s*==\s*['\"]true['\"]", if_cond), (
+            f"{wf_path.name}: job '{job_name}' if 조건이 "
+            f"'vars.DEPLOY_ENABLED == true' 형식이 아님: {if_cond!r}"
         )
 
 
