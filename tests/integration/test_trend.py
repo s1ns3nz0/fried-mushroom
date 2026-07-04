@@ -113,3 +113,25 @@ def test_critical_level_on_high_rac_escalation():
     out = assess_threat_trend(seq)
     assert out["level"] == "critical"  # High 도달 + 악화
     assert out["primary_threat_event"] == "T4"
+
+
+def test_cleared_threat_ends_window_is_none():
+    """최신 사이클이 무위협이면(위협 해소) — 윈도우에 옛 위협 남아도 level=none."""
+    seq = [_cyc("T3", 0.9, "후기", "High"), _cyc(), _cyc()]
+    out = assess_threat_trend(seq)
+    assert out["level"] == "none"
+    assert out["escalating"] is False
+    assert out["primary_threat_event"] is None
+    assert "persistent_threat" not in out["signals"]
+
+
+def test_reappearing_threat_not_stale_escalation():
+    """T3 → T4 → T3: 최신 T3 스트릭은 1사이클 → 옛 T3 와 비교한 stale 악화 금지."""
+    seq = [_cyc("T3", 0.6, "초기", "Medium"),
+           _cyc("T4", 0.7, "중기", "Serious"),
+           _cyc("T3", 0.9, "후기", "High")]
+    out = assess_threat_trend(seq)
+    assert out["primary_threat_event"] == "T3"
+    assert "rac_escalating" not in out["signals"]      # 옛 T3(Medium)와 비교 안 함
+    assert "persistent_threat" not in out["signals"]   # 현재 T3 스트릭=1
+    assert out["escalating"] is False

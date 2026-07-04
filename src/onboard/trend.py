@@ -25,18 +25,33 @@ _MIN_PERSIST = 2
 
 
 def _track(result: dict[str, Any]) -> dict[str, Any]:
-    """한 사이클 결과에서 궤적 관련 값 추출."""
+    """한 사이클 결과에서 궤적 관련 값 추출.
+
+    threat_event 와 confidence/kill_chain/rac 를 **같은 위협** 기준으로 뽑는다 — 04(match_count)
+    와 05/06(risk 정렬)의 지배 위협이 다를 수 있으므로, 결정에 쓰인 primary_threat_event 를
+    기준으로 그 코드에 맞는 후보(risk→threat candidates→threat.primary)에서 속성을 조회한다.
+    """
     result = result or {}
     threat = result.get("threat") or {}
+    risk = result.get("risk") or {}
     response = result.get("response") or {}
     plan = result.get("flight_plan") or {}
-    primary = threat.get("primary") or {}
-    te = response.get("primary_threat_event") or primary.get("threat_event")
+    te = response.get("primary_threat_event") or (threat.get("primary") or {}).get("threat_event")
+
+    src: dict[str, Any] | None = None
+    for pool in (risk.get("candidates") or [], threat.get("candidates") or []):
+        src = next((c for c in pool if c.get("threat_event") == te), None)
+        if src:
+            break
+    if src is None:
+        p = threat.get("primary") or {}
+        src = p if p.get("threat_event") == te else {}
+
     return {
         "threat_event": te,
-        "confidence": primary.get("confidence"),
-        "kill_chain_stage": response.get("kill_chain_stage") or primary.get("kill_chain_stage"),
-        "rac": response.get("rac") or (result.get("risk") or {}).get("ambient_rac"),
+        "confidence": src.get("confidence"),
+        "kill_chain_stage": src.get("kill_chain_stage") or response.get("kill_chain_stage"),
+        "rac": src.get("rac") or response.get("rac") or risk.get("ambient_rac"),
         "flight_action": plan.get("flight_action") or response.get("flight_action"),
     }
 
@@ -66,13 +81,13 @@ def assess_threat_trend(
         seq = seq[-window:]
     tracks = [_track(r) for r in seq]
 
-    threat_tracks = [t for t in tracks if t["threat_event"]]
     signals: list[str] = []
 
-    # 지배 위협 = 윈도우 내 가장 최근 위협의 threat_event.
-    primary_te = threat_tracks[-1]["threat_event"] if threat_tracks else None
+    # 지배 위협 = **최신 사이클**의 threat_event. 최신 사이클이 무위협이면 위협은 해소된
+    # 것이므로 궤적 경보를 내지 않는다(윈도우 내 옛 위협이 남아 있어도 stale 경보 금지).
+    primary_te = tracks[-1]["threat_event"] if tracks else None
 
-    if not threat_tracks:
+    if not primary_te:
         return _report(False, "none", [], None, None, None, len(seq))
 
     # 같은(최신) 위협이 연속으로 몇 사이클 지속되는지 (뒤에서부터).
@@ -85,8 +100,9 @@ def assess_threat_trend(
     if persist >= min_persist:
         signals.append("persistent_threat")
 
-    # 궤적 신호는 지속 위협(같은 te)의 첫→끝 비교로 판정.
-    persist_slice = [t for t in tracks if t["threat_event"] == primary_te]
+    # 궤적 신호는 **현재 연속 스트릭**(뒤에서 persist 개)의 첫→끝만 비교한다. 윈도우 앞쪽의
+    # 같은 코드지만 끊겼던 옛 위협(예: T3 → T4 → T3)은 stale 이므로 포함하지 않는다.
+    persist_slice = tracks[-persist:]
     first, last = persist_slice[0], persist_slice[-1]
 
     rac_from, rac_to = first["rac"], last["rac"]
