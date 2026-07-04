@@ -226,7 +226,16 @@
     "target_bearing_deg": null,
     "altitude_delta_m": 0,
     "replan_scope": "NONE",
-    "reroute_anchor": null,
-    "route": []
+    "reroute_anchor": "mission_corridor_resume",
+    "route": [],
+    "speed_mode": "NORMAL"
+  },
+  "flight_plan_state": {
+    "committed_rac_order": 3,
+    "committed_flight_action": "MAINTAIN",
+    "committed_primary_threat_event": "T5",
+    "committed_kill_chain_stage": "중기",
+    "candidate_rac_order": null,
+    "candidate_streak": 0
   }
 }

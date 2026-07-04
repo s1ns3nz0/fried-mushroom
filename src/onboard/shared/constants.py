@@ -290,6 +290,16 @@ AI_RELIABILITY_DELTA_THRESHOLD: Final[int] = 2
 # 05 — kill_chain_stage 후기 보너스 (compound_urgency_score).
 KILL_CHAIN_LATE_BONUS: Final[float] = 0.10
 
+# 07 Flight Planning — kill_chain_stage 순서(숫자가 클수록 임박). RAC 완화 디바운스가
+# "RAC=High 유지 + kill_chain_stage 진행"을 악화로 인식하는 데 사용(debounce.py).
+KILL_CHAIN_STAGE_ORDER: Final[Mapping[str, int]] = MappingProxyType(
+    {
+        "초기": 1,
+        "중기": 2,
+        "후기": 3,
+    }
+)
+
 # 05 — compound_urgency_score / continuous_L 상한.
 COMPOUND_UPPER_BOUND: Final[float] = 0.95
 
@@ -314,6 +324,28 @@ ALTITUDE_DELTA_TERRAIN_M: Final[int] = 50
 # 07 Flight Planning — terrain-aware 경로 생성 상수 (stub DEM: 지형고도=0m).
 ROUTE_MIN_CLEARANCE_M: Final[float] = 50.0
 ROUTE_MAX_CLIMB_RATE_M_PER_WP: Final[float] = 10.0
+
+# 07 Flight Planning — RAC 완화(de-escalation) 디바운스 사이클 수.
+# RAC_ORDER 기준 비대칭 디바운스: 악화(숫자 감소)는 즉시 반영, 완화(숫자 증가)는
+# N사이클 연속 유지될 때만 반영 (RTL↔MAINTAIN 진동 방지). 악화 방향은 SCC-1
+# 안전 우선 원칙상 디바운스하지 않는다. CFIT override(TIME_TO_COLLISION_THRESHOLD_S)는
+# 이 디바운스보다 항상 우선한다.
+FLIGHT_ACTION_DEESCALATE_DEBOUNCE_CYCLES: Final[int] = 3
+
+# 07 Flight Planning — speed_mode 순서(숫자가 클수록 빠름). mission_brief.weights(운용자
+# 임무 가치 가중치)가 speed_mode를 한 단계 조정하는 데 사용(speed.py). RTL/REROUTE/
+# ALTITUDE_CHANGE_REROUTE(이미 회피 진행중, 항상 MAX)와 CFIT override 는 조정 대상 아님.
+SPEED_MODE_ORDER: Final[Mapping[str, int]] = MappingProxyType(
+    {
+        "CAUTIOUS": 1,
+        "NORMAL": 2,
+        "MAX": 3,
+    }
+)
+
+# 07 Flight Planning — weights.survival - weights.stealth 우세 판정 임계값.
+# 이 폭 이내는 "우열 없음"으로 보고 speed_mode 기본값을 그대로 둔다.
+SPEED_WEIGHT_DOMINANCE_MARGIN: Final[float] = 0.1
 
 # 06 Response — 위협 이벤트 → 3분류 (PHYSICAL / REMOTE / NAVIGATION).
 # 06 이 참조하는 공유 taxonomy. 레이어 간 직접 import 를 피하려 shared 에 둔다

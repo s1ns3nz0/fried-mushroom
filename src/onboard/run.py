@@ -21,6 +21,8 @@ from __future__ import annotations
 import importlib
 import math
 
+from .shared.constants import RAC_ORDER
+
 _LAYER_MODULE = {
     "03": "onboard.layer_03_abstraction.run",
     "04": "onboard.layer_04_threat.run",
@@ -35,11 +37,16 @@ def run_cycle(
     mission_brief: dict,
     previous_qualities: dict | None = None,
     cycle_context: dict | None = None,
+    previous_flight_plan_state: dict | None = None,
 ) -> dict:
     """한 사이클 실행. 반환:
 
-        {"abstraction": ..., "threat": ..., "risk": ...,
-         "response": ..., "flight_plan": ...}
+        {"abstraction": ..., "threat": ..., "risk": ..., "response": ...,
+         "flight_plan": ..., "flight_plan_state": ...}
+
+    flight_plan_state: 07의 RAC 완화 디바운스 상태(ADR-004 07 한정 예외).
+    다음 사이클엔 extract_flight_plan_state(result)로 뽑아 previous_flight_plan_state
+    로 넘긴다(03의 previous_qualities/extract_qualities 와 동일 패턴).
     """
     cycle_context = cycle_context or _compute_terrain_bearings(mission_brief)
 
@@ -58,8 +65,11 @@ def run_cycle(
         **({"obstacle_ttc_s": obstacle_ttc_s} if obstacle_ttc_s is not None else {}),
         "corridor_waypoints": mission_brief.get("corridor", {}).get("waypoints", []),
         "corridor_bases": mission_brief.get("corridor", {}).get("bases", {}),
+        "weights": mission_brief.get("weights", {}),
     }
-    flight_plan = _run_layer("07", lambda run: run(response, primary_context, cycle_context_07))
+    flight_plan, flight_plan_state = _run_layer_07(
+        response, primary_context, cycle_context_07, previous_flight_plan_state
+    )
 
     return {
         "abstraction": abstraction,
@@ -67,7 +77,23 @@ def run_cycle(
         "risk": risk,
         "response": response,
         "flight_plan": flight_plan,
+        "flight_plan_state": flight_plan_state,
     }
+
+
+def _run_layer_07(
+    response: dict,
+    primary_context: dict | None,
+    cycle_context_07: dict,
+    debounce_state: dict | None,
+) -> tuple[dict, dict]:
+    """07 전용 호출 래퍼 — run()이 (FlightPlanOutput, debounce_state) 튜플을 반환하므로
+    다른 레이어처럼 단일 dict 를 가정하는 _run_layer 로 처리할 수 없다.
+    """
+    run = _import_layer_run("07")
+    if run is not None:
+        return run(response, primary_context, cycle_context_07, debounce_state)
+    return _STUB_OUTPUT["07"](), _STUB_FLIGHT_PLAN_STATE()
 
 
 def _compute_terrain_bearings(mission_brief: dict) -> dict:
@@ -136,6 +162,11 @@ def extract_qualities(result: dict) -> dict[str, float]:
     return {ch["channel"]: ch["quality"] for ch in result["abstraction"]["channels"]}
 
 
+def extract_flight_plan_state(result: dict) -> dict:
+    """run_cycle 결과에서 07 디바운스 상태 추출. 다음 사이클 previous_flight_plan_state 인자용."""
+    return result["flight_plan_state"]
+
+
 def _run_layer(num: str, invoke):
     """레이어 run() 이 있으면 invoke(run) 으로 호출, 없으면 canned passthrough."""
     run = _import_layer_run(num)
@@ -189,7 +220,20 @@ _STUB_OUTPUT = {
         "target_bearing_deg": None,
         "altitude_delta_m": 0,
         "replan_scope": "NONE",
-        "reroute_anchor": None,
+        "reroute_anchor": "mission_corridor_resume",
         "route": [],
+        "speed_mode": "NORMAL",
     },
 }
+
+
+def _STUB_FLIGHT_PLAN_STATE() -> dict:
+    """07 fallback(모듈 부재) 시 디바운스 상태 초기값 — _STUB_OUTPUT["07"]의 MAINTAIN/Low 모양과 일치."""
+    return {
+        "committed_rac_order": RAC_ORDER["Low"],
+        "committed_flight_action": "MAINTAIN",
+        "committed_primary_threat_event": None,
+        "committed_kill_chain_stage": None,
+        "candidate_rac_order": None,
+        "candidate_streak": 0,
+    }

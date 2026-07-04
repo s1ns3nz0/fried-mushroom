@@ -107,6 +107,9 @@ class ResponseOutput(TypedDict):
 ReplanScope = Literal["NONE", "LOCAL", "FULL"]
 
 
+SpeedMode = Literal["NORMAL", "CAUTIOUS", "MAX"]
+
+
 class FlightPlanOutput(TypedDict):
     flight_action: str
     target_bearing_deg: float | None
@@ -114,6 +117,7 @@ class FlightPlanOutput(TypedDict):
     replan_scope: ReplanScope
     reroute_anchor: str | None
     route: list  # terrain-aware waypoints: [{lat, lon, alt_m, clearance_m}, ...]
+    speed_mode: SpeedMode
 
 
 # ---------------------------------------------------------------------------

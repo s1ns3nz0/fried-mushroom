@@ -190,7 +190,16 @@
     "target_bearing_deg": null,
     "altitude_delta_m": 0,
     "replan_scope": "NONE",
-    "reroute_anchor": null,
-    "route": []
+    "reroute_anchor": "mission_corridor_resume",
+    "route": [],
+    "speed_mode": "CAUTIOUS"
+  },
+  "flight_plan_state": {
+    "committed_rac_order": 4,
+    "committed_flight_action": "MAINTAIN",
+    "committed_primary_threat_event": null,
+    "committed_kill_chain_stage": null,
+    "candidate_rac_order": null,
+    "candidate_streak": 0
   }
 }
