@@ -10,11 +10,19 @@ infra/log/API.md 계약(POST /log, WS /logs, GET /health, backlog ring)을 검�
 
 from __future__ import annotations
 
+import sys
 import time
+from pathlib import Path
 
-import log_server
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
+
 import pytest
-from fastapi.testclient import TestClient
+
+pytest.importorskip("httpx")
+pytest.importorskip("fastapi")
+
+import log_server  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

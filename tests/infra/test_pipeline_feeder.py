@@ -3,9 +3,13 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
 
-from pipeline_feeder import cycle_to_log_entries, post_entries
+import pytest
+
+pytest.importorskip("httpx")  # post_entries()가 함수 내부에서 항상 httpx를 import
+
+from pipeline_feeder import cycle_to_log_entries, post_entries  # noqa: E402
 
 LAYER_ORDER = ["abstraction", "threat", "risk", "response", "flight_plan"]
 

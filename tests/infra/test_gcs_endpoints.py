@@ -8,9 +8,18 @@ infra/dashboard/main.py 에서 이전된 파이프라인 실행 엔드포인트�
 
 from __future__ import annotations
 
-import log_server
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
+
 import pytest
-from fastapi.testclient import TestClient
+
+pytest.importorskip("httpx")
+pytest.importorskip("fastapi")
+
+import log_server  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
