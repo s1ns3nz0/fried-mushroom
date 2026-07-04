@@ -505,7 +505,8 @@ const mock = {
   gyro: { p: 0, q: 0, r: 0 }, // 기체 각속도(deg/s) — roll/pitch/yaw 미분(저역통과).
   vs: 0, // 수직속도(m/s) — mock.alt 미분(저역통과).
   _prevHead: null, _prevAlt: null, _altTarget: null,
-  timeScale: 1, // 배속(×1/×2/×4/×8) — 시뮬레이션 시간에만 적용(WS 재연결/실제 timestamp/rAF 제외).
+  timeScale: 1, // 배속(−/+ 스테퍼, SPEED_STEPS 중 하나) — 시뮬레이션 시간에만 적용(WS 재연결/실제 timestamp/rAF 제외).
+  paused: false, // 일시중지 — true 면 updateMock(상태 전진)·주기 시스템 로그를 스킵(rAF 렌더는 유지).
 };
 
 const CLEAR_M = 120;  // 지형추종 여유고도(m)
@@ -1325,9 +1326,11 @@ function renderDeviceStats() {
 
 let _lastTs = 0;
 function frame(ts) {
+  // _lastTs는 매 프레임(일시중지 중 포함) 갱신되므로 resume 첫 프레임의 dt는
+  // 직전 rAF 프레임 간격(~16ms)뿐이다 — 일시중지 시간이 dt로 누적되지 않는다.
   const dt = _lastTs ? Math.min((ts - _lastTs) / 1000, 0.05) : 0.016;
   _lastTs = ts;
-  updateMock(dt);
+  if (!mock.paused) updateMock(dt);
   updateViewshedLayer(ts);
   drawMap();
   updatePhaseChip();
@@ -1366,10 +1369,11 @@ function loadConfig() {
     .catch(() => { /* 설정 조회 실패 시 기본값 유지 */ });
 }
 
-/** 시스템 로그 회전 tick — 간격이 timeScale로 나뉘어 배속 시 로그 밀도도 함께 스케일된다. */
+/** 시스템 로그 회전 tick — 간격이 timeScale로 나뉘어 배속 시 로그 밀도도 함께 스케일된다.
+ * 일시중지 중에는 발행을 스킵하고 재스케줄만 유지한다. */
 function scheduleSysLog() {
   setTimeout(() => {
-    emitPeriodicSysLog();
+    if (!mock.paused) emitPeriodicSysLog();
     scheduleSysLog();
   }, SYS_LOG_INTERVAL_MS / mock.timeScale);
 }
@@ -1399,24 +1403,50 @@ function initTabs() {
   });
 }
 
-/** 배속 세그먼트 컨트롤(×1/×2/×4/×8) — 클릭 시 mock.timeScale 갱신 + active 토글. */
-function initSpeedControl() {
-  const ctl = document.getElementById("speed-control");
-  if (!ctl) return;
-  ctl.addEventListener("click", (e) => {
-    const btn = e.target.closest(".speed-btn");
-    if (!btn) return;
-    mock.timeScale = Number(btn.dataset.scale) || 1;
-    ctl.querySelectorAll(".speed-btn").forEach((b) => {
-      b.classList.toggle("active", b === btn);
-    });
+// 배속 프리셋 시퀀스 — −/+ 스테퍼가 이 배열의 이전/다음 항목으로 이동한다.
+const SPEED_STEPS = [0.25, 0.5, 1, 2, 4, 8, 16];
+
+/** 시뮬 컨트롤(#panel-map 헤더) — 재생/일시중지 토글 + −/+ 배속 스테퍼.
+ * 일시중지는 mock.paused만 토글(렌더 루프는 유지), 배속은 일시중지와 무관하게 변경 가능. */
+function initSimControls() {
+  const playBtn = document.getElementById("playpause-btn");
+  const dec = document.getElementById("speed-dec");
+  const inc = document.getElementById("speed-inc");
+  const val = document.getElementById("speed-val");
+  if (!playBtn || !dec || !inc || !val) return;
+
+  function syncPlay() {
+    playBtn.textContent = mock.paused ? "▶" : "⏸";
+    playBtn.title = mock.paused ? "재생" : "일시중지";
+    playBtn.setAttribute("aria-pressed", mock.paused ? "false" : "true");
+  }
+  function syncSpeed() {
+    const i = SPEED_STEPS.indexOf(mock.timeScale);
+    val.textContent = String(mock.timeScale) + "×";
+    dec.disabled = i <= 0;
+    inc.disabled = i >= SPEED_STEPS.length - 1;
+  }
+  function step(d) {
+    const cur = SPEED_STEPS.indexOf(mock.timeScale);
+    const i = cur < 0 ? SPEED_STEPS.indexOf(1) : cur;
+    const next = Math.min(SPEED_STEPS.length - 1, Math.max(0, i + d));
+    mock.timeScale = SPEED_STEPS[next];
+    syncSpeed();
+  }
+  playBtn.addEventListener("click", () => {
+    mock.paused = !mock.paused;
+    syncPlay();
   });
+  dec.addEventListener("click", () => step(-1));
+  inc.addEventListener("click", () => step(1));
+  syncPlay();
+  syncSpeed();
 }
 
 function init() {
   startMockSim();
   initTabs();
-  initSpeedControl();
+  initSimControls();
 
   // UAV system log mock generator (panel C) — continuous, scenario-linked.
   scheduleSysLog();

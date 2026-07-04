@@ -210,10 +210,53 @@ body {
   background: var(--muted);
 }
 
-/* ── 배속 세그먼트 컨트롤 (#panel-map 헤더 우측) ──────────────── */
+/* ── 시뮬 컨트롤 — 재생/일시중지 + 배속 스테퍼 (#panel-map 헤더 우측) ── */
 
-.speed-control {
+.sim-controls {
   display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.sim-btn {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-chip);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.sim-btn:hover:not(:disabled),
+.sim-btn:active:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sim-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sim-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+#playpause-btn {
+  font-size: 11px;
+  min-width: 26px;
+}
+
+.speed-stepper {
+  display: inline-flex;
+  align-items: center;
   gap: 2px;
   padding: 2px;
   background: var(--surface-2);
@@ -221,27 +264,19 @@ body {
   border-radius: var(--radius-chip);
 }
 
-.speed-btn {
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
+.speed-stepper .sim-btn {
   background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-chip);
-  padding: 1px 8px;
-  cursor: pointer;
+  border-color: transparent;
+  padding: 1px 6px;
 }
 
-.speed-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.speed-btn:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
+.speed-val {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  min-width: 34px;
+  text-align: center;
 }
 
 /* ── 패널 공통 크롬 — 그리드/플렉스 셀 ────────────────────────── */

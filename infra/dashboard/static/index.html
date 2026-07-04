@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <!--
   D4D 대시보드 UI — 그리드 레이아웃 (topbar + 2fr:1fr 그리드, Maven 다크 스킨).
   대시보드는 판단하지 않는다 — uav 상태·로그·mock 결정 로그를 표시(관측)만 한다.
@@ -37,11 +38,13 @@
         <section class="panel" id="panel-map">
           <div class="fp-head">
             <h2>지도 / 경로</h2>
-            <div id="speed-control" class="speed-control" role="group" aria-label="배속">
-              <button type="button" class="speed-btn active" data-scale="1">×1</button>
-              <button type="button" class="speed-btn" data-scale="2">×2</button>
-              <button type="button" class="speed-btn" data-scale="4">×4</button>
-              <button type="button" class="speed-btn" data-scale="8">×8</button>
+            <div class="sim-controls">
+              <button type="button" id="playpause-btn" class="sim-btn" aria-pressed="true" title="일시중지">⏸</button>
+              <div class="speed-stepper" role="group" aria-label="배속">
+                <button type="button" id="speed-dec" class="sim-btn" aria-label="배속 감소">−</button>
+                <span id="speed-val" class="speed-val">1×</span>
+                <button type="button" id="speed-inc" class="sim-btn" aria-label="배속 증가">+</button>
+              </div>
             </div>
           </div>
           <div class="map-wrap">
