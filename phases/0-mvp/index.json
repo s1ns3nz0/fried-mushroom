@@ -4,7 +4,7 @@
   "steps": [
     { "step": 0, "name": "project-setup", "status": "completed", "summary": "Python 3.11+ pyproject.toml, src/onboard/ 및 tests/ 디렉토리 skeleton + __init__.py, smoke test 통과" },
     { "step": 1, "name": "shared-schemas-constants", "status": "completed", "summary": "src/onboard/shared/schemas.py (TypedDict I/O), src/onboard/shared/constants.py (D4D 문서 표 하드코딩, RAC_MATRIX MappingProxyType read-only), tests/test_constants.py + test_schemas.py 총 45개 통과" },
-    { "step": 2, "name": "layer-02-mock-sensor", "status": "pending" },
+    { "step": 2, "name": "layer-02-mock-sensor", "status": "completed", "summary": "src/onboard/layer_02_sensor/schema.py (RawSensorEnvelope TypedDict, 8 카테고리 + lidar), mock_source.py (결정론적 build_normal/scenario_envelope), examples/raw_{t3,t4,t7}.json + mission_brief_{t3,t4,t7}.json 골든, tests/layer_02_sensor 18개 통과 (t3 gunshot/proximity, t4 3조건, t7 TTC<3.0)" },
     { "step": 3, "name": "layer-03-deterministic-channels", "status": "pending" },
     { "step": 4, "name": "layer-03-ai-stub-channels", "status": "pending" },
     { "step": 5, "name": "layer-04-threat-modeling", "status": "completed", "summary": "src/onboard/layer_04_threat/ 5개 모듈(run, step_a_phase, step_b_mapping, step_c_confidence, step_d_outcome) — 하드코딩 룰 테이블(eval 금지), 결정론+AI 로그오즈 교차검증, 국면배수 cap 0.95. tests/layer_04_threat/ 25개 테스트(골든: t3 T3/0.917, t4 T4/0.758, t7 T7/0.820) 전체 통과, 총 71개 통과" },

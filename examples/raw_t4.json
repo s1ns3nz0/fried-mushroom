@@ -1,16 +1,133 @@
 {
-  "ts": 1720000500,
-  "mission_phase": { "declared": "WAYPOINT", "confidence": 0.8, "match": false },
-  "gps": { "fix": "3d", "sats": 9, "snr_db": 33, "lat": 37.52, "lon": 127.02, "alt_m": 120 },
-  "imu": { "accel_rms_mss": 0.2, "gyro_rms_dps": 1.1 },
-  "acoustic": { "rms": 0.3, "peak_db": 88, "band": "broadband" },
-  "camera": {
-    "objects": [
-      { "label": "vehicle", "class": "vehicle", "closing": true, "bbox": [180, 260, 300, 180], "score": 0.88, "bearing_deg": 12.0 }
-    ]
+  "sortie_id": "scenario-t4",
+  "seq": 0,
+  "ts_ms": 1730620801200,
+  "imagery": {
+    "eo_frame_ref": "buf://eo/normal",
+    "ir_frame_ref": "buf://ir/normal",
+    "gimbal_deg": {
+      "az": 0.0,
+      "el": -30.0
+    },
+    "object_label": {
+      "class": "person",
+      "weapon_shape": false,
+      "closing": true,
+      "closure_rate_mps": 2.5,
+      "bearing_deg": 95.0,
+      "degraded_reason": null
+    },
+    "terrain_label": {
+      "dominant_class": "open_field",
+      "camera_mismatch": false
+    }
   },
-  "terrain": { "exposure_score": 0.55, "class": "road" },
-  "obstacle": { "distance_m": 180.0, "closure_rate_mps": 8.0 },
-  "link": { "rssi_dbm": -95, "state": "degraded" },
-  "rf": { "noise_floor_dbm": -80, "anomaly": true }
+  "navigation": {
+    "gps": {
+      "lat": 37.5,
+      "lon": 127.0,
+      "alt_m": 150.0,
+      "hdop": 0.8,
+      "vdop": 1.2
+    },
+    "imu": {
+      "est_lat": 37.5,
+      "est_lon": 127.0,
+      "accel_ms2": [
+        0.0,
+        0.0,
+        9.81
+      ],
+      "gyro_dps": [
+        0.0,
+        0.0,
+        25.0
+      ],
+      "heading_deg": 90.0,
+      "est_speed_mps": 1.5
+    },
+    "baro": {
+      "pressure_pa": 99500.0,
+      "alt_m": 150.2
+    },
+    "magnetometer": {
+      "heading_deg": 90.0,
+      "mag_field": [
+        0.21,
+        0.01,
+        0.42
+      ]
+    },
+    "airspeed": {
+      "airspeed_mps": 18.5
+    },
+    "waypoint_telemetry": {
+      "current_wp": 3,
+      "total_wp": 8
+    }
+  },
+  "c2_link": {
+    "rssi_dbm": -98,
+    "noise_floor_dbm": -95,
+    "freq_mhz": 915.0,
+    "packet_loss_rate": 0.25,
+    "latency_ms": 320,
+    "checksum_fail_rate": 0.0,
+    "seq_gap_count": 0,
+    "encryption_mode": "AES256",
+    "downgrade_detected": false
+  },
+  "ew": {
+    "gnss_confidence": 0.98,
+    "gnss_position_jump_m": 0.0,
+    "satellite_count": 12,
+    "cn0_avg_db": 44.0,
+    "rf_wideband_scan": {
+      "wideband_anomaly": false
+    },
+    "rf_bearing_deg": null
+  },
+  "health": {
+    "battery": {
+      "voltage_v": 25.0,
+      "current_a": 30.0,
+      "pct": 78,
+      "temp_c": 35
+    },
+    "motor_rpm": [
+      8200,
+      8150,
+      8190,
+      8175
+    ],
+    "motor_temp_c": 42.0,
+    "imu_vibration": 0.12,
+    "failsafe_state": "ready"
+  },
+  "acoustic": {
+    "mic_waveform_ref": "buf://mic/normal",
+    "peak_db": 55.0,
+    "rise_time_ms": 40.0,
+    "bandwidth_hz": 2000.0,
+    "bearing_deg": null
+  },
+  "environment": {
+    "wind_ms": 3.0,
+    "wind_dir_deg": 270.0,
+    "temp_c": 15.0,
+    "alt_agl_m": 150.0,
+    "dem_ref": "buf://dem/normal"
+  },
+  "mission_status": {
+    "current_waypoint": 3,
+    "mission_current": 3,
+    "flight_mode": "AUTO",
+    "ground_speed_mps": 1.5,
+    "distance_to_target_m": 1200.0,
+    "distance_to_base_m": 2400.0
+  },
+  "lidar": {
+    "distance_m": null,
+    "closure_rate_mps": null
+  }
 }
