@@ -50,9 +50,32 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) < 2:
         print(_USAGE, file=sys.stderr)
         return 2
+    if len(args) > 2:
+        print(f"error: 인자 과다 — positional 인자는 2개 (raw, brief). 받음: {len(args)}개\n{_USAGE}",
+              file=sys.stderr)
+        return 2
 
-    raw = json.loads(Path(args[0]).read_text(encoding="utf-8"))
-    mission_brief = json.loads(Path(args[1]).read_text(encoding="utf-8"))
+    try:
+        raw_text = Path(args[0]).read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: raw 파일 읽기 실패: {exc}", file=sys.stderr)
+        return 2
+    try:
+        raw = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        print(f"error: raw JSON 파싱 실패 ({args[0]}): {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        brief_text = Path(args[1]).read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError) as exc:
+        print(f"error: mission_brief 파일 읽기 실패: {exc}", file=sys.stderr)
+        return 2
+    try:
+        mission_brief = json.loads(brief_text)
+    except json.JSONDecodeError as exc:
+        print(f"error: mission_brief JSON 파싱 실패 ({args[1]}): {exc}", file=sys.stderr)
+        return 2
 
     previous_qualities: dict | None = None
     if prev_qualities_path is not None:
