@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from onboard.layer_04_threat import step_b_mapping
+from onboard.shared.schemas import AbstractionOutput
 
 
 def _threats(matched: list[dict]) -> set[str]:
@@ -27,7 +28,7 @@ class TestT3:
 
     def test_t3_exposure_passthrough(self, abstraction_t3) -> None:
         _, exposure = step_b_mapping.run(abstraction_t3)
-        assert exposure == 0.4
+        assert exposure == 0.8  # 실측 03 terrain_class(open_field) (Refs #41)
 
 
 class TestT4:
@@ -37,9 +38,25 @@ class TestT4:
         names = {c["name"] for c in _by_threat(matched, "T4")["matched_channels"]}
         assert names == {"proximity_object", "mission_phase", "link_status"}
 
-    def test_t4_t2_companion(self, abstraction_t4) -> None:
-        # link_integrity anomaly → T2 동반 매칭
-        matched, _ = step_b_mapping.run(abstraction_t4)
+    def test_t4_t2_companion(self) -> None:
+        # link_integrity 손상(seq_gap>0) → T2 동반 매칭 규칙 단위검증.
+        # raw_t4 정본은 link_integrity 정상이라, 규칙 자체는 합성 채널로 검증한다
+        # (fixture 정본화 후 T2 동반 경로 커버리지 유지, Refs #41).
+        abstraction: AbstractionOutput = {
+            "schema_version": "1.0",
+            "id": "t2-companion",
+            "ts": 0,
+            "channels": [
+                {
+                    "channel": "link_integrity",
+                    "state": "anomaly",
+                    "quality": 0.9,
+                    "quality_delta": 0.0,
+                    "payload": {"checksum_fail_rate": 0.0, "seq_gap_count": 3},
+                }
+            ],
+        }
+        matched, _ = step_b_mapping.run(abstraction)
         assert "T2" in _threats(matched)
 
 
@@ -55,4 +72,4 @@ class TestNormal:
     def test_normal_no_match(self, abstraction_normal) -> None:
         matched, exposure = step_b_mapping.run(abstraction_normal)
         assert matched == []
-        assert exposure == 0.2
+        assert exposure == 0.8  # 실측 03 terrain_class(open_field) (Refs #41)
