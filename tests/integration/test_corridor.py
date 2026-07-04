@@ -96,3 +96,13 @@ def test_empty_corridor_not_assessable():
 def test_note_present():
     out = assess_corridor_deviation(_raw(37.51, 127.0), _brief())
     assert out["note"]
+
+
+def test_threshold_source_explicit_when_default_used():
+    """half_width 미포함 브리핑(투영본)에선 threshold_source=default 로 명시(silent fallback 방지)."""
+    out = assess_corridor_deviation(_raw(37.51, 127.0), _brief())  # half_width 없음
+    assert out["threshold_source"] == "default"
+    withhw = assess_corridor_deviation(_raw(37.51, 127.0), _brief(half_width=300))
+    assert withhw["threshold_source"] == "half_width"
+    withmax = assess_corridor_deviation(_raw(37.51, 127.0), _brief(), max_deviation_m=50)
+    assert withmax["threshold_source"] == "explicit"

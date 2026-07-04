@@ -60,15 +60,21 @@ def assess_corridor_deviation(
     wps = [w for w in (corridor.get("waypoints") or [])
            if w.get("lat") is not None and w.get("lon") is not None]
 
-    threshold = (max_deviation_m if max_deviation_m is not None
-                 else corridor.get("half_width") if corridor.get("half_width") is not None
-                 else _DEFAULT_MAX_DEVIATION_M)
+    # 임계 출처를 명시한다 — project_onboard_brief 투영본은 half_width 를 실어 보내지 않아
+    # (waypoints/bases 만) 미션 설정 반폭이 유실될 수 있다. default 사용 시 소비자가 알도록
+    # threshold_source 를 노출한다(silent fallback 방지). half_width 투영 반영은 별도 이슈.
+    if max_deviation_m is not None:
+        threshold, threshold_source = max_deviation_m, "explicit"
+    elif corridor.get("half_width") is not None:
+        threshold, threshold_source = corridor["half_width"], "half_width"
+    else:
+        threshold, threshold_source = _DEFAULT_MAX_DEVIATION_M, "default"
 
     if lat is None or lon is None or not wps:
         return {
             "assessable": False, "deviation_m": None, "within_corridor": None,
-            "threshold_m": threshold, "nearest_segment_index": None,
-            "advisory_only": True,
+            "threshold_m": threshold, "threshold_source": threshold_source,
+            "nearest_segment_index": None, "advisory_only": True,
             "note": "위치 또는 코리더 웨이포인트 부재 — 이탈 판단 불가.",
         }
 
@@ -99,6 +105,7 @@ def assess_corridor_deviation(
         "deviation_m": round(deviation, 1),
         "within_corridor": within,
         "threshold_m": threshold,
+        "threshold_source": threshold_source,
         "nearest_segment_index": seg_idx,
         "advisory_only": True,
         "note": note,
