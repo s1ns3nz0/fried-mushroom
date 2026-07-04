@@ -60,12 +60,25 @@ def model_available() -> bool:
     return _load_yamnet() is not None
 
 
+# TF Hub YAMNet 입력 요구사항 — 16kHz mono 파형.
+_YAMNET_SAMPLE_RATE = 16000
+_YAMNET_CHANNELS = 1
+
+
 def _decode_waveform(clip: AudioClip):
-    """AudioClip.raw_bytes(pcm16) → float32 [-1,1] 파형(numpy). 실패 시 None."""
+    """AudioClip.raw_bytes(pcm16) → float32 [-1,1] 파형(numpy). 실패/비호환 시 None.
+
+    YAMNet 은 **16kHz mono** 를 요구한다. 44.1/48kHz·스테레오면 리샘플/다운믹스가 필요한데
+    그건 무거운 의존(scipy/librosa)이라 MVP 스코프 밖 → **검증 후 폴백**(None)이 안전
+    (codex #375 P2). 잘못된 sample_rate/channels 로 raw PCM 을 그대로 투입하면 타이밍·채널이
+    틀어져 오분류하므로 하지 않는다.
+    """
     if clip.get("samples") is not None:
         return clip["samples"]
     if clip.get("fmt") != "pcm16":
         return None  # 그 외 포맷은 모델측 decode 필요 — 여기선 미지원 → 폴백.
+    if clip.get("sample_rate") != _YAMNET_SAMPLE_RATE or clip.get("channels") != _YAMNET_CHANNELS:
+        return None  # 16kHz mono 아님 → 리샘플/다운믹스 없이 폴백(오분류 방지).
     try:
         import numpy as np  # noqa: PLC0415
 
