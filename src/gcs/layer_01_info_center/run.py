@@ -63,16 +63,42 @@ def assemble_draft(inputs: dict) -> dict:
     }
 
 
-def finalize(draft: dict, approved: bool, ts_ms: int) -> dict:
-    """운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_state 확정, 미승인 pending."""
-    if approved:
+# 운용자가 승인 시 수정 가능한 GCS-소유 결정필드 (sortie_id=식별자 제외, 온보드-소유 필드 제외).
+_OVERRIDABLE_FIELDS = frozenset({"mission_context", "posture", "drone_profile", "corridor", "weights"})
+
+
+def finalize(draft: dict, approved: bool, ts_ms: int, overrides: dict | None = None) -> dict:
+    """운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_state 확정, 미승인 pending.
+
+    overrides: 운용자가 승인 시 수정하는 결정필드 {field: value} (AI 초안을 사람이 필드단위 확정).
+    _OVERRIDABLE_FIELDS 로 제한 — 미지/식별자/온보드-소유 필드 주입 금지(SCC-1·레이어 계약).
+    적용 내역은 applied_overrides({field: {from, to}}) 로 감사기록. 원본 draft 는 변형하지 않는다.
+    """
+    if overrides and not approved:
+        raise ValueError("overrides require approved=True (미승인 브리핑엔 확정필드가 없음)")
+    if not approved:
         return {
-            "mission_brief": draft["draft_brief"],
-            "mettc_state": draft.get("mettc_state"),
-            "approved_ts_ms": ts_ms,
+            "status": "pending_approval",
+            "signal_cards": draft["signal_cards"],
+            "warnings": draft["warnings"],
         }
-    return {
-        "status": "pending_approval",
-        "signal_cards": draft["signal_cards"],
-        "warnings": draft["warnings"],
+
+    brief = dict(draft["draft_brief"])
+    applied: dict = {}
+    for field, value in (overrides or {}).items():
+        if field not in _OVERRIDABLE_FIELDS:
+            raise ValueError(f"override 불가 필드: {field!r} (허용: {sorted(_OVERRIDABLE_FIELDS)})")
+        applied[field] = {"from": brief.get(field), "to": value}
+        brief[field] = value
+
+    result = {
+        "mission_brief": brief,
+        "approved_ts_ms": ts_ms,
     }
+    if applied:
+        # 오버라이드된 브리핑이 정본 — AI 초안 mettc_state 는 해당 필드에서 불일치하므로 omit
+        # (Codex P2: stale state 노출 방지). 감사기록은 applied_overrides 로 보존.
+        result["applied_overrides"] = applied
+    else:
+        result["mettc_state"] = draft.get("mettc_state")
+    return result
