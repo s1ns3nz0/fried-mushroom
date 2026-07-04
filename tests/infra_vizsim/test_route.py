@@ -127,3 +127,33 @@ def test_generate_route_with_enemies_is_deterministic():
     first = route.generate_route(brief, enemies=enemies)
     second = route.generate_route(brief, enemies=enemies)
     assert first == second
+
+
+def test_frame_to_bbox_maps_full_frame_to_canvas():
+    frame = {
+        "lat_min": 38.251, "lat_max": 38.285,
+        "lon_min": 128.398, "lon_max": 128.478,
+    }
+    bbox = route.frame_to_bbox(frame)
+
+    x, y = route.to_norm(frame["lat_max"], frame["lon_min"], bbox)
+    assert abs(x - 0.0) < 1e-9
+    assert abs(y - 0.0) < 1e-9
+
+    x, y = route.to_norm(frame["lat_min"], frame["lon_max"], bbox)
+    assert abs(x - 1.0) < 1e-9
+    assert abs(y - 1.0) < 1e-9
+
+
+def test_frame_to_bbox_center_is_half():
+    frame = {
+        "lat_min": 38.251, "lat_max": 38.285,
+        "lon_min": 128.398, "lon_max": 128.478,
+    }
+    bbox = route.frame_to_bbox(frame)
+
+    lat_center = (frame["lat_min"] + frame["lat_max"]) / 2.0
+    lon_center = (frame["lon_min"] + frame["lon_max"]) / 2.0
+    x, y = route.to_norm(lat_center, lon_center, bbox)
+    assert abs(x - 0.5) < 1e-9
+    assert abs(y - 0.5) < 1e-9

@@ -197,6 +197,7 @@ function connectStream() {
     live.active = false; // 연결 끊김 → mock 재개(updateMock 프리즈 해제).
     live.channels = null; // 신호 패널도 mock(computeChannels)으로 복귀.
     live.threatEvent = null;
+    live.satellite = false; // 위성 배경도 mock 좌표계로 복귀(잔존 시 mock과 오정렬 렌더 방지).
     setStatus("라이브 끊김", false);
     scheduleStreamReconnect();
   };
@@ -1027,6 +1028,7 @@ let satelliteImg = null;
   if (typeof Image === "undefined") return;
   const im = new Image();
   im.onload = () => { satelliteImg = im; };
+  im.onerror = () => { satelliteImg = null; };
   im.src = "/static/assets/satellite.jpg";
 })();
 
