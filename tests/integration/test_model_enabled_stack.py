@@ -137,22 +137,33 @@ def test_nlp_model_boost_when_model_injected(monkeypatch):
     sigs_keyword = nlp_extract.extract_signals(directive, use_nlp_model=False)
     threat_keyword = [s for s in sigs_keyword if s["signal_type"] == "threat"]
 
+    # 모듈 레벨 캐시 격리 — monkeypatch 는 _load 만 되돌리므로 캐시를 수동 초기화한다.
+    nlp_model._MODEL_CACHE.clear()
+    nlp_model._PROTO_CACHE.clear()
+
     # 모델 mock 주입 → T3 신호 추가
     monkeypatch.setattr(
         nlp_model, "_load", lambda name: _FakeNLPModel()
     )
-    sigs_model = nlp_extract.extract_signals(directive, use_nlp_model=True)
-    threat_model = [s for s in sigs_model if s["signal_type"] == "threat"]
+    try:
+        sigs_model = nlp_extract.extract_signals(directive, use_nlp_model=True)
+        threat_model = [s for s in sigs_model if s["signal_type"] == "threat"]
 
-    assert len(threat_model) > len(threat_keyword), (
-        "NLP 모델 활성화 시 키워드 미탐지 위협을 보강해야 함"
-    )
-    model_sources = [s.get("source") for s in threat_model]
-    assert "nlp_model" in model_sources
+        assert len(threat_model) > len(threat_keyword), (
+            "NLP 모델 활성화 시 키워드 미탐지 위협을 보강해야 함"
+        )
+        model_sources = [s.get("source") for s in threat_model]
+        assert "nlp_model" in model_sources
+    finally:
+        # 가짜 프로토타입이 다른 테스트로 새지 않도록 캐시 초기화.
+        nlp_model._MODEL_CACHE.clear()
+        nlp_model._PROTO_CACHE.clear()
 
 
 def test_nlp_model_fallback_when_model_unavailable(monkeypatch):
     """NLP 모델 미가용(None 반환) 시 키워드-only 경로와 동일한 출력 (크래시 없음)."""
+    nlp_model._MODEL_CACHE.clear()
+    nlp_model._PROTO_CACHE.clear()
     monkeypatch.setattr(nlp_model, "_load", lambda name: None)
     directive = "저격조 확인됨."
     sigs_model = nlp_extract.extract_signals(directive, use_nlp_model=True)
