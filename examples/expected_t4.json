@@ -232,19 +232,22 @@
         "lat": 37.6,
         "lon": 127.1,
         "alt_m": 95.0,
-        "clearance_m": 95.0
+        "terrain_elev_m": 3.236298,
+        "clearance_m": 91.763702
       },
       {
         "lat": 37.61,
         "lon": 127.11,
         "alt_m": 95.0,
-        "clearance_m": 95.0
+        "terrain_elev_m": 68.898352,
+        "clearance_m": 26.101648
       },
       {
         "lat": 37.62,
         "lon": 127.12,
         "alt_m": 95.0,
-        "clearance_m": 95.0
+        "terrain_elev_m": 0.571982,
+        "clearance_m": 94.428018
       }
     ],
     "speed_mode": "MAX"
