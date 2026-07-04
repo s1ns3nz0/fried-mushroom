@@ -18,8 +18,8 @@
   <span class="brand">D4D · UAV 관측</span>
   <span class="sortie">SORTIE D4D-2606-A3</span>
   <nav id="tab-nav" role="tablist" aria-label="뷰 전환">
-    <button type="button" class="tab-btn active" data-view="observation" role="tab" aria-selected="true">관측</button>
-    <button type="button" class="tab-btn" data-view="gcs" role="tab" aria-selected="false">관측소</button>
+    <button type="button" class="tab-btn active" data-view="gcs" role="tab" aria-selected="true">관측소</button>
+    <button type="button" class="tab-btn" data-view="observation" role="tab" aria-selected="false">관측</button>
   </nav>
   <span id="phase-chip" class="chip">—</span>
   <span class="topbar-spacer"></span>
@@ -29,7 +29,7 @@
   <span class="chip">관측 전용</span>
 </header>
 
-<div id="view-observation" class="view">
+<div id="view-observation" class="view" hidden>
 <div id="grid">
   <div id="col-main">
     <!-- 지도: top-down 지형 + 경로 + 드론/적 + 시야각 + 복귀경로 + 신호 오버레이 -->
@@ -187,20 +187,21 @@
 </div>
 </div>
 
-<!-- 관측소(GCS) 뷰 — METT+TC mission_brief 빌더 + 파이프라인 실행기 (gcs.js 구동) -->
-<div id="view-gcs" class="view" hidden>
+<!-- 관측소(GCS) 뷰 — 발표용 세팅 화면: 피아 상황도 | METT+TC 편집기 | UAV brief (gcs.js 구동) -->
+<div id="view-gcs" class="view">
   <div id="gcs-layout">
-    <!-- 좌: 시나리오 프리셋 (GET /gcs/scenarios) -->
-    <section class="panel" id="gcs-presets">
-      <div class="fp-head">
-        <h2>시나리오 프리셋</h2>
-        <span class="fp-meta">EXAMPLES</span>
-      </div>
-      <div id="gcs-scenario-list" class="gcs-scroll"></div>
-      <div class="gcs-panel-foot">
-        <button type="button" id="gcs-reset" class="gcs-btn">초기화</button>
-      </div>
-    </section>
+    <!-- 좌: 피아 상황도(비율 고정, 관측 지도와 동일 3:2) — 위성 배경 위에 아군 경로(waypoints/기지) + 적 트랙(E) 마커 -->
+    <div id="gcs-situ">
+      <section class="panel" id="gcs-situ-map">
+        <div class="fp-head">
+          <h2>피아 상황도</h2>
+          <span class="fp-meta">SITMAP</span>
+        </div>
+        <div class="gcs-situ-wrap">
+          <canvas id="gcs-situ-canvas" width="480" height="320"></canvas>
+        </div>
+      </section>
+    </div>
 
     <!-- 중앙: METT+TC 임무 브리핑 편집기 -->
     <section class="panel" id="gcs-editor">
@@ -217,10 +218,10 @@
         <fieldset class="gcs-section">
           <legend>M · 임무 (Mission)</legend>
           <div class="gcs-field-grid">
-            <label>sortie_id
+            <label>출격번호
               <input type="text" id="gcs-sortie-id" placeholder="GIREOGI-0704-01" />
             </label>
-            <label>mission_context
+            <label>임무 유형
               <select id="gcs-mission-context">
                 <option value="정찰">정찰</option>
                 <option value="타격">타격</option>
@@ -230,27 +231,27 @@
             </label>
           </div>
           <div class="gcs-field-grid">
-            <label>posture.watchcon
+            <label>경계태세(WATCHCON)
               <input type="number" id="gcs-watchcon" min="1" max="5" step="1" />
             </label>
-            <label>posture.defcon
+            <label>방어준비(DEFCON)
               <input type="number" id="gcs-defcon" min="1" max="5" step="1" />
             </label>
-            <label>posture.infocon
+            <label>정보태세(INFOCON)
               <input type="number" id="gcs-infocon" min="1" max="5" step="1" />
             </label>
           </div>
           <div class="gcs-field-grid">
-            <label>weights.stealth
+            <label>은밀성
               <input type="number" id="gcs-w-stealth" min="0" max="1" step="0.05" />
             </label>
-            <label>weights.survival
+            <label>생존성
               <input type="number" id="gcs-w-survival" min="0" max="1" step="0.05" />
             </label>
-            <label>weights.info_value
+            <label>정보가치
               <input type="number" id="gcs-w-info" min="0" max="1" step="0.05" />
             </label>
-            <label>weights.timeliness
+            <label>적시성
               <input type="number" id="gcs-w-time" min="0" max="1" step="0.05" />
             </label>
           </div>
@@ -260,7 +261,7 @@
           <legend>E · 적 (Enemy)</legend>
           <table id="gcs-enemy-table">
             <thead>
-              <tr><th>id</th><th>kind</th><th>lat</th><th>lon</th><th>radius_m</th><th>conf</th><th></th></tr>
+              <tr><th>식별(ID)</th><th>유형</th><th>위도</th><th>경도</th><th>반경(m)</th><th>신뢰도</th><th></th></tr>
             </thead>
             <tbody id="gcs-enemy-body"></tbody>
           </table>
@@ -271,23 +272,23 @@
           <legend>T · 지형 (Terrain) — corridor</legend>
           <table id="gcs-wp-table">
             <thead>
-              <tr><th>id</th><th>lat</th><th>lon</th><th>alt_m</th><th></th></tr>
+              <tr><th>식별(ID)</th><th>위도</th><th>경도</th><th>고도(m)</th><th></th></tr>
             </thead>
             <tbody id="gcs-wp-body"></tbody>
           </table>
           <button type="button" id="gcs-wp-add" class="gcs-btn">+ 웨이포인트</button>
           <div class="gcs-bases">
             <div class="gcs-base-row">
-              <span class="gcs-base-label">emergency</span>
-              <input type="number" id="gcs-base-em-lat" step="any" placeholder="lat" />
-              <input type="number" id="gcs-base-em-lon" step="any" placeholder="lon" />
-              <input type="number" id="gcs-base-em-alt" step="any" placeholder="alt_m" />
+              <span class="gcs-base-label">비상 기지</span>
+              <input type="number" id="gcs-base-em-lat" step="any" placeholder="위도" />
+              <input type="number" id="gcs-base-em-lon" step="any" placeholder="경도" />
+              <input type="number" id="gcs-base-em-alt" step="any" placeholder="고도(m)" />
             </div>
             <div class="gcs-base-row">
-              <span class="gcs-base-label">alternate</span>
-              <input type="number" id="gcs-base-al-lat" step="any" placeholder="lat" />
-              <input type="number" id="gcs-base-al-lon" step="any" placeholder="lon" />
-              <input type="number" id="gcs-base-al-alt" step="any" placeholder="alt_m" />
+              <span class="gcs-base-label">예비 기지</span>
+              <input type="number" id="gcs-base-al-lat" step="any" placeholder="위도" />
+              <input type="number" id="gcs-base-al-lon" step="any" placeholder="경도" />
+              <input type="number" id="gcs-base-al-alt" step="any" placeholder="고도(m)" />
             </div>
           </div>
         </fieldset>
@@ -295,15 +296,15 @@
         <fieldset class="gcs-section">
           <legend>T · 부대 (Troops) — drone_profile</legend>
           <div class="gcs-field-grid">
-            <label>battery_pct
+            <label>배터리(%)
               <input type="number" id="gcs-battery-pct" min="0" max="100" step="1" />
             </label>
-            <label>armament (쉼표 구분)
+            <label>무장 (쉼표 구분)
               <input type="text" id="gcs-armament" placeholder="예: agm_light, flare" />
             </label>
             <label class="gcs-check">
               <input type="checkbox" id="gcs-spare-asset" />
-              spare_asset_available
+              예비기 가용
             </label>
           </div>
         </fieldset>
@@ -311,10 +312,10 @@
         <fieldset class="gcs-section">
           <legend>T · 시간 (Time) (참고)</legend>
           <div class="gcs-field-grid">
-            <label>endurance_s (참고)
+            <label>체공시간(s) (참고)
               <input type="number" id="gcs-endurance-s" min="0" step="any" placeholder="예: 5400" />
             </label>
-            <label>eta_goal_s (참고)
+            <label>목표도달시간(s) (참고)
               <input type="number" id="gcs-eta-goal-s" min="0" step="any" placeholder="예: 1800" />
             </label>
           </div>
@@ -323,10 +324,10 @@
         <fieldset class="gcs-section">
           <legend>C · 민간 (Civil) (참고)</legend>
           <div class="gcs-field-grid">
-            <label>no_fly_zones (쉼표 구분, 참고)
+            <label>비행금지구역 (쉼표 구분, 참고)
               <input type="text" id="gcs-no-fly-zones" placeholder="예: nfz-hospital, nfz-school" />
             </label>
-            <label>civil_sensitivity (참고)
+            <label>민간 민감도 (참고)
               <select id="gcs-civil-sensitivity">
                 <option value="low">low</option>
                 <option value="medium" selected>medium</option>
@@ -338,27 +339,49 @@
       </form>
     </section>
 
-    <!-- 우: 조립된 mission_brief JSON 미리보기 + raw 센서 입력 바인딩 -->
-    <section class="panel" id="gcs-preview-panel">
+    <!-- 우: UAV 임무 brief — 온보드로 들어가는 mission_brief 요약 + 라이브 JSON -->
+    <section class="panel" id="gcs-brief">
       <div class="fp-head">
-        <h2>mission_brief JSON</h2>
-        <span class="fp-meta">LIVE</span>
+        <h2>UAV 임무 brief</h2>
+        <span class="fp-meta">MISSION BRIEF</span>
       </div>
-      <pre id="gcs-json-preview" class="gcs-scroll"></pre>
+      <div class="gcs-scroll" id="gcs-brief-scroll">
+        <div id="gcs-brief-summary"></div>
+        <div class="gcs-brief-json-head">라이브 JSON</div>
+        <pre id="gcs-json-preview"></pre>
+      </div>
       <div class="gcs-panel-foot">
         <label class="gcs-raw-label">raw 센서 입력
           <select id="gcs-raw-select"></select>
         </label>
         <span id="gcs-raw-bound" class="fp-meta">raw: —</span>
       </div>
+      <details id="gcs-presets-fold">
+        <summary>시나리오 프리셋 불러오기</summary>
+        <div id="gcs-scenario-list"></div>
+      </details>
     </section>
 
-    <!-- 하단 액션바 -->
+    <!-- 하단 액션바 — 발표 진행/초기화/검증/실행/확인 -->
     <div class="panel" id="gcs-actionbar">
+      <button type="button" id="gcs-present-toggle" class="gcs-btn" aria-pressed="false">발표 진행</button>
+      <button type="button" id="gcs-reset" class="gcs-btn">초기화</button>
       <button type="button" id="gcs-validate" class="gcs-btn">검증</button>
       <button type="button" id="gcs-run" class="gcs-btn gcs-btn-primary">임무 전달 · 파이프라인 실행</button>
+      <button type="button" id="gcs-confirm" class="gcs-btn gcs-btn-primary">확인</button>
       <span id="gcs-run-status" class="gcs-status"></span>
     </div>
+  </div>
+</div>
+
+<!-- 확인 → mission_brief 세팅 완료 중앙 모달 (gcs.js 구동) -->
+<div id="gcs-modal" class="gcs-modal" hidden>
+  <div class="gcs-modal-backdrop" id="gcs-modal-backdrop"></div>
+  <div class="gcs-modal-card" role="dialog" aria-modal="true" aria-labelledby="gcs-modal-title">
+    <button type="button" id="gcs-modal-close" class="gcs-modal-close" aria-label="닫기">✕</button>
+    <h2 id="gcs-modal-title">세팅 완료</h2>
+    <p class="gcs-modal-sub">아래 <code>mission_brief</code> 로 온보드 파이프라인 세팅이 완료되었습니다.</p>
+    <pre id="gcs-modal-json"></pre>
   </div>
 </div>
 
