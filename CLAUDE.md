@@ -34,5 +34,6 @@
 ```bash
 python3 -m pytest                            # 전체 테스트
 python3 -m pytest tests/layer_04_threat/     # 특정 레이어
-python3 -m onboard.run examples/scenario_t3.json  # 종단 실행 (pythonpath=src)
+python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json  # 종단 실행 (pythonpath=src)
+python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json --log run.jsonl  # + 사이클 로그
 ```
