@@ -26,8 +26,9 @@ def _inputs(**over):
 
 
 def test_assemble_draft_structure() -> None:
+    # 라운드2: mettc_state 추가(상위집합). draft_brief 6필드 계약은 유지.
     out = assemble_draft(_inputs())
-    assert set(out) == {"draft_brief", "signal_cards", "warnings"}
+    assert {"draft_brief", "signal_cards", "warnings"} <= set(out)
     assert set(out["draft_brief"]) == set(MISSION_BRIEF_FIELDS)
 
 
