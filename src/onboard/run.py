@@ -71,7 +71,7 @@ def run_cycle(
 def _compute_terrain_bearings(mission_brief: dict) -> dict:
     """코리더 waypoints에서 지형 방위 산출. GIS 실조회는 후순위 — heuristic stub.
 
-    waypoints >= 2개: wp[0]→wp[-1] 플레인 atan2 bearing.
+    waypoints >= 2개: wp[0]→wp[-1] bearing. 위도별 경도 거리 보정(cos(mean_lat)) 적용.
     - optimal_terrain_bearing_deg: 코리더 헤딩 (장애물 통과 방향)
     - lowest_exposure_bearing_deg: 헤딩 + 90° (교차 방향 이탈)
     waypoints < 2개: (0.0, 0.0) fallback.
@@ -80,7 +80,9 @@ def _compute_terrain_bearings(mission_brief: dict) -> dict:
     if len(wps) >= 2:
         dlat = wps[-1]["lat"] - wps[0]["lat"]
         dlon = wps[-1]["lon"] - wps[0]["lon"]
-        optimal = math.degrees(math.atan2(dlon, dlat)) % 360
+        mean_lat = math.radians((wps[0]["lat"] + wps[-1]["lat"]) / 2)
+        dlon_corr = dlon * math.cos(mean_lat)
+        optimal = math.degrees(math.atan2(dlon_corr, dlat)) % 360
         lowest = (optimal + 90) % 360
     else:
         optimal = 0.0

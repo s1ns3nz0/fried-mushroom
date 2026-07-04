@@ -180,8 +180,8 @@
     },
     "background_exposure_score": 0.8,
     "cycle_context": {
-      "optimal_terrain_bearing_deg": 45.00000000002036,
-      "lowest_exposure_bearing_deg": 135.00000000002035
+      "optimal_terrain_bearing_deg": 38.38567171199272,
+      "lowest_exposure_bearing_deg": 128.38567171199273
     }
   },
   "risk": {
@@ -223,7 +223,7 @@
   },
   "flight_plan": {
     "flight_action": "ALTITUDE_CHANGE",
-    "target_bearing_deg": 135.00000000002035,
+    "target_bearing_deg": 128.38567171199273,
     "altitude_delta_m": 15,
     "replan_scope": "LOCAL",
     "reroute_anchor": "terrain_fallback"
