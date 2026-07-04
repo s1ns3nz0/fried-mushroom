@@ -201,3 +201,27 @@ def test_place_enemies_radius_m_takes_precedence():
         {"id": "e1", "lat": 37.53, "lon": 127.03, "radius_m": 300, "radius": 999},
     ]}
     assert place_enemies(brief, seed=42)[0]["detect_radius_m"] == 300  # 폼 radius_m 우선
+
+
+def test_place_enemies_malformed_radius_falls_back_to_default():
+    # 운용자 폼 malformed radius(비숫자) → 크래시 대신 기본 반경.
+    from runner import place_enemies, _ENEMY_DETECT_RADIUS_M
+    brief = {**_BRIEF, "enemy_tracks": [{"lat": 37.55, "lon": 127.05, "radius_m": "big"}]}
+    e = place_enemies(brief, seed=1)
+    assert e[0]["detect_radius_m"] == _ENEMY_DETECT_RADIUS_M
+
+
+def test_place_enemies_malformed_latlon_skips_track():
+    # lat/lon 비숫자 → 트랙 스킵(다운스트림 haversine 크래시 방지) → seed 폴백.
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [{"lat": "x", "lon": 127.0}]}
+    e = place_enemies(brief, seed=1)
+    assert len(e) == 1 and e[0]["id"] == "E1"  # 유효 트랙 0 → seed 폴백
+
+
+def test_build_scenario_survives_malformed_etrack():
+    # malformed radius 트랙이 있어도 시나리오 빌드(route/haversine)가 크래시하지 않음.
+    from runner import build_scenario
+    brief = {**_BRIEF, "enemy_tracks": [{"lat": 37.55, "lon": 127.05, "radius_m": "big"}]}
+    scen = build_scenario(brief, seed=1)
+    assert scen["enemies"][0]["detect_radius_m"] == 400.0
