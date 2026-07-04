@@ -1,0 +1,229 @@
+{
+  "abstraction": {
+    "schema_version": "1.0",
+    "id": "scenario-t1-0",
+    "ts": 1730620801200,
+    "channels": [
+      {
+        "channel": "position_consistency",
+        "state": "anomaly",
+        "quality": 0.76,
+        "quality_delta": 0.0,
+        "payload": {
+          "gps_imu_residual_m": 85.259,
+          "baro_residual_m": 0.2,
+          "airspeed_residual_ms": 0.5,
+          "threshold_m": 5.0,
+          "hdop": 1.9,
+          "vdop": 2.4,
+          "satellite_count": 5,
+          "cn0_avg_db": 27.0
+        }
+      },
+      {
+        "channel": "link_status",
+        "state": "normal",
+        "quality": 0.998,
+        "quality_delta": 0.0,
+        "payload": {
+          "rssi_dbm": -60,
+          "noise_floor_dbm": -95,
+          "freq_mhz": 915.0,
+          "packet_loss_rate": 0.001,
+          "latency_ms": 40
+        }
+      },
+      {
+        "channel": "link_integrity",
+        "state": "normal",
+        "quality": 0.95,
+        "quality_delta": 0.0,
+        "payload": {
+          "checksum_fail_rate": 0.0,
+          "seq_gap_count": 0
+        }
+      },
+      {
+        "channel": "encryption_status",
+        "state": "normal",
+        "quality": 0.99,
+        "quality_delta": 0.0,
+        "payload": {
+          "mode": "AES256",
+          "downgrade_detected": false
+        }
+      },
+      {
+        "channel": "rf_spectrum",
+        "state": "anomaly",
+        "quality": 0.8,
+        "quality_delta": 0.0,
+        "payload": {
+          "wideband_anomaly": true,
+          "bearing_deg": 210.0
+        }
+      },
+      {
+        "channel": "mission_phase",
+        "state": "normal",
+        "quality": 0.9,
+        "quality_delta": 0.0,
+        "payload": {
+          "declared": "WAYPOINT",
+          "behavioral": "WAYPOINT",
+          "match": true,
+          "mission_phase_confidence": 0.9
+        }
+      },
+      {
+        "channel": "obstacle_proximity",
+        "state": "normal",
+        "quality": 0.85,
+        "quality_delta": 0.0,
+        "payload": {
+          "distance_m": null,
+          "closure_rate_mps": null
+        }
+      },
+      {
+        "channel": "operational_margin",
+        "state": "normal",
+        "quality": 1.0,
+        "quality_delta": 0.0,
+        "payload": {
+          "battery_pct": 78,
+          "battery_state": "sufficient",
+          "weather_state": "sufficient",
+          "mechanical_state": "sufficient",
+          "link_margin_state": "sufficient",
+          "time_margin_state": "sufficient",
+          "overall": "sufficient",
+          "worst_factor": "battery",
+          "failsafe_state": "ready",
+          "diagnostics": {
+            "motor_rpm": [
+              8200,
+              8150,
+              8190,
+              8175
+            ],
+            "motor_temp_c": 42.0,
+            "vibration_level": 0.12,
+            "ambient_temp_c": 15.0
+          }
+        }
+      },
+      {
+        "channel": "proximity_object",
+        "state": "normal",
+        "quality": 0.9,
+        "quality_delta": 0.0,
+        "payload": {
+          "class": null,
+          "weapon_shape": false,
+          "bearing_deg": null,
+          "closing": false,
+          "closure_rate_mps": 0.0,
+          "degraded_reason": null
+        }
+      },
+      {
+        "channel": "terrain_class",
+        "state": "normal",
+        "quality": 0.9,
+        "quality_delta": 0.0,
+        "payload": {
+          "dominant_class": "open_field",
+          "source": "gis_lookup",
+          "gis_last_updated": "2025-11",
+          "camera_mismatch": false,
+          "exposure_score": 0.8,
+          "risk_map_ref": null
+        }
+      },
+      {
+        "channel": "acoustic_event",
+        "state": "normal",
+        "quality": 0.9,
+        "quality_delta": 0.0,
+        "payload": {
+          "event_type": "none",
+          "detection_stage": "threshold_only",
+          "peak_db": 55.0,
+          "bearing_deg": null
+        }
+      }
+    ]
+  },
+  "threat": {
+    "declared_phase": "WAYPOINT",
+    "mission_phase_confidence": 0.9,
+    "candidates": [
+      {
+        "threat_event": "T1",
+        "match_count": 2,
+        "confidence": 0.9,
+        "confidence_source": "deterministic",
+        "kill_chain_stage": "중기",
+        "potential_outcome": "mission_abort"
+      }
+    ],
+    "primary": {
+      "threat_event": "T1",
+      "match_count": 2,
+      "confidence": 0.9,
+      "confidence_source": "deterministic",
+      "kill_chain_stage": "중기",
+      "potential_outcome": "mission_abort"
+    },
+    "background_exposure_score": 0.8,
+    "cycle_context": {
+      "optimal_terrain_bearing_deg": 0.0,
+      "lowest_exposure_bearing_deg": 0.0
+    }
+  },
+  "risk": {
+    "candidates": [
+      {
+        "threat_event": "T1",
+        "match_count": 2,
+        "confidence": 0.9,
+        "confidence_source": "deterministic",
+        "kill_chain_stage": "중기",
+        "potential_outcome": "mission_abort",
+        "rac": "Medium",
+        "l_class_final": "C",
+        "severity_label_final": "Marginal",
+        "compound_risk_assessment": {
+          "continuous_L": 0.1543,
+          "continuous_S": 0.3,
+          "rac_ai_equivalent": "Medium",
+          "ai_reliability": "normal"
+        },
+        "compound_urgency_score": 0.0463,
+        "priority_rank": 1
+      }
+    ],
+    "ambient_rac": null
+  },
+  "response": {
+    "primary_threat_event": "T1",
+    "rac": "Medium",
+    "kill_chain_stage": "중기",
+    "threat_category": "REMOTE",
+    "flight_action": "MAINTAIN",
+    "comms_level": "L1",
+    "payload_action": [],
+    "nav_mode": null,
+    "special_action": "INCREASE_ASSESSMENT_FREQUENCY",
+    "secondary_threats": [],
+    "ai_reliability": "normal"
+  },
+  "flight_plan": {
+    "flight_action": "MAINTAIN",
+    "target_bearing_deg": null,
+    "altitude_delta_m": 0,
+    "replan_scope": "NONE",
+    "reroute_anchor": null
+  }
+}
