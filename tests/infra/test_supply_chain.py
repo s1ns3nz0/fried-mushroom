@@ -1,7 +1,10 @@
-"""공급망 재현성 회귀 가드 (#242).
+"""공급망 재현성 회귀 가드 (#242 #247).
 
-infra/log·infra/dashboard requirements.txt 의 모든 패키지가 == 버전 핀을 가지는지,
-infra/log/Dockerfile base image 가 SHA-256 다이제스트 고정을 사용하는지 assert.
+#242: infra/log·infra/dashboard requirements.txt 모든 패키지 == 버전 핀,
+      infra/log/Dockerfile base image SHA-256 다이제스트 고정.
+#247: infra/log transitive 의존성 lock 파일(requirements.lock) 존재 + 전체 해시 포함,
+      Dockerfile pip install --require-hashes 사용.
+      (infra/dashboard 는 컨테이너 없는 정적자산/S3 → lock 불필요, requirements.txt 핀만 유지)
 
 DevSecOps 감사 F-06/F-07 — 빌드 재현성 보장.
 src/onboard, src/gcs, infra/sim 무접촉.
@@ -15,6 +18,7 @@ import pytest
 _REPO = pathlib.Path(__file__).resolve().parents[2]
 _LOG_REQ = _REPO / "infra" / "log" / "requirements.txt"
 _DASH_REQ = _REPO / "infra" / "dashboard" / "requirements.txt"
+_LOG_LOCK = _REPO / "infra" / "log" / "requirements.lock"
 _LOG_DOCKERFILE = _REPO / "infra" / "log" / "Dockerfile"
 
 
@@ -48,7 +52,69 @@ def test_requirements_all_pinned(req_path: pathlib.Path) -> None:
     )
 
 
-# ── 2. Dockerfile base image digest 고정 ─────────────────────────────────────
+# ── 2. log lock 파일 존재 + 각 패키지 블록에 실제 hash 포함 (#247) ──────────
+
+def test_log_lock_file_exists() -> None:
+    """infra/log/requirements.lock 파일이 존재해야 한다 (transitive 의존성 lock, F-07 확장).
+
+    infra/dashboard 는 컨테이너 없는 정적자산(S3) → lock 불필요, requirements.txt 핀만 유지.
+    """
+    assert _LOG_LOCK.exists(), (
+        f"infra/log/requirements.lock: lock 파일 없음\n"
+        "  → pip-compile --generate-hashes infra/log/requirements.txt 로 생성 필요"
+    )
+
+
+def test_log_lock_each_package_has_hash() -> None:
+    """infra/log/requirements.lock 의 각 패키지 블록에 --hash=sha256: 가 최소 1개 있어야 한다.
+
+    헤더 shape(\\로 끝남)만 보면 실제 hash 없는 경우도 통과할 수 있으므로,
+    패키지 헤더 직후 들여쓰기 continuation 블록에서 --hash=sha256: 실존을 assert.
+    """
+    if not _LOG_LOCK.exists():
+        pytest.skip("lock 파일 없음 — test_log_lock_file_exists 가 먼저 실패")
+
+    lines = _LOG_LOCK.read_text(encoding="utf-8").splitlines()
+    no_hash: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        # 패키지 헤더: 공백 없이 시작, == 포함, \ 로 끝남 (continuation 있음)
+        if (re.match(r"^[a-zA-Z]", line) and "==" in line and line.rstrip().endswith("\\")):
+            pkg_name = line.split("==")[0].strip()
+            # continuation 블록에서 --hash=sha256: 탐색
+            found_hash = False
+            j = i + 1
+            while j < len(lines) and (lines[j].startswith("    ") or lines[j].startswith("\t")):
+                if "--hash=sha256:" in lines[j]:
+                    found_hash = True
+                    break
+                j += 1
+            if not found_hash:
+                no_hash.append(pkg_name)
+        i += 1
+
+    assert not no_hash, (
+        f"infra/log/requirements.lock: --hash=sha256: 없는 패키지: {no_hash[:5]}\n"
+        "  → pip-compile --generate-hashes 로 재생성 필요"
+    )
+
+
+# ── 3. Dockerfile base image digest 고정 ─────────────────────────────────────
+
+def test_log_dockerfile_uses_require_hashes() -> None:
+    """infra/log/Dockerfile 의 pip install 커맨드가 --require-hashes 를 사용해야 한다."""
+    text = _LOG_DOCKERFILE.read_text(encoding="utf-8")
+    pip_lines = [l.strip() for l in text.splitlines()
+                 if "pip install" in l and not l.strip().startswith("#")]
+    assert pip_lines, f"{_LOG_DOCKERFILE.name}: pip install 커맨드 없음"
+
+    for line in pip_lines:
+        assert "--require-hashes" in line, (
+            f"{_LOG_DOCKERFILE.name}: pip install 에 --require-hashes 없음: {line!r}\n"
+            "  → requirements.lock + --require-hashes 로 설치해 hash 검증 강제 (F-07)"
+        )
+
 
 def test_log_dockerfile_base_image_digest_pinned() -> None:
     """infra/log/Dockerfile 의 FROM 지시어가 @sha256: 다이제스트를 포함해야 한다.
