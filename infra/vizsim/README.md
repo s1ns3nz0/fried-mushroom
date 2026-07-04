@@ -65,7 +65,7 @@ records = run_ticks(seed=42, brief=brief_dict, n_ticks=100, dt=0.2)
 # 로그수집기 기동 (별도 터미널)
 cd infra/log && PYTHONPATH=../../src:. ../../.venv/bin/uvicorn log_server:app --host 0.0.0.0 --port 8500
 # 신호발생기 실행
-PYTHONPATH=src .venv/bin/python infra/sim/runner.py --seed 42 --brief examples/mission_brief_t3.json --rate 5
+PYTHONPATH=src .venv/bin/python infra/vizsim/runner.py --seed 42 --brief examples/mission_brief_t3.json --rate 5
 ```
 
 ## #102(layer 07 지형경로) 어댑터 교체 지점
