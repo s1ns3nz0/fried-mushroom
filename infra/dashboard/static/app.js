@@ -1,22 +1,49 @@
 "use strict";
 
-// D4D 대시보드 — 실시간 로그 스트림 클라이언트 + Canvas mock 시나리오 렌더.
-// 대시보드는 판단하지 않는다 — 로그수집기의 로그를 수신해 표시만 한다.
+// D4D 대시보드 — 실시간 로그 스트림 클라이언트 + Canvas/HTML mock 시나리오 렌더.
+// 대시보드는 판단하지 않는다 — 로그수집기의 로그와 mock 결정 로그를 수신해 표시만 한다.
 //
 // 로그수집기 WS /logs 메시지 포맷:
 //   { correlation_id, layer, log, level: "info"|"warn"|"error", ts: <epoch ms> }
-// 접속 시 최근 backlog 가 먼저 도착한다.
+// 접속 시 최근 backlog 가 먼저 도착한다. 실 수신 로그는 layer 를 SRC 태그로
+// 매핑해 시스템 로그 패널(C)에 같은 형식으로 표시한다.
+//
+// AI 결정 로그(B 패널)는 현재 mock 시나리오 이벤트로만 구동된다
+// (handleDecisionLog 참고 — 향후 대시보드 /ws decision_log 타입 연동 스텁).
 
 // ── 설정 ──────────────────────────────────────────────────────
 
 const DEFAULT_LOG_WS_URL = "ws://localhost:8500/logs";
-const MAX_LOG_ITEMS = 500; // 오래된 항목은 잘라 메모리 방어.
+const DEFAULT_COLLECTOR_HTTP_URL = "http://localhost:8500";
+const MAX_LOG_ITEMS = 400; // 오래된 항목은 잘라 메모리 방어.
 
-// correlation_id 그룹 색 팔레트(들여쓰기 대신 색으로 그룹핑).
-const CID_COLORS = [
-  "#58a6ff", "#3fb950", "#d29922", "#f778ba", "#a371f7",
-  "#39c5cf", "#e3b341", "#ff7b72", "#7ee787", "#79c0ff",
-];
+// ── 공유 설정 로더 ────────────────────────────────────────────
+// /config.json(정적 — S3 배포에서도 동작) → /config(로컬 dev 백엔드) → 내장 기본값.
+// 결과 Promise 를 window.D4D_CONFIG 로 노출해 gcs.js 도 같은 설정을 쓴다.
+
+function fetchConfigJson(url) {
+  return fetch(url)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+}
+
+function loadSharedConfig() {
+  const defaults = {
+    logWsUrl: DEFAULT_LOG_WS_URL,
+    collectorHttpUrl: DEFAULT_COLLECTOR_HTTP_URL,
+  };
+  if (typeof fetch !== "function") return Promise.resolve(defaults);
+  return fetchConfigJson("/config.json")
+    .then((cfg) => (cfg && cfg.log_ws_url ? cfg : fetchConfigJson("/config")))
+    .then((cfg) => ({
+      logWsUrl: (cfg && cfg.log_ws_url) || defaults.logWsUrl,
+      collectorHttpUrl: (cfg && cfg.collector_http_url) || defaults.collectorHttpUrl,
+    }));
+}
+
+if (typeof window !== "undefined") {
+  window.D4D_CONFIG = loadSharedConfig();
+}
 
 // level → CSS 클래스.
 const LEVEL_CLASS = { info: "lvl-info", warn: "lvl-warn", error: "lvl-error" };
@@ -27,33 +54,16 @@ const state = {
   ws: null,
   connected: false,
   reconnectDelay: 1000, // backoff (ms), 최대 15s.
-  manualClose: false,
-  cidColorMap: new Map(), // correlation_id → 색
-  filters: { level: "", layer: "", cid: "" },
-  mockTimer: null,
+  logWsUrl: DEFAULT_LOG_WS_URL, // /config 로 갱신되는 자동연결 대상.
 };
 
-// Canvas 2D 핸들 (지도/고도/신호 mock 렌더 대상).
+// Canvas 2D 핸들 (지도/고도 mock 렌더 대상). 신호는 HTML 리스트(#signals-list)로 렌더.
 const canvases = {
   map: document.getElementById("map-canvas"),
   profile: document.getElementById("profile-canvas"),
-  signals: document.getElementById("signals-canvas"),
 };
 
 // ── 순수 로직 (브라우저 없이도 검증 가능) ──────────────────────
-
-/** correlation_id 에 안정적으로 색을 배정한다. */
-function colorForCid(cid) {
-  if (!cid) return "#484f58";
-  if (state.cidColorMap.has(cid)) return state.cidColorMap.get(cid);
-  let hash = 0;
-  for (let i = 0; i < cid.length; i++) {
-    hash = (hash * 31 + cid.charCodeAt(i)) >>> 0;
-  }
-  const color = CID_COLORS[hash % CID_COLORS.length];
-  state.cidColorMap.set(cid, color);
-  return color;
-}
 
 /** epoch ms → HH:MM:SS.mmm */
 function formatTs(ts) {
@@ -68,35 +78,10 @@ function formatTs(ts) {
   );
 }
 
-/** correlation_id 축약(앞 8자). */
-function shortCid(cid) {
-  if (!cid) return "--------";
-  return String(cid).slice(0, 8);
-}
-
-/**
- * 현재 필터 기준으로 로그를 통과시킬지 판단.
- * @param {{correlation_id?:string, layer?:string, level?:string}} entry
- * @param {{level:string, layer:string, cid:string}} filters
- */
-function passesFilter(entry, filters) {
-  if (filters.level && entry.level !== filters.level) return false;
-  if (filters.layer) {
-    const l = String(entry.layer || "").toLowerCase();
-    if (!l.includes(filters.layer.toLowerCase())) return false;
-  }
-  if (filters.cid) {
-    const c = String(entry.correlation_id || "").toLowerCase();
-    if (!c.includes(filters.cid.toLowerCase())) return false;
-  }
-  return true;
-}
-
-/** 수신 payload 를 정규화(누락 필드 방어). */
+/** 수신 payload 를 정규화(누락 필드 방어). layer → SRC 태그로 매핑. */
 function normalizeEntry(raw) {
   return {
-    correlation_id: raw && raw.correlation_id != null ? String(raw.correlation_id) : "",
-    layer: raw && raw.layer != null ? String(raw.layer) : "unknown",
+    src: raw && raw.layer != null ? String(raw.layer) : "SYS",
     log: raw && raw.log != null ? String(raw.log) : "",
     level: raw && LEVEL_CLASS[raw.level] ? raw.level : "info",
     ts: raw && raw.ts != null ? raw.ts : Date.now(),
@@ -109,21 +94,25 @@ const el = {
   status: document.getElementById("conn-status"),
   list: document.getElementById("log-list"),
   count: document.getElementById("log-count"),
-  wsUrl: document.getElementById("log-ws-url"),
-  connectBtn: document.getElementById("log-connect-btn"),
-  filterLevel: document.getElementById("filter-level"),
-  filterLayer: document.getElementById("filter-layer"),
-  filterCid: document.getElementById("filter-cid"),
-  mockBtn: document.getElementById("mock-inject-btn"),
-  mockAuto: document.getElementById("mock-auto"),
-  clearBtn: document.getElementById("log-clear-btn"),
+  logStatus: document.getElementById("log-status"),
+  signalsList: document.getElementById("signals-list"),
+  decisionList: document.getElementById("decision-list"),
+  deviceStrip: document.getElementById("device-strip"),
+  phaseChip: document.getElementById("phase-chip"),
 };
 
 function setStatus(text, ok) {
-  if (!el.status) return;
-  el.status.textContent = text;
-  el.status.classList.toggle("status-on", !!ok);
-  el.status.classList.toggle("status-off", !ok);
+  if (el.status) {
+    el.status.textContent = text;
+    el.status.classList.toggle("status-on", !!ok);
+    el.status.classList.toggle("status-off", !ok);
+  }
+  // Panel C header mini status dot mirrors the same connection state.
+  if (el.logStatus) {
+    el.logStatus.classList.toggle("status-on", !!ok);
+    el.logStatus.classList.toggle("status-off", !ok);
+    el.logStatus.title = text;
+  }
 }
 
 /** 리스트가 바닥 근처인지(자동 스크롤 여부 판단). */
@@ -132,39 +121,28 @@ function isNearBottom(node) {
 }
 
 /**
- * 로그 한 줄을 리스트에 append (최신이 아래로, 자동스크롤).
- * 형식: [ts] [layer] correlation_id — log, level별 색 + correlation_id 색 그룹.
+ * 시스템 로그 한 줄을 리스트에 append (최신이 아래로, 자동스크롤).
+ * 형식: [HH:MM:SS.mmm] [SRC] message — SRC 는 muted 태그 칩, level 별 색 유지.
  */
 function appendLog(raw) {
   const entry = normalizeEntry(raw);
   const li = document.createElement("li");
   li.className = "log-item " + (LEVEL_CLASS[entry.level] || "lvl-info");
-  li.style.borderLeftColor = colorForCid(entry.correlation_id);
-  // 필터 재적용을 위해 원본 필드 보관.
-  li.dataset.level = entry.level;
-  li.dataset.layer = entry.layer;
-  li.dataset.cid = entry.correlation_id;
-  li.hidden = !passesFilter(entry, state.filters);
 
   const ts = document.createElement("span");
   ts.className = "log-ts";
   ts.textContent = "[" + formatTs(entry.ts) + "]";
 
-  const layer = document.createElement("span");
-  layer.className = "log-layer";
-  layer.textContent = "[" + entry.layer + "]";
-
-  const cid = document.createElement("span");
-  cid.className = "log-cid";
-  cid.style.color = colorForCid(entry.correlation_id);
-  cid.textContent = shortCid(entry.correlation_id);
-  cid.title = entry.correlation_id;
+  const src = document.createElement("span");
+  // Per-SRC muted tag chip; unknown sources fall back to the base chip style.
+  src.className = "log-src src-" + entry.src.toLowerCase().replace(/[^a-z0-9_-]/g, "");
+  src.textContent = entry.src;
 
   const msg = document.createElement("span");
   msg.className = "log-msg";
-  msg.textContent = " — " + entry.log;
+  msg.textContent = " " + entry.log;
 
-  li.append(ts, layer, cid, msg);
+  li.append(ts, src, msg);
 
   const stick = isNearBottom(el.list);
   el.list.appendChild(li);
@@ -181,37 +159,15 @@ function updateCount() {
   if (el.count) el.count.textContent = String(el.list.childElementCount);
 }
 
-/** 필터 변경 시 기존 항목 표시/숨김 재적용. */
-function applyFilters() {
-  state.filters = {
-    level: el.filterLevel ? el.filterLevel.value : "",
-    layer: el.filterLayer ? el.filterLayer.value.trim() : "",
-    cid: el.filterCid ? el.filterCid.value.trim() : "",
-  };
-  const items = el.list.children;
-  for (let i = 0; i < items.length; i++) {
-    const li = items[i];
-    li.hidden = !passesFilter(
-      { level: li.dataset.level, layer: li.dataset.layer, correlation_id: li.dataset.cid },
-      state.filters,
-    );
-  }
-}
-
 // ── WS 클라이언트 ─────────────────────────────────────────────
-
-function currentUrl() {
-  const v = el.wsUrl && el.wsUrl.value.trim();
-  return v || DEFAULT_LOG_WS_URL;
-}
+// Headless auto-connect: no manual toggle — /config resolves the URL,
+// then connect() runs with backoff reconnect until the collector is up.
 
 /** 로그수집기 WS /logs 에 연결. backlog → 실시간 순으로 수신. */
 function connect() {
-  state.manualClose = false;
-  const url = currentUrl();
   let ws;
   try {
-    ws = new WebSocket(url);
+    ws = new WebSocket(state.logWsUrl);
   } catch (e) {
     setStatus("bad url", false);
     return;
@@ -223,13 +179,11 @@ function connect() {
     state.connected = true;
     state.reconnectDelay = 1000;
     setStatus("connected", true);
-    if (el.connectBtn) el.connectBtn.textContent = "끊기";
   };
   ws.onclose = () => {
     state.connected = false;
     setStatus("disconnected", false);
-    if (el.connectBtn) el.connectBtn.textContent = "연결";
-    if (!state.manualClose) scheduleReconnect();
+    scheduleReconnect();
   };
   ws.onerror = () => {
     // onclose 가 뒤따르므로 상태 갱신만.
@@ -251,83 +205,203 @@ function connect() {
   };
 }
 
-function disconnect() {
-  state.manualClose = true;
-  if (state.ws) {
-    try { state.ws.close(); } catch (e) { /* noop */ }
-  }
-}
-
 function scheduleReconnect() {
   const delay = state.reconnectDelay;
   state.reconnectDelay = Math.min(delay * 2, 15000);
   setStatus("reconnect " + Math.round(delay / 1000) + "s…", false);
   setTimeout(() => {
-    if (!state.manualClose && !state.connected) connect();
+    if (!state.connected) connect();
   }, delay);
 }
 
-function toggleConnect() {
-  if (state.connected || (state.ws && state.ws.readyState === WebSocket.CONNECTING)) {
-    disconnect();
-  } else {
-    connect();
+// ── UAV 시스템 로그 생성기(mock) ──────────────────────────────
+// Panel C content: system logs that actuate the UAV (CAN/FC/GPS/IMU/LINK/
+// BATT/GIMBAL/NAV). Values are derived from the same mock state variables
+// the device tiles / channel mocks read (mock.battery/gps/comms/speedMps),
+// so numbers stay consistent across panels. Real collector WS entries
+// append into the same list via appendLog (layer mapped to SRC).
+
+const SYS_LOG_INTERVAL_MS = 600; // rotation tick → ~1.7 lines/s mixed.
+// Periodic source rotation — CAN (ESC command bus) most frequent.
+const SYS_ROTATION = ["CAN", "FC", "GPS", "CAN", "LINK", "BATT", "CAN", "FC", "IMU", "GPS"];
+let sysSeq = 0;
+
+function emitSys(src, msg, level) {
+  appendLog({ layer: src, log: msg, level: level || "info", ts: Date.now() });
+}
+
+/** mock.phase → FC flight mode string. */
+function fcMode() {
+  return mock.phase === "ENCOUNTER" ? "GUIDED" : mock.phase === "RTL" ? "RTL" : "AUTO";
+}
+
+/** Current target waypoint (1-based) over total path nodes, e.g. "4/7". */
+function wpLabel() {
+  let acc = 0, i = 0;
+  for (; i < _seg.length; i++) {
+    acc += _seg[i];
+    if (mock.s < acc) break;
+  }
+  return Math.min(i + 1, PATH.length - 1) + "/" + PATH.length;
+}
+
+/** Emit one periodic system log line from the rotation. */
+function emitPeriodicSysLog() {
+  const src = SYS_ROTATION[sysSeq % SYS_ROTATION.length];
+  sysSeq++;
+  const jitter = Math.sin(mock.odo * 6);
+  const jam = commsJam();
+  switch (src) {
+    case "CAN": {
+      // Same rpm/temp/vib formulas as the device rows (computeDeviceStats).
+      const base = escRpm(jitter);
+      if (sysSeq % 2) {
+        emitSys("CAN", "[0x1A0] ESC cmd rpm=" +
+          [base + 5, base - 25, base + 15, base].join(","));
+      } else {
+        emitSys("CAN", "[0x1A5] ESC telem rpm=" + base + " temp=" +
+          escTempC(jitter).toFixed(0) + "°C vib=" + frameVib(jitter).toFixed(2) + "g");
+      }
+      break;
+    }
+    case "FC":
+      emitSys("FC", "heartbeat mode=" + fcMode() + " wp=" + wpLabel());
+      break;
+    case "GPS":
+      emitSys("GPS", "fix 3D sats=" + gpsSats() + " hdop=" + gpsHdop().toFixed(1));
+      break;
+    case "LINK": {
+      const latency = linkLatency(jam);
+      emitSys("LINK", "rssi=" + linkRssi(jam) + "dBm latency=" + latency + "ms",
+        latency > 200 ? "warn" : "info");
+      break;
+    }
+    case "BATT": {
+      const voltage = battVoltage();
+      emitSys("BATT", voltage.toFixed(1) + "V " + Math.round(mock.battery) +
+        "% cell_min=" + (voltage / 6 - 0.02).toFixed(2) + "V",
+        mock.battery < 20 ? "warn" : "info");
+      break;
+    }
+    case "IMU":
+      emitSys("IMU", "att r=" + fmtSigned(mock.att.roll, 1) + " p=" +
+        fmtSigned(mock.att.pitch, 1) + " y=" + fmtHeading(mock.att.yaw) +
+        " gyro p/q/r=" + fmtSigned(mock.gyro.p, 1) + "/" + fmtSigned(mock.gyro.q, 1) +
+        "/" + fmtSigned(mock.gyro.r, 1) + "°/s");
+      break;
   }
 }
 
-// ── mock 로그(개발용) ─────────────────────────────────────────
+// ── AI 결정 로그(B 패널) ──────────────────────────────────────
+// mock 시나리오 이벤트에서만 구동된다(관측 전용, 재판단 없음).
 
-const MOCK_LAYERS = ["sensor", "abstraction", "risk_assessment", "response", "state_store"];
-const MOCK_LEVELS = ["info", "info", "info", "warn", "error"];
-const MOCK_MSGS = [
-  "tick ingested",
-  "signal envelope decoded",
-  "risk score computed",
-  "corridor nominal",
-  "gps quality degraded",
-  "comms link jitter high",
-  "threat candidate flagged",
-  "replan evaluated",
-];
+const MAX_DECISION_EVENTS = 30;
 
-let mockCidPool = [];
-let mockSeq = 0;
+const DECISION_TYPES = {
+  detect: { label: "탐지", cls: "badge-detect" },
+  assess: { label: "평가", cls: "badge-assess" },
+  respond: { label: "대응", cls: "badge-respond" },
+  replan: { label: "재계획", cls: "badge-replan" },
+  resume: { label: "재개", cls: "badge-resume" },
+};
 
-/** 개발용 mock 로그 1건을 로컬 append(수집기 없이 UI 확인). */
-function injectMock() {
-  mockSeq++;
-  // 3건마다 새 correlation_id 로 그룹 다양성 확보.
-  if (mockCidPool.length === 0 || mockSeq % 3 === 0) {
-    const id = "mock-" + mockSeq.toString(16).padStart(4, "0") +
-      "-" + ((mockSeq * 2654435761) >>> 0).toString(16);
-    mockCidPool.push(id);
-    if (mockCidPool.length > 4) mockCidPool.shift();
+// 열린 이벤트 박스 — 탐지에서 시작해 평가/대응/재계획/재개가 같은 박스에 쌓인다.
+const decisionEvt = { seq: 0, openStages: null };
+
+/** 새 조우 이벤트 박스를 #decision-list 에 append 하고 stage 컨테이너를 연다. */
+function beginDecisionEvent() {
+  decisionEvt.seq++;
+  // Amber left-edge indicator follows the latest open event box.
+  const prevActive = el.decisionList.querySelector(".decision-event.evt-active");
+  if (prevActive) prevActive.classList.remove("evt-active");
+  const li = document.createElement("li");
+  li.className = "decision-event evt-active";
+
+  const head = document.createElement("div");
+  head.className = "decision-event-head";
+
+  const id = document.createElement("span");
+  id.className = "evt-id";
+  id.textContent = "EVT-" + String(decisionEvt.seq).padStart(3, "0");
+
+  const ts = document.createElement("span");
+  ts.className = "evt-ts";
+  ts.textContent = formatTs(Date.now());
+
+  head.append(id, ts);
+
+  const stages = document.createElement("div");
+  stages.className = "decision-stages";
+
+  li.append(head, stages);
+
+  const stick = isNearBottom(el.decisionList);
+  el.decisionList.appendChild(li);
+  while (el.decisionList.childElementCount > MAX_DECISION_EVENTS) {
+    el.decisionList.removeChild(el.decisionList.firstElementChild);
   }
-  const pick = (arr) => arr[mockSeq % arr.length];
-  appendLog({
-    correlation_id: pick(mockCidPool),
-    layer: pick(MOCK_LAYERS),
-    log: pick(MOCK_MSGS) + " #" + mockSeq,
-    level: pick(MOCK_LEVELS),
-    ts: Date.now(),
-  });
+  if (stick) el.decisionList.scrollTop = el.decisionList.scrollHeight;
+
+  decisionEvt.openStages = stages;
+  return stages;
 }
 
-function toggleMockAuto() {
-  if (el.mockAuto && el.mockAuto.checked) {
-    if (!state.mockTimer) state.mockTimer = setInterval(injectMock, 700);
-  } else if (state.mockTimer) {
-    clearInterval(state.mockTimer);
-    state.mockTimer = null;
-  }
+/** AI 결정 stage 1건 — 탐지는 새 이벤트 박스를 열고, 나머지는 열린 박스에 append. */
+function pushDecision(type, message) {
+  if (!el.decisionList) return;
+  const meta = DECISION_TYPES[type] || { label: type, cls: "badge-respond" };
+  const stages = (type === "detect" || !decisionEvt.openStages)
+    ? beginDecisionEvent()
+    : decisionEvt.openStages;
+
+  const row = document.createElement("div");
+  row.className = "decision-stage";
+
+  const badge = document.createElement("span");
+  badge.className = "decision-badge " + meta.cls;
+  badge.textContent = meta.label;
+
+  const msg = document.createElement("span");
+  msg.className = "log-msg";
+  msg.textContent = message;
+
+  const ts = document.createElement("span");
+  ts.className = "stage-ts";
+  ts.textContent = formatTs(Date.now());
+
+  row.append(badge, msg, ts);
+
+  const stick = isNearBottom(el.decisionList);
+  stages.appendChild(row);
+  if (stick) el.decisionList.scrollTop = el.decisionList.scrollHeight;
+}
+
+/**
+ * 향후 대시보드 /ws 의 decision_log 타입 메시지 핸들러(스텁).
+ * TODO(연동): 실제 온보드 파이프라인이 decision_log 이벤트를 WS로 보내면
+ * 여기서 msg.type/msg.message 를 pushDecision 에 그대로 연결한다.
+ * 현재는 WS 연결을 구현하지 않고 mock 시나리오 이벤트만 pushDecision 을 직접 호출한다.
+ */
+function handleDecisionLog(msg) {
+  if (!msg) return;
+  pushDecision(msg.type, msg.message);
 }
 
 // ── mock 시나리오 시뮬레이터 (uav tick WS 연동 시 교체) ─────────
 // 로그 패널 mock 과 별개로, 지도/고도/신호 3칸을 구동하는 내부 mock.
-// 시나리오: 양재역 → 고터역 정상 비행 → T3 조우 → RTL(복귀) 루프.
+// 시나리오: 출발지 → 목표 정상 비행 → T3 조우 → RTL(복귀) 루프.
 // uav tick WS 연동 시 아래 mock 상태를 실제 platform_state/signal 로 교체한다.
 
-const SCENARIO = { start: "양재역", goal: "고터역", threat: "T3" };
+const SCENARIO = { start: "출발지", goal: "목표", threat: "T3" };
+
+// 지도 스케일 — 지도 폭(가로)의 실거리 환산 기준(m). 도심 두 지점 간
+// 직선거리 ~2.5km 급 스케일. PATH 길이(정규 단위) × 이 값 = 경로 실거리(m).
+const MAP_EXTENT_M = 3000;
+
+// UAV 속도(m/s) — 소형 정찰 멀티로터 기준.
+const UAV_CRUISE_MPS = 17;    // 순항(정상 비행) ~61km/h
+const UAV_RTL_MPS = 20;       // 복귀 시 증속
+const UAV_ENCOUNTER_MPS = 6;  // 조우 중 회피 저속 비행(evasive crawl)
 
 // 경로 웨이포인트(정규 좌표 0..1). node=(x, y). 봉우리를 피해 저지대로.
 const PATH = [
@@ -363,28 +437,6 @@ function heightAt(x, y) {
   return h > 1 ? 1 : h;
 }
 
-// 표고 → 색(저지대 녹색 → 고지대 갈색 → 설선).
-const RAMP = [
-  [0.00, [10, 40, 24]],
-  [0.30, [26, 74, 40]],
-  [0.50, [58, 92, 44]],
-  [0.66, [104, 96, 52]],
-  [0.80, [140, 116, 66]],
-  [0.92, [190, 176, 130]],
-  [1.00, [232, 238, 240]],
-];
-function terrainColor(h) {
-  let a = RAMP[0], b = RAMP[RAMP.length - 1];
-  for (let i = 0; i < RAMP.length - 1; i++) {
-    if (h >= RAMP[i][0] && h <= RAMP[i + 1][0]) { a = RAMP[i]; b = RAMP[i + 1]; break; }
-  }
-  const t = (h - a[0]) / ((b[0] - a[0]) || 1);
-  const c0 = Math.round(a[1][0] + (b[1][0] - a[1][0]) * t);
-  const c1 = Math.round(a[1][1] + (b[1][1] - a[1][1]) * t);
-  const c2 = Math.round(a[1][2] + (b[1][2] - a[1][2]) * t);
-  return "rgb(" + c0 + "," + c1 + "," + c2 + ")";
-}
-
 // 경로 누적 길이(정규 단위).
 const _seg = [];
 let _total = 0;
@@ -396,6 +448,9 @@ let _total = 0;
     _total += L;
   }
 })();
+
+// 경로 총 길이(m) — 웨이포인트 기하(정규 단위) × 지도 스케일(MAP_EXTENT_M).
+const PATH_LENGTH_M = _total * MAP_EXTENT_M;
 
 /** 경로 시작에서 거리 d 지점의 {x, y, head}. */
 function pointAtDist(d) {
@@ -424,46 +479,247 @@ function pointAtDist(d) {
   return { x: b.x, y: b.y, head: Math.atan2(b.y - a.y, b.x - a.x) };
 }
 
+/** RTL 중 복귀경로(출발점 → 현재 드론 위치까지 이미 지나온 경로) 포인트 목록. */
+function returnPathPoints() {
+  const pts = [PATH[0]];
+  let acc = 0;
+  for (let i = 0; i < PATH.length - 1; i++) {
+    acc += _seg[i];
+    if (acc <= mock.s) pts.push(PATH[i + 1]);
+    else break;
+  }
+  pts.push({ x: mock.pos.x, y: mock.pos.y });
+  return pts;
+}
+
 // mock 상태(NORMAL → ENCOUNTER → RTL 루프).
 const mock = {
   s: 0, dir: 1, phase: "NORMAL", phaseT: 0,
   battery: 97, gps: 0.98, comms: 3, rac: 0,
-  odo: 0, history: [], pos: { x: PATH[0].x, y: PATH[0].y }, head: 0,
-  enemyActive: false, alt: 0, terr: 0,
+  odo: 0, trailProfile: [], pos: { x: PATH[0].x, y: PATH[0].y }, head: 0,
+  enemyActive: false, alt: 0, terr: 0, dEnemy: 1,
+  _assessed: false, _responded: false, _failsafed: false,
+  chanQ: {}, // 채널별 이전 quality(quality_delta = quality(t) - quality(t-1) 계산용).
+  speedMps: UAV_CRUISE_MPS, // 현재 프레임 UAV 대지속도(m/s) — updateMock에서 phase별로 갱신.
+  att: { roll: 0, pitch: 0, yaw: 0 }, // FC 자세(deg) — 운동상태에서 유도(updateMock, 저역통과).
+  gyro: { p: 0, q: 0, r: 0 }, // 기체 각속도(deg/s) — roll/pitch/yaw 미분(저역통과).
+  vs: 0, // 수직속도(m/s) — mock.alt 미분(저역통과).
+  _prevHead: null, _prevAlt: null, _altTarget: null,
+  timeScale: 1, // 배속(×1/×2/×4/×8) — 시뮬레이션 시간에만 적용(WS 재연결/실제 timestamp/rAF 제외).
 };
 
-const SPEED = 0.11;   // 정규거리/초
 const CLEAR_M = 120;  // 지형추종 여유고도(m)
+// Altitude chase model — mock.alt follows a target altitude inside a realistic
+// climb/descent envelope (small multirotor class) instead of teleporting.
+const EVADE_CLIMB_M = 40;       // evasive climb target above terrain-following altitude (m)
+const ALT_CLIMB_MAX_MPS = 5;    // max climb rate (m/s)
+const ALT_SINK_MAX_MPS = 4;     // max descent rate (m/s)
+const ALT_APPROACH_GAIN = 0.8;  // proportional approach rate near target (1/s)
+const ALT_TARGET_TAU_S = 2;     // low-pass time constant of the altitude target (s)
+const ALT_PLAN_VS_MPS = 2.2;    // planned cruise climb/descent budget (m/s at cruise speed)
+const ALT_PLAN_N = 512;         // precomputed altitude-plan samples along the path
 function elevM(h) { return 190 + h * 650; }
 
-/** 배터리/품질 대비 색. */
-function lvlColor(f) { return f > 0.5 ? "#3fb950" : (f > 0.2 ? "#d29922" : "#f85149"); }
+// Terrain-following altitude plan — precomputed slope-limited envelope over
+// terrain+CLEAR_M along the static path. The two max-passes guarantee
+// plan >= terrain+CLEAR_M everywhere while bounding |d(alt)/dt| at cruise
+// speed to ALT_PLAN_VS_MPS, so climbs start early instead of hugging slopes.
+const ALT_PLAN = (function () {
+  const n = ALT_PLAN_N;
+  const plan = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const pt = pointAtDist(_total * i / (n - 1));
+    plan[i] = elevM(heightAt(pt.x, pt.y)) + CLEAR_M;
+  }
+  // Max altitude change per sample step for the VS budget at cruise speed.
+  const stepM = ALT_PLAN_VS_MPS * (PATH_LENGTH_M / UAV_CRUISE_MPS) / (n - 1);
+  for (let i = n - 2; i >= 0; i--) plan[i] = Math.max(plan[i], plan[i + 1] - stepM);
+  for (let i = 1; i < n; i++) plan[i] = Math.max(plan[i], plan[i - 1] - stepM);
+  return plan;
+})();
 
-/** mock 시나리오 상태 전이 + 신호/고도 갱신. */
+/** Planned terrain-following altitude at path position s (0.._total), lerped. */
+function altPlanAt(s) {
+  const f = Math.max(0, Math.min(1, s / _total)) * (ALT_PLAN.length - 1);
+  const i = Math.floor(f);
+  if (i >= ALT_PLAN.length - 1) return ALT_PLAN[ALT_PLAN.length - 1];
+  return ALT_PLAN[i] + (ALT_PLAN[i + 1] - ALT_PLAN[i]) * (f - i);
+}
+
+// ── 지형 격자(u16) — heightAt 목업을 1회 샘플링해 render.js 레이어 빌더에 공급 ──
+// 실제 DEM 도입 시 이 샘플링부만 교체하면 된다(u16 인터페이스는 그대로 유지된다).
+
+const GRID = 200; // u16 격자 크기(W=H=200) — 뷰셰드/footprint 도 같은 격자를 공유한다.
+
+// 정규 좌표(0..1, y=0 상단)를 격자 좌표로 변환. gridY는 u16 배열의 "행 0 = 하단"
+// 관례(render.js의 buildTerrainLayer 참조)에 맞춰 y를 반전한다.
+function gridX(nx) { return nx * (GRID - 1); }
+function gridY(ny) { return (1 - ny) * (GRID - 1); }
+
+/** heightAt(정규 0..1 가우시안 목업)을 GRIDxGRID u16 격자로 1회 샘플링한다.
+ * 실제 표고(m)는 elevM으로 변환해 hmin/hmax(관측된 실제 범위)도 함께 계산한다. */
+function buildTerrainGrid() {
+  const W = GRID, H = GRID;
+  const elevations = new Float32Array(W * H);
+  let hmin = Infinity, hmax = -Infinity;
+  for (let ry = 0; ry < H; ry++) {
+    const ny = 1 - ry / (H - 1);
+    for (let gx = 0; gx < W; gx++) {
+      const nx = gx / (W - 1);
+      const hm = elevM(heightAt(nx, ny));
+      elevations[ry * W + gx] = hm;
+      if (hm < hmin) hmin = hm;
+      if (hm > hmax) hmax = hm;
+    }
+  }
+  const range = (hmax - hmin) || 1;
+  const u16 = new Uint16Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    u16[i] = Math.round(((elevations[i] - hmin) / range) * 65535);
+  }
+  return { u16, W, H, hmin, hmax };
+}
+
+const terrainGrid = buildTerrainGrid();
+// buildTerrainLayer는 시각화용 — u16이 이미 0..65535로 정규화돼 있으므로
+// hmin/hmax는 0/65535 그대로 넘긴다(test-board 관례와 동일, 실제 물리 hmin/hmax는
+// terrainGrid.hmin/hmax에 별도 보관해 뷰셰드/footprint 고각 계산에 사용한다).
+const terrainLayer = D4DRender.buildTerrainLayer(terrainGrid.u16, terrainGrid.H, terrainGrid.W, 0, 65535);
+
+// 적 탐지 footprint — 적이 정적이므로 1회만 계산해 캐시한다.
+const FOOTPRINT_COLOR = [240, 85, 93, Math.round(0.32 * 255)]; // 반투명 빨강(적)
+const enemyFootprintLayer = (function () {
+  const enemyGrid = {
+    center: [gridX(ENEMY.x), gridY(ENEMY.y)],
+    detect_range: ENEMY.r * (GRID - 1),
+  };
+  const mask = D4DRender.computeEnemyFootprint(
+    terrainGrid.u16, terrainGrid.H, terrainGrid.W, terrainGrid.hmin, terrainGrid.hmax, enemyGrid
+  );
+  return D4DRender.buildFootprintLayer(mask, terrainGrid.H, terrainGrid.W, FOOTPRINT_COLOR);
+})();
+
+// UAV 뷰셰드 — 매 프레임 재계산하지 않고, 드론이 ≥2 격자셀 이동했거나 250ms 지났을 때만 갱신.
+const VIEWSHED_COLOR = [102, 194, 255, Math.round(0.22 * 255)]; // 반투명 쿨블루(UAV — friendly 계열)
+const VIEWSHED_RECOMPUTE_MS = 250;
+const VIEWSHED_MOVE_CELLS = 2;
+let viewshedLayer = null;
+let lastViewshedGrid = null; // {gx, gy} — 마지막으로 뷰셰드를 계산한 격자 좌표
+let lastViewshedTime = 0;
+
+/** 드론 이동/경과시간 기준으로 뷰셰드 레이어 캐시를 필요할 때만 갱신한다.
+ * 드론 alt(mock.alt)는 elevM과 동일한 미터 스케일(지형고도+clearance+회피고도)이므로,
+ * 저지대/고지대 통과 시 고각 계산이 실제로 달라져 뷰셰드 범위가 지형에 반응한다. */
+function updateViewshedLayer(now) {
+  const gx = gridX(mock.pos.x), gy = gridY(mock.pos.y);
+  const moved = !lastViewshedGrid ||
+    Math.hypot(gx - lastViewshedGrid.gx, gy - lastViewshedGrid.gy) >= VIEWSHED_MOVE_CELLS;
+  const timedOut = now - lastViewshedTime >= VIEWSHED_RECOMPUTE_MS;
+  if (viewshedLayer && !moved && !timedOut) return;
+  const drone = { x: gx, y: gy, alt: mock.alt };
+  const mask = D4DRender.computeViewshed(
+    terrainGrid.u16, terrainGrid.H, terrainGrid.W, terrainGrid.hmin, terrainGrid.hmax, drone
+  );
+  viewshedLayer = D4DRender.buildViewshedLayer(mask, terrainGrid.H, terrainGrid.W, VIEWSHED_COLOR);
+  lastViewshedGrid = { gx, gy };
+  lastViewshedTime = now;
+}
+
+/** 배터리/품질 대비 색. */
+function lvlColor(f) { return f > 0.5 ? "#4CC38A" : (f > 0.2 ? "#E5A93D" : "#F0555D"); }
+
+// ── 공유 텔레메트리 산식 — 기체 신호 패널/11채널 패널/시스템 로그가 같은 값을 쓴다 ──
+
+/** comms(0..3) → 재밍 정도(0..1). */
+function commsJam() { return Math.max(0, Math.min(1, (3 - mock.comms) / 3)); }
+function linkRssi(jam) { return Math.round(-62 - jam * 30); }
+function linkLatency(jam) { return Math.round(45 + jam * 300); }
+function linkLoss(jam) { return Math.min(0.4, jam * 0.35 + 0.01); }
+/** 6S 리포 근사 전압(% 선형 매핑). */
+function battVoltage() { return 19.8 + (mock.battery / 100) * 5.4; }
+/** 소비전류(A) — 호버 기저 ~12A + 속도/상승(클램프)/회피 기동 가산. */
+function battCurrentA() {
+  return 12 + Math.max(0, mock.speedMps - 6) * 0.6 +
+    Math.min(6, Math.max(0, mock.vs)) * 2 +
+    (mock.phase === "ENCOUNTER" ? 5 : 0);
+}
+function gpsSats() { return Math.round(6 + mock.gps * 10); }
+function gpsHdop() { return 0.9 + (1 - mock.gps) * 4; }
+function gpsResidualM() { return (1 - mock.gps) * 8; }
+function escRpm(jitter) { return Math.round(7600 + mock.speedMps * 35 + jitter * 60); }
+function escTempC(jitter) { return 42.0 + jitter * 1.5; }
+function frameVib(jitter) { return 0.12 + Math.abs(jitter) * 0.03; }
+
+/** 부호 표기 고정 소수(deg 등): +12.3 / -2.1 */
+function fmtSigned(v, digits) { return (v >= 0 ? "+" : "") + v.toFixed(digits); }
+/** 컴퍼스 방위 3자리 zero-pad: 087 */
+function fmtHeading(deg) { return String(Math.round(((deg % 360) + 360) % 360) % 360).padStart(3, "0"); }
+
+/** mock 시나리오 상태 전이 + 신호/고도 갱신. dt는 실제 프레임 간격(s) —
+ * 상단에서 timeScale을 1회 곱해 시뮬레이션 시간(simDt)으로 변환한 뒤 전 구간에서 사용한다. */
 function updateMock(dt) {
+  dt = dt * mock.timeScale; // simDt — 이하 모든 mock 시간 소비가 배속을 따른다.
   mock.phaseT += dt;
-  mock.s += mock.dir * SPEED * dt;
+  // 실제 UAV 속도(m/s) — phase별 순항/조우저속/RTL증속을 실거리 기준 progress로 환산.
+  const speedMps = mock.phase === "ENCOUNTER" ? UAV_ENCOUNTER_MPS
+    : mock.phase === "RTL" ? UAV_RTL_MPS
+    : UAV_CRUISE_MPS;
+  mock.speedMps = speedMps;
+  const dsNorm = mock.dir * (speedMps / PATH_LENGTH_M) * dt;
+  mock.s += dsNorm;
   if (mock.s < 0) mock.s = 0;
   if (mock.s > _total) mock.s = _total;
 
   const p = pointAtDist(mock.s);
   mock.pos = p;
   mock.head = p.head;
-  mock.odo += SPEED * dt;
+  mock.odo += Math.abs(dsNorm);
 
   const dEnemy = Math.hypot(p.x - ENEMY.x, p.y - ENEMY.y);
+  mock.dEnemy = dEnemy;
   mock.enemyActive = dEnemy < ENEMY.r * 1.6;
 
-  // 상태기계.
+  // 상태기계 — 전이 시점마다 AI 결정 로그(B 패널) + 시스템 로그(C 패널)를 함께 emit.
   if (mock.phase === "NORMAL") {
-    if (mock.dir > 0 && dEnemy < ENEMY.r) { mock.phase = "ENCOUNTER"; mock.phaseT = 0; }
+    if (mock.dir > 0 && dEnemy < ENEMY.r) {
+      mock.phase = "ENCOUNTER"; mock.phaseT = 0;
+      pushDecision("detect", "위협 감지 — T3 근접 위협 탐지 (proximity_object anomaly)");
+      const brg = Math.round(((Math.atan2(ENEMY.y - p.y, ENEMY.x - p.x) * 180) / Math.PI + 360) % 360);
+      emitSys("FC", "mode AUTO→GUIDED (evasive)", "warn");
+      emitSys("CAN", "[0x1A0] ESC cmd rpm↑ " +
+        Math.round(escRpm(0) * 1.15) + " (throttle 78%)");
+      emitSys("GIMBAL", "slew brg=" + brg + "° (track target)");
+    }
   } else if (mock.phase === "ENCOUNTER") {
-    if (mock.phaseT > 1.4) { mock.phase = "RTL"; mock.dir = -1; mock.phaseT = 0; }
+    if (!mock._assessed && mock.phaseT > 0.5) {
+      mock._assessed = true;
+      pushDecision("assess", "위험 평가 — RAC=Serious (L=B, S=Critical) priority 1");
+    }
+    if (!mock._responded && mock.phaseT > 0.9) {
+      mock._responded = true;
+      pushDecision("respond", "대응 결정 — flight_action=RTL, comms_level=SILENT");
+    }
+    // One-shot failsafe check when the C2 link degrades during the encounter.
+    if (!mock._failsafed && mock.comms < 1.5) {
+      mock._failsafed = true;
+      const rssi = Math.round(-62 - ((3 - mock.comms) / 3) * 30);
+      emitSys("FC", "failsafe check: C2 link degraded (rssi=" + rssi + "dBm) — GUIDED hold", "error");
+    }
+    if (mock.phaseT > 1.4) {
+      mock.phase = "RTL"; mock.dir = -1; mock.phaseT = 0;
+      pushDecision("replan", "재계획 — 복귀 경로 재계획 (reroute)");
+      emitSys("FC", "mode GUIDED→RTL", "warn");
+      emitSys("NAV", "reroute home dist=" + Math.round(mock.s * MAP_EXTENT_M) + "m");
+    }
   } else if (mock.phase === "RTL") {
     if (mock.s <= 0.0005) {
-      // 복귀 완료 → 신규 임무 재시작.
+      // 복귀 완료 → 신규 임무 재시작. 고도 프로파일 trail 도 새 사이클로 리셋.
       mock.phase = "NORMAL"; mock.dir = 1; mock.phaseT = 0;
       mock.battery = 96;
+      mock._assessed = false; mock._responded = false; mock._failsafed = false;
+      mock.trailProfile = [];
+      pushDecision("resume", "임무 재개 — 경로 복행");
+      emitSys("FC", "mode RTL→AUTO resume wp=" + wpLabel(), "warn");
     }
   }
 
@@ -476,296 +732,593 @@ function updateMock(dt) {
   mock.comms += (commsTarget - mock.comms) * Math.min(1, dt * 2);
   mock.rac += (racTarget - mock.rac) * Math.min(1, dt * 2.5);
 
-  // 배터리: 상시 소모 + RTL 등판 시 가속.
-  mock.battery -= (mock.phase === "RTL" ? 0.9 : 0.45) * dt;
+  // 배터리: 상시 소모 + RTL 등판 시 가속. 실속도 기반 실거리 비행(leg당 수분)에 맞춰
+  // 소모율을 낮춰 한 leg 안에서 바닥나지 않도록 스케일(leg당 총 소모 ~13%대).
+  mock.battery -= (mock.phase === "RTL" ? 0.07 : 0.03) * dt;
   if (mock.battery < 6) mock.battery = 96;
 
-  // 고도: 지형추종 + 회피 등판(조우/RTL 시).
+  // 고도: 지형추종(slope-limited plan) + 회피 등판(조우/RTL 시) — target 고도를
+  // 산출한 뒤 상승 +5 / 하강 -4 m/s 엔벨로프로 추종(즉시 점프 금지, VS/pitch 물리화).
   const h = heightAt(p.x, p.y);
   mock.terr = elevM(h);
   let avoid = 0;
-  if (mock.phase === "ENCOUNTER") avoid = 60 + 120 * Math.min(1, mock.phaseT / 1.4);
-  else if (mock.phase === "RTL") avoid = 170;
-  mock.alt = mock.terr + CLEAR_M + avoid;
+  if (mock.phase === "ENCOUNTER" || mock.phase === "RTL") avoid = EVADE_CLIMB_M;
+  const rawTarget = altPlanAt(mock.s) + avoid;
+  if (mock._altTarget === null) { mock._altTarget = rawTarget; mock.alt = rawTarget; }
+  mock._altTarget += (rawTarget - mock._altTarget) * Math.min(1, dt / ALT_TARGET_TAU_S);
+  // Proportional approach near the target avoids bang-bang; clamped to the envelope.
+  const vsCmd = Math.max(-ALT_SINK_MAX_MPS,
+    Math.min(ALT_CLIMB_MAX_MPS, (mock._altTarget - mock.alt) * ALT_APPROACH_GAIN));
+  mock.alt += vsCmd * dt;
 
-  // 고도 프로파일 히스토리(롤링).
-  mock.history.push({ terr: mock.terr, alt: mock.alt });
-  if (mock.history.length > 150) mock.history.shift();
+  // FC 자세/각속도 유도(mock) — 운동상태의 per-tick 미분에서 계산, 저역통과로 안정화.
+  //   yaw  = mock.head(경로 진행방위, 컴퍼스 deg) + ENCOUNTER 회피 요잉 진동
+  //   roll = 협조선회 근사 atan(v·ω/g), ω=요잉각속도(rad/s), ±35° 클램프
+  //   pitch= 상승률 근사 atan2(VS, GS), ±20° 클램프
+  //   p/q/r= roll/pitch/yaw 미분(deg/s, 저역통과) — ENCOUNTER 회피 기동 시 스파이크.
+  if (dt > 0) {
+    const wrapPi = (a) => {
+      while (a > Math.PI) a -= 2 * Math.PI;
+      while (a < -Math.PI) a += 2 * Math.PI;
+      return a;
+    };
+    const clampAbs = (v, lim) => Math.max(-lim, Math.min(lim, v));
+
+    const prevHead = mock._prevHead === null ? mock.head : mock._prevHead;
+    let omega = clampAbs(wrapPi(mock.head - prevHead) / dt, 2.5); // rad/s
+    let yawRad = mock.head;
+    if (mock.phase === "ENCOUNTER") {
+      // 회피 요잉 기동: yaw 진동은 ω 항의 적분이라 r(요레이트)과 정합.
+      omega += 1.1 * Math.sin(mock.phaseT * 6);
+      yawRad += -(1.1 / 6) * Math.cos(mock.phaseT * 6);
+    }
+    mock._prevHead = mock.head;
+
+    const prevAlt = mock._prevAlt === null ? mock.alt : mock._prevAlt;
+    mock._prevAlt = mock.alt;
+    const lp = Math.min(1, dt * 4); // 저역통과 계수(~0.25s 시정수).
+    mock.vs += ((mock.alt - prevAlt) / dt - mock.vs) * lp;
+
+    const rollT = clampAbs(Math.atan((mock.speedMps * omega) / 9.81) * 180 / Math.PI, 35);
+    const pitchT = clampAbs(Math.atan2(mock.vs, mock.speedMps) * 180 / Math.PI, 20);
+    const yaw = ((yawRad * 180 / Math.PI) + 360) % 360;
+
+    const a = mock.att, g = mock.gyro;
+    const prevRoll = a.roll, prevPitch = a.pitch;
+    a.roll += (rollT - a.roll) * lp;
+    a.pitch += (pitchT - a.pitch) * lp;
+    a.yaw = yaw;
+    g.p += ((a.roll - prevRoll) / dt - g.p) * lp;
+    g.q += ((a.pitch - prevPitch) / dt - g.q) * lp;
+    g.r += (omega * 180 / Math.PI - g.r) * lp;
+  }
+
+  // 고도 프로파일 trail: 경로를 따라 누적한 실거리(m, mock.s(정규 0.._total) × MAP_EXTENT_M)
+  // 기준으로 시간순 (dist, alt) 샘플을 쌓는다. RTL 중에는 dist가 줄어들며 복귀를 그린다.
+  // 루프(resume) 시 updateMock의 resume 분기에서 배열을 리셋한다.
+  mock.trailProfile.push([mock.s * MAP_EXTENT_M, mock.alt]);
 }
 
 // ── 3칸 실제 렌더 ─────────────────────────────────────────────
 
-let _terrainCache = null;
-
-/** 표고장 + 격자 + 경로(정적)를 offscreen 캔버스에 캐시. */
-function terrainCacheFor(cv) {
-  if (_terrainCache && _terrainCache.w === cv.width && _terrainCache.h === cv.height) {
-    return _terrainCache.canvas;
+/** 캔버스 내부 해상도(width/height 속성)를 렌더링 박스(clientWidth/clientHeight)에 맞춘다.
+ * CSS 로 컨테이너 비율이 바뀌어도(예: 가로로 긴 짧은 strip) 그리기 좌표계가 그대로 따라가게 한다. */
+function syncCanvasSize(cv) {
+  if (!cv) return;
+  const w = Math.round(cv.clientWidth);
+  const h = Math.round(cv.clientHeight);
+  if (w > 0 && h > 0 && (cv.width !== w || cv.height !== h)) {
+    cv.width = w;
+    cv.height = h;
   }
-  const W = cv.width, H = cv.height, pad = 8;
-  const off = document.createElement("canvas");
-  off.width = W; off.height = H;
-  const c = off.getContext("2d");
-  c.fillStyle = "#010409";
-  c.fillRect(0, 0, W, H);
-
-  // 표고장(셀 단위 heatmap).
-  const step = 6;
-  for (let yy = pad; yy < H - pad; yy += step) {
-    for (let xx = pad; xx < W - pad; xx += step) {
-      const nx = (xx - pad) / (W - 2 * pad), ny = (yy - pad) / (H - 2 * pad);
-      c.fillStyle = terrainColor(heightAt(nx, ny));
-      c.fillRect(xx, yy, step, step);
-    }
-  }
-
-  // 격자.
-  c.strokeStyle = "rgba(88,166,255,0.07)";
-  c.lineWidth = 1;
-  for (let gx = pad; gx <= W - pad; gx += 48) { c.beginPath(); c.moveTo(gx, pad); c.lineTo(gx, H - pad); c.stroke(); }
-  for (let gy = pad; gy <= H - pad; gy += 48) { c.beginPath(); c.moveTo(pad, gy); c.lineTo(W - pad, gy); c.stroke(); }
-
-  const px = (nx) => pad + nx * (W - 2 * pad);
-  const py = (ny) => pad + ny * (H - 2 * pad);
-
-  // 경로 폴리라인(글로우 → 본선).
-  const strokePath = () => {
-    c.beginPath();
-    for (let i = 0; i < PATH.length; i++) {
-      const X = px(PATH[i].x), Y = py(PATH[i].y);
-      if (i) c.lineTo(X, Y); else c.moveTo(X, Y);
-    }
-  };
-  c.lineJoin = "round";
-  strokePath(); c.strokeStyle = "rgba(88,166,255,0.25)"; c.lineWidth = 6; c.stroke();
-  strokePath(); c.strokeStyle = "rgba(88,166,255,0.9)"; c.lineWidth = 2.5; c.stroke();
-
-  // 웨이포인트.
-  for (let i = 0; i < PATH.length; i++) {
-    c.beginPath(); c.arc(px(PATH[i].x), py(PATH[i].y), 2.5, 0, Math.PI * 2);
-    c.fillStyle = "#79c0ff"; c.fill();
-  }
-  // 시작/목표 마커.
-  const sN = PATH[0], gN = PATH[PATH.length - 1];
-  c.beginPath(); c.arc(px(sN.x), py(sN.y), 5, 0, Math.PI * 2); c.fillStyle = "#3fb950"; c.fill();
-  c.strokeStyle = "#0d1117"; c.lineWidth = 1; c.stroke();
-  c.beginPath(); c.arc(px(gN.x), py(gN.y), 5, 0, Math.PI * 2); c.fillStyle = "#58a6ff"; c.fill();
-  c.strokeStyle = "#0d1117"; c.lineWidth = 1; c.stroke();
-
-  _terrainCache = { w: W, h: H, canvas: off };
-  return off;
-}
-
-function drawDiamond(ctx, x, y, s, color) {
-  ctx.beginPath();
-  ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y);
-  ctx.closePath();
-  ctx.fillStyle = color; ctx.fill();
-  ctx.strokeStyle = "#0d1117"; ctx.lineWidth = 1; ctx.stroke();
-}
-
-function drawDrone(ctx, x, y, head, color) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(head);
-  ctx.beginPath();
-  ctx.moveTo(9, 0); ctx.lineTo(-6, 5); ctx.lineTo(-3, 0); ctx.lineTo(-6, -5);
-  ctx.closePath();
-  ctx.fillStyle = color; ctx.fill();
-  ctx.strokeStyle = "#0d1117"; ctx.lineWidth = 1; ctx.stroke();
-  ctx.restore();
 }
 
 const PHASE_LABEL = { NORMAL: "정상 비행", ENCOUNTER: "T3 조우", RTL: "RTL 복귀" };
-const PHASE_COLOR = { NORMAL: "#3fb950", ENCOUNTER: "#f85149", RTL: "#d29922" };
+const PHASE_COLOR = { NORMAL: "#4CC38A", ENCOUNTER: "#F0555D", RTL: "#E5A93D" };
 function droneColor() {
-  return mock.phase === "NORMAL" ? "#3fb950" : (mock.phase === "RTL" ? "#d29922" : "#f85149");
+  return mock.phase === "NORMAL" ? "#4CC38A" : (mock.phase === "RTL" ? "#E5A93D" : "#F0555D");
 }
 
-/** 지도/경로 — 지형 + 경로 + 드론 + 적(T3) + 시나리오 라벨. */
+/**
+ * 지도/경로 — 레이어 순서: terrain(u16 격자) → UAV 가시영역(뷰셰드) → 적 탐지범위(footprint)
+ * → 경로 → 복귀경로(RTL 시) → 마커(적 다이아몬드, 목표 크로스헤어, 시작 라벨, 드론).
+ * terrain/뷰셰드/footprint는 GRIDxGRID 오프스크린 레이어를 캔버스 전체 크기로 늘려 그리므로,
+ * 경로/마커도 패딩 없이 동일한 전체-캔버스 좌표계(px=nx*W, py=ny*H)를 사용해 정렬을 맞춘다.
+ */
 function drawMap() {
   const cv = canvases.map;
   if (!cv || !cv.getContext) return;
+  if (cv.clientWidth === 0) return; // 탭 숨김 상태 — 프레임 스킵(제로 사이즈 방어).
+  syncCanvasSize(cv);
   const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height, pad = 8;
-  ctx.drawImage(terrainCacheFor(cv), 0, 0);
+  const W = cv.width, H = cv.height;
 
-  const px = (nx) => pad + nx * (W - 2 * pad);
-  const py = (ny) => pad + ny * (H - 2 * pad);
+  const px = (nx) => nx * W;
+  const py = (ny) => ny * H;
 
-  // 적 T3 + 탐지 링.
+  ctx.clearRect(0, 0, W, H);
+
+  // 1) terrain + 좌표 그리드 오버레이(1/8 간격, 미터 라벨).
+  if (terrainLayer) ctx.drawImage(terrainLayer, 0, 0, W, H);
+  D4DRender.drawMapGrid(ctx, W, H, MAP_EXTENT_M);
+
+  // 2) UAV 가시영역(뷰셰드) — 지형 위, 나머지 오버레이/마커 아래.
+  if (viewshedLayer) ctx.drawImage(viewshedLayer, 0, 0, W, H);
+
+  // 3) 적 탐지범위(footprint, 지형 반영 · 원 아님) — 뷰셰드 위, 경로/마커 아래.
+  if (enemyFootprintLayer) ctx.drawImage(enemyFootprintLayer, 0, 0, W, H);
+
+  // 4) 경로(글로우 → 본선, 액티브 앰버).
+  ctx.save();
+  ctx.lineJoin = "round";
+  const strokePath = () => {
+    ctx.beginPath();
+    for (let i = 0; i < PATH.length; i++) {
+      const X = px(PATH[i].x), Y = py(PATH[i].y);
+      if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+    }
+  };
+  strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.25)"; ctx.lineWidth = 6; ctx.stroke();
+  strokePath(); ctx.strokeStyle = "rgba(240,160,60,0.9)"; ctx.lineWidth = 2.5; ctx.stroke();
+  ctx.restore();
+
+  // 5) 복귀경로(RTL 구간에서만) — 점선 앰버.
+  if (mock.phase === "RTL") {
+    const rp = returnPathPoints();
+    ctx.save();
+    ctx.beginPath();
+    for (let i = 0; i < rp.length; i++) {
+      const X = px(rp[i].x), Y = py(rp[i].y);
+      if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
+    }
+    ctx.setLineDash([7, 5]);
+    ctx.strokeStyle = "#E5A93D"; ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  // 6) 마커들 — 적 다이아몬드, 목표 크로스헤어, 시작 라벨, 드론.
   const ex = px(ENEMY.x), ey = py(ENEMY.y);
-  const rr = ENEMY.r * (W - 2 * pad);
-  ctx.beginPath(); ctx.arc(ex, ey, rr, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(248,81,73,0.08)"; ctx.fill();
-  ctx.setLineDash([5, 4]);
-  ctx.strokeStyle = mock.enemyActive ? "rgba(248,81,73,0.9)" : "rgba(248,81,73,0.35)";
-  ctx.lineWidth = mock.enemyActive ? 2 : 1;
-  ctx.stroke();
-  ctx.setLineDash([]);
-  drawDiamond(ctx, ex, ey, 7, "#f85149");
-  ctx.fillStyle = "#ff9a93"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "left";
-  ctx.fillText("T3", ex + 10, ey - 6);
+  // MIL-STD-2525 hostile ground frame (render.js pure helper).
+  D4DRender.drawHostileGround(ctx, ex, ey, 8);
+  if (mock.phase === "ENCOUNTER") {
+    // 탐지 콜아웃 — ENCOUNTER 동안만 앰버 라벨 칩(Maven detection callout).
+    const callout = "T3 소화기 · 근접";
+    ctx.save();
+    ctx.font = "600 10px ui-monospace, Menlo, monospace";
+    const tw = ctx.measureText(callout).width;
+    const bx = ex + 12, by = ey - 21, bw = tw + 12, bh = 16;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 3);
+    ctx.fillStyle = "rgba(13,13,15,0.85)";
+    ctx.fill();
+    ctx.strokeStyle = "#F0A03C"; ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#FFB95A"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(callout, bx + 6, by + bh / 2);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#ff9a93"; ctx.font = "bold 11px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("T3", ex + 10, ey - 6);
+  }
 
-  // 드론 + 펄스 링.
+  const sN = PATH[0], gN = PATH[PATH.length - 1];
+  const gx = px(gN.x), gy = py(gN.y);
+  ctx.strokeStyle = "#4CC38A"; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(gx, gy, 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(gx, gy, 3.5, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(gx - 10, gy); ctx.lineTo(gx - 4, gy);
+  ctx.moveTo(gx + 4, gy); ctx.lineTo(gx + 10, gy);
+  ctx.moveTo(gx, gy - 10); ctx.lineTo(gx, gy - 4);
+  ctx.moveTo(gx, gy + 4); ctx.lineTo(gx, gy + 10);
+  ctx.stroke();
+
+  ctx.beginPath(); ctx.arc(px(sN.x), py(sN.y), 5, 0, Math.PI * 2); ctx.fillStyle = "#4CC38A"; ctx.fill();
+  ctx.strokeStyle = "#0D0D0F"; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = "#E8E7E2"; ctx.font = "10px system-ui"; ctx.textAlign = "left";
+  ctx.fillText(SCENARIO.start, px(sN.x) + 7, py(sN.y) + 3);
+  ctx.textAlign = "right";
+  ctx.fillText(SCENARIO.goal, gx - 7, gy + 3);
+  ctx.textAlign = "left";
+
   const dx = px(mock.pos.x), dy = py(mock.pos.y);
   const dc = droneColor();
   const pulse = 8 + 3 * (0.5 + 0.5 * Math.sin(mock.odo * 10));
   ctx.beginPath(); ctx.arc(dx, dy, pulse, 0, Math.PI * 2);
   ctx.globalAlpha = 0.35; ctx.strokeStyle = dc; ctx.lineWidth = 1.5; ctx.stroke();
   ctx.globalAlpha = 1;
-  drawDrone(ctx, dx, dy, mock.head, dc);
-
-  // 시나리오 + 페이즈 라벨.
-  ctx.textAlign = "left";
-  ctx.fillStyle = "#c9d1d9"; ctx.font = "bold 12px system-ui";
-  ctx.fillText(SCENARIO.start + " → " + SCENARIO.goal, pad + 4, pad + 14);
-  ctx.fillStyle = PHASE_COLOR[mock.phase]; ctx.font = "11px system-ui";
-  ctx.fillText("● " + PHASE_LABEL[mock.phase], pad + 4, pad + 30);
-
-  // 시작/목표 텍스트.
-  ctx.fillStyle = "#c9d1d9"; ctx.font = "10px system-ui";
-  ctx.fillText(SCENARIO.start, px(PATH[0].x) + 7, py(PATH[0].y) + 3);
-  ctx.textAlign = "right";
-  ctx.fillText(SCENARIO.goal, px(PATH[PATH.length - 1].x) - 7, py(PATH[PATH.length - 1].y) + 3);
-  ctx.textAlign = "left";
+  // MIL-STD-2525 friendly AIR frame (render.js pure helper) — affiliation
+  // blue beats the phase color; the pulse ring above keeps phase feedback.
+  D4DRender.drawFriendlyAir(ctx, dx, dy, 9, mock.head);
 }
 
-/** 고도 프로파일 — 지형 표고선 + 드론 고도선(롤링 strip). */
+/** 상단 앱바 모드/phase 칩 — mock.phase를 라벨+상태색으로 표시(관측 전용). */
+function updatePhaseChip() {
+  if (!el.phaseChip) return;
+  el.phaseChip.textContent = PHASE_LABEL[mock.phase] || mock.phase;
+  el.phaseChip.style.color = PHASE_COLOR[mock.phase] || "";
+}
+
+/**
+ * 고도 프로파일 정적 데이터(지형 표고 폴리곤) — 고정 경로(PATH)를 따라 1회 샘플링해 캐시한다.
+ * dist 단위는 mock.trailProfile과 동일한 실거리 스케일(m, × MAP_EXTENT_M)로 맞춰 두 배열이 같은 x축을 쓴다.
+ */
+function buildFlightProfile() {
+  const SAMPLES = 80;
+  const dist = new Array(SAMPLES);
+  const terrainH = new Array(SAMPLES);
+  let maxH = -Infinity;
+  for (let i = 0; i < SAMPLES; i++) {
+    const d = (_total * i) / (SAMPLES - 1);
+    const p = pointAtDist(d);
+    const h = elevM(heightAt(p.x, p.y));
+    dist[i] = d * MAP_EXTENT_M;
+    terrainH[i] = h;
+    if (h > maxH) maxH = h;
+  }
+  return {
+    dist,
+    terrainH,
+    totalDist: dist[dist.length - 1],
+    yMax: maxH + CLEAR_M * 1.5,
+    distOffset: 0,
+  };
+}
+
+const FLIGHT_PROFILE = buildFlightProfile();
+
+/** 고도 프로파일 — D4DRender.drawProfile에 위임(지형 폴리곤 + trailProfile 고도선). */
 function drawProfile() {
   const cv = canvases.profile;
   if (!cv || !cv.getContext) return;
+  if (cv.clientWidth === 0) return; // 탭 숨김 상태 — 프레임 스킵(제로 사이즈 방어).
+  syncCanvasSize(cv);
   const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height;
-  ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, W, H);
-
-  const mL = 46, mR = 12, mT = 28, mB = 26;
-  const plotW = W - mL - mR, plotH = H - mT - mB;
-  const yMin = 120, yMax = 1200;
-  const yPix = (m) => mT + plotH * (1 - (m - yMin) / (yMax - yMin));
-
-  // y 격자 + 라벨.
-  ctx.strokeStyle = "rgba(48,54,61,0.8)"; ctx.lineWidth = 1;
-  ctx.fillStyle = "#8b949e"; ctx.font = "10px system-ui"; ctx.textAlign = "right";
-  for (let m = yMin; m <= yMax; m += 270) {
-    const y = yPix(m);
-    ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(W - mR, y); ctx.stroke();
-    ctx.fillText(Math.round(m) + "m", mL - 4, y + 3);
-  }
-
-  const hist = mock.history, n = hist.length;
-  if (n > 1) {
-    const xPix = (i) => mL + plotW * (i / (150 - 1));
-    // 지형 면적.
-    ctx.beginPath();
-    ctx.moveTo(xPix(0), yPix(hist[0].terr));
-    for (let i = 1; i < n; i++) ctx.lineTo(xPix(i), yPix(hist[i].terr));
-    ctx.lineTo(xPix(n - 1), mT + plotH); ctx.lineTo(xPix(0), mT + plotH); ctx.closePath();
-    ctx.fillStyle = "rgba(104,96,52,0.35)"; ctx.fill();
-    // 지형 선.
-    ctx.beginPath(); ctx.moveTo(xPix(0), yPix(hist[0].terr));
-    for (let i = 1; i < n; i++) ctx.lineTo(xPix(i), yPix(hist[i].terr));
-    ctx.strokeStyle = "#8a6f3a"; ctx.lineWidth = 1.5; ctx.stroke();
-    // 드론 고도 선.
-    const line = droneColor();
-    ctx.beginPath(); ctx.moveTo(xPix(0), yPix(hist[0].alt));
-    for (let i = 1; i < n; i++) ctx.lineTo(xPix(i), yPix(hist[i].alt));
-    ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.stroke();
-    // 현재 점.
-    ctx.beginPath(); ctx.arc(xPix(n - 1), yPix(hist[n - 1].alt), 3, 0, Math.PI * 2);
-    ctx.fillStyle = line; ctx.fill();
-  }
-
-  // 축 프레임.
-  ctx.strokeStyle = "#30363d"; ctx.lineWidth = 1;
-  ctx.strokeRect(mL, mT, plotW, plotH);
-
-  // 제목 + 범례.
-  ctx.textAlign = "left"; ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#c9d1d9";
-  ctx.fillText("고도 프로파일 (거리→)", mL, 16);
-  ctx.font = "10px system-ui";
-  ctx.fillStyle = "#8a6f3a"; ctx.fillText("■ 지형 표고", mL + 150, 16);
-  ctx.fillStyle = droneColor(); ctx.fillText("■ 드론 고도", mL + 232, 16);
-
-  // 현재 값 readout.
-  ctx.textAlign = "right"; ctx.fillStyle = "#c9d1d9"; ctx.font = "10px system-ui";
-  ctx.fillText("고도 " + Math.round(mock.alt) + "m / 지형 " + Math.round(mock.terr) + "m", W - mR, H - 8);
-  ctx.textAlign = "left"; ctx.fillStyle = "#8b949e";
-  ctx.fillText("거리 " + mock.odo.toFixed(2), mL, H - 8);
+  D4DRender.drawProfile(ctx, FLIGHT_PROFILE, { trailProfile: mock.trailProfile });
 }
 
-/** 현재 신호 — 배터리·GPS·통신(L0~L3)·RAC 게이지/바. */
-function drawSignals() {
-  const cv = canvases.signals;
-  if (!cv || !cv.getContext) return;
-  const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height;
-  ctx.fillStyle = "#010409"; ctx.fillRect(0, 0, W, H);
+// ── 신호 패널(HTML 리스트) — 03(Sensor Abstraction) 실 계약 11채널 mock ──
+// 채널/payload 필드는 docs/contracts/03-abstraction-output.md(AbstractionOutput) 골든 예시를 따른다.
 
-  ctx.textAlign = "left"; ctx.font = "bold 11px system-ui"; ctx.fillStyle = "#c9d1d9";
-  ctx.fillText("현재 신호 · C2 (mock)", 14, 20);
+const CHANNEL_DEFS = [
+  { key: "position_consistency", label: "위치 정합성" },
+  { key: "link_status", label: "링크 상태" },
+  { key: "rf_spectrum", label: "RF 스펙트럼" },
+  { key: "link_integrity", label: "링크 무결성" },
+  { key: "encryption_status", label: "암호화 상태" },
+  { key: "mission_phase", label: "임무 단계" },
+  { key: "terrain_class", label: "지형 분류" },
+  { key: "proximity_object", label: "근접 물체" },
+  { key: "acoustic_event", label: "음향 이벤트" },
+  { key: "obstacle_proximity", label: "장애물 근접" },
+  { key: "operational_margin", label: "운용 여유도" },
+];
 
-  const barX = 100, barW = W - barX - 74, barH = 13, rowH = 44;
-  let y = 48;
+/** quality(0..1) → state 라벨 공통 임계값. */
+function stateFromQuality(q) {
+  return q > 0.7 ? "normal" : q > 0.4 ? "degraded" : "anomaly";
+}
 
-  function row(label, drawBar, valueText, valueColor) {
-    ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillStyle = "#8b949e";
-    ctx.fillText(label, 14, y + barH - 1);
-    drawBar(y);
-    ctx.textAlign = "right"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = valueColor || "#c9d1d9";
-    ctx.fillText(valueText, W - 14, y + barH - 1);
-    y += rowH;
-  }
+/** 전 사이클 quality 대비 delta = quality(t) - quality(t-1)(첫 사이클은 0.0). */
+function chanDelta(key, q) {
+  const prev = mock.chanQ[key];
+  const d = prev === undefined ? 0 : q - prev;
+  mock.chanQ[key] = q;
+  return d;
+}
 
-  function meter(frac, color) {
-    return (yy) => {
-      ctx.fillStyle = "#161b22"; ctx.fillRect(barX, yy, barW, barH);
-      ctx.fillStyle = color;
-      ctx.fillRect(barX, yy, Math.max(2, barW * Math.max(0, Math.min(1, frac))), barH);
-      ctx.strokeStyle = "#30363d"; ctx.lineWidth = 1; ctx.strokeRect(barX, yy, barW, barH);
-    };
-  }
+/** mock 시나리오 상태로부터 11채널(계약 payload 필드 포함) 스냅샷 계산(표시 전용, 재판단 없음). */
+function computeChannels() {
+  const commsN = mock.comms;
+  const encounter = mock.phase === "ENCOUNTER";
+  const rtl = mock.phase === "RTL";
+  const jitter = Math.sin(mock.odo * 6);
 
-  // 배터리.
-  const bf = mock.battery / 100, bc = lvlColor(bf);
-  row("배터리", meter(bf, bc), Math.round(mock.battery) + "%", bc);
+  // ── position_consistency ── gps_imu_residual_m 등 잔차 계열(공유 산식).
+  const gpsImuResidual = gpsResidualM();
+  const baroResidual = 0.3 + Math.abs(jitter) * 0.15;
+  const airspeedResidual = 0.4 + Math.abs(jitter) * 0.1;
+  const hdop = gpsHdop();
+  const vdop = hdop * 1.3;
+  const satelliteCount = gpsSats();
+  const cn0 = 42.5 - (1 - mock.gps) * 12;
+  const pcQuality = mock.gps;
 
-  // GPS 품질.
-  const gc = mock.gps > 0.85 ? "#3fb950" : (mock.gps > 0.6 ? "#d29922" : "#f85149");
-  row("GPS 품질", meter(mock.gps, gc), Math.round(mock.gps * 100) + "%", gc);
+  // ── link_status / link_integrity / rf_spectrum ── comms 레벨 기반(공유 산식).
+  const jam = commsJam();
+  const rssi = linkRssi(jam);
+  const packetLoss = linkLoss(jam);
+  const latency = linkLatency(jam);
+  const lsQuality = commsN / 3;
+  const checksumFailRate = Math.min(0.5, jam * 0.4);
+  const seqGapCount = Math.round(jam * 20);
 
-  // 통신 (L0~L3, 3세그).
-  const commsN = Math.max(0, Math.min(3, Math.round(mock.comms)));
-  const commsColor = commsN >= 3 ? "#3fb950" : (commsN >= 2 ? "#d29922" : "#f85149");
-  row("통신", (yy) => {
-    const segW = (barW - 8) / 3;
-    for (let i = 0; i < 3; i++) {
-      ctx.fillStyle = i < commsN ? commsColor : "#161b22";
-      ctx.fillRect(barX + i * (segW + 4), yy, segW, barH);
-      ctx.strokeStyle = "#30363d"; ctx.strokeRect(barX + i * (segW + 4), yy, segW, barH);
-    }
-  }, "L" + commsN, commsColor);
+  // ── mission_phase ── RTL 진입 시 declared=RTL.
+  const declared = rtl ? "RTL" : "TRANSIT";
+  const behavioral = rtl ? "return_path" : encounter ? "evasive_loiter" : "cruise";
+  const phaseMatch = !encounter;
+  const phaseConf = 0.9 - (encounter ? 0.15 : 0);
 
-  // RAC 등급 (4단계 스텝바).
-  const racIdx = Math.max(0, Math.min(3, Math.round(mock.rac)));
-  const RAC_LABELS = ["정상", "주의", "경계", "위험"];
-  const RAC_COLORS = ["#3fb950", "#d29922", "#e08a2b", "#f85149"];
-  row("RAC 등급", (yy) => {
-    const segW = (barW - 12) / 4;
-    for (let i = 0; i < 4; i++) {
-      ctx.fillStyle = i <= racIdx ? RAC_COLORS[racIdx] : "#161b22";
-      ctx.fillRect(barX + i * (segW + 4), yy, segW, barH);
-      ctx.strokeStyle = "#30363d"; ctx.strokeRect(barX + i * (segW + 4), yy, segW, barH);
-    }
-  }, RAC_LABELS[racIdx], RAC_COLORS[racIdx]);
+  // ── proximity_object / acoustic_event ── T3 조우 시 anomaly.
+  const bearingToEnemy = ((Math.atan2(ENEMY.y - mock.pos.y, ENEMY.x - mock.pos.x) * 180) / Math.PI + 360) % 360;
+  // 실제 UAV 속도(mock.speedMps, phase별로 갱신됨) 기준 접근속도.
+  const closureRate = mock.speedMps + jitter * 0.3;
 
-  // 페이즈/적 탐지 푸터.
-  ctx.textAlign = "left"; ctx.font = "11px system-ui"; ctx.fillStyle = "#8b949e";
-  ctx.fillText("상태:", 14, H - 14);
-  ctx.fillStyle = PHASE_COLOR[mock.phase]; ctx.font = "bold 11px system-ui";
-  ctx.fillText(PHASE_LABEL[mock.phase], 46, H - 14);
-  ctx.textAlign = "right"; ctx.fillStyle = "#8b949e"; ctx.font = "11px system-ui";
-  ctx.fillText("적: " + (mock.enemyActive ? "T3 탐지" : "—"), W - 14, H - 14);
+  // ── operational_margin ── 배터리는 루프 내내 서서히 소모(mock.battery).
+  const batteryState = mock.battery > 40 ? "sufficient" : mock.battery > 15 ? "limited" : "critical";
+  const weatherState = "limited"; // 시나리오 고정 기상 열화(골든 예시와 동일).
+  const overall = batteryState === "sufficient" ? "limited" : batteryState;
+  const worstFactor = batteryState === "sufficient" ? "weather" : "battery";
+  const motorTempC = escTempC(jitter);
+  const vibration = frameVib(jitter);
+
+  const raw = {
+    position_consistency: {
+      quality: pcQuality,
+      state: gpsImuResidual < 2 ? "normal" : gpsImuResidual < 5 ? "degraded" : "anomaly",
+      summary: "잔차 " + gpsImuResidual.toFixed(1) + "m(baro " + baroResidual.toFixed(2) +
+        "/ias " + airspeedResidual.toFixed(2) + ")·위성 " + satelliteCount + "·HDOP " + hdop.toFixed(1) +
+        "/VDOP " + vdop.toFixed(1) + "·CN0 " + cn0.toFixed(1) + "dB",
+    },
+    link_status: {
+      quality: lsQuality,
+      state: commsN >= 2.5 ? "normal" : commsN >= 1.5 ? "degraded" : "anomaly",
+      summary: rssi + "dBm·loss " + Math.round(packetLoss * 100) + "%·" + latency + "ms",
+    },
+    rf_spectrum: {
+      quality: 1 - jam,
+      state: jam < 0.3 ? "normal" : jam < 0.6 ? "degraded" : "anomaly",
+      summary: "광대역이상 " + (jam >= 0.6 ? "O" : "X") +
+        (jam >= 0.6 ? "·방위 " + bearingToEnemy.toFixed(0) + "°" : ""),
+    },
+    link_integrity: {
+      quality: 1 - checksumFailRate,
+      state: checksumFailRate < 0.05 ? "normal" : checksumFailRate < 0.2 ? "degraded" : "anomaly",
+      summary: "체크섬실패 " + (checksumFailRate * 100).toFixed(1) + "%·시퀀스갭 " + seqGapCount,
+    },
+    encryption_status: {
+      quality: 0.99,
+      state: "normal",
+      summary: "AES256·정상",
+    },
+    mission_phase: {
+      quality: phaseConf,
+      state: phaseMatch ? "normal" : "degraded",
+      summary: declared + "/" + behavioral + (phaseMatch ? " 일치" : " 불일치"),
+    },
+    terrain_class: {
+      // stub(고정값) — 03 계층 AI 보조채널은 MVP 에서 고정값 반환(CLAUDE.md 정책).
+      quality: 0.55,
+      state: "degraded",
+      summary: "open_field·camera_verified·미스매치",
+    },
+    proximity_object: {
+      // 시나리오 핵심 반응 채널 — T3 조우 시 anomaly 로 전환.
+      quality: mock.enemyActive ? 0.55 : 0.95,
+      state: mock.enemyActive ? "anomaly" : "normal",
+      summary: mock.enemyActive
+        ? "person(무기형상) 방위" + bearingToEnemy.toFixed(0) + "° 접근중 " + closureRate.toFixed(1) + "m/s"
+        : "감지없음",
+    },
+    acoustic_event: {
+      quality: encounter ? 0.92 : 0.91,
+      state: encounter ? "anomaly" : "normal",
+      summary: encounter
+        ? "gunshot " + Math.round(118 + jitter * 2) + "dB 방위" + bearingToEnemy.toFixed(0) + "°"
+        : "ambient " + Math.round(45 + jitter * 3) + "dB",
+    },
+    obstacle_proximity: {
+      quality: 0.85 + jitter * 0.02,
+      state: "normal",
+      summary: "감지없음",
+    },
+    operational_margin: {
+      quality: 1.0,
+      state: overall === "limited" ? "degraded" : "anomaly",
+      summary: "배터리 " + Math.round(mock.battery) + "%·전반 " + overall + "(" +
+        (worstFactor === "weather" ? "날씨" : "배터리") + ":" + weatherState + ")·모터 " +
+        motorTempC.toFixed(1) + "°C·진동 " + vibration.toFixed(2) + "g",
+    },
+  };
+
+  const out = {};
+  CHANNEL_DEFS.forEach((def) => {
+    const c = raw[def.key];
+    out[def.key] = { quality: c.quality, state: c.state, delta: chanDelta(def.key, c.quality), summary: c.summary };
+  });
+  return out;
+}
+
+let _signalRowsBuilt = false;
+const _sigRowRefs = {};
+
+/** 신호 패널 행(채널당 1행)을 최초 1회 생성 — 이후엔 제자리 갱신만(append-scroll 아님). */
+function ensureSignalRows() {
+  if (_signalRowsBuilt || !el.signalsList) return;
+  CHANNEL_DEFS.forEach((def) => {
+    const row = document.createElement("div");
+    row.className = "sig-row";
+
+    const name = document.createElement("span");
+    name.className = "sig-name";
+    name.textContent = def.label;
+
+    const dot = document.createElement("span");
+    dot.className = "sig-dot";
+
+    const bar = document.createElement("span");
+    bar.className = "sig-bar";
+    const fill = document.createElement("span");
+    fill.className = "sig-bar-fill";
+    bar.appendChild(fill);
+
+    const qnum = document.createElement("span");
+    qnum.className = "sig-qnum";
+
+    const delta = document.createElement("span");
+    delta.className = "sig-delta";
+
+    const payload = document.createElement("span");
+    payload.className = "sig-payload";
+
+    row.append(name, dot, bar, qnum, delta, payload);
+    el.signalsList.appendChild(row);
+    _sigRowRefs[def.key] = { dot, fill, qnum, delta, payload };
+  });
+  _signalRowsBuilt = true;
+}
+
+/** 매 tick 채널 스냅샷으로 기존 행을 제자리 갱신. */
+function renderSignals() {
+  ensureSignalRows();
+  if (!el.signalsList) return;
+  const channels = computeChannels();
+  CHANNEL_DEFS.forEach((def) => {
+    const refs = _sigRowRefs[def.key];
+    const c = channels[def.key];
+    if (!refs || !c) return;
+    refs.dot.className = "sig-dot dot-" + c.state;
+    refs.fill.className = "sig-bar-fill fill-" + c.state;
+    refs.fill.style.width = Math.max(2, Math.round(c.quality * 100)) + "%";
+    refs.qnum.textContent = "q=" + c.quality.toFixed(2);
+    const deltaText = "Δ" + (c.delta >= 0 ? "+" : "") + c.delta.toFixed(2);
+    refs.delta.textContent = deltaText;
+    refs.delta.className = "sig-delta" + (c.delta < -0.3 ? " delta-alert" : "");
+    refs.payload.textContent = c.summary;
+    refs.payload.title = c.summary;
+  });
+}
+
+// ── UAV 기체 신호 패널(하단 행 리스트) — FC(ArduPilot/PX4급) 텔레메트리 mock ──
+// 03 의미 채널과 구분되는 기체 자체 상태. computeChannels/시스템 로그와 동일한
+// mock 원천값·공유 산식(mock.battery/gps/comms/speedMps/alt/att/gyro/vs)에서
+// 파생해 수치 모순이 없게 유지한다.
+
+const DEVICE_ROW_DEFS = [
+  { key: "att", label: "자세 ATT" },
+  { key: "gyro", label: "각속도 GYRO" },
+  { key: "battery", label: "배터리 BATT" },
+  { key: "gpsins", label: "GPS/INS" },
+  { key: "baro", label: "기압고도 BARO" },
+  { key: "speed", label: "속도 SPD" },
+  { key: "motor", label: "모터 ESC" },
+  { key: "c2link", label: "C2 링크 LINK" },
+  { key: "nav", label: "컴퍼스/홈 NAV" },
+];
+
+/** mock 원천값 → FC 텔레메트리 9행 스냅샷(표시 전용, 재판단 없음). */
+function computeDeviceStats() {
+  const jitter = Math.sin(mock.odo * 6);
+  const att = mock.att, gyro = mock.gyro;
+
+  const voltage = battVoltage();
+  const batteryState = mock.battery >= 40 ? "normal" : mock.battery >= 20 ? "degraded" : "anomaly";
+
+  const gpsImuResidual = gpsResidualM();
+  const gpsState = gpsImuResidual < 2 ? "normal" : gpsImuResidual < 5 ? "degraded" : "anomaly";
+
+  const rpmAvg = escRpm(jitter);
+  const motorTempC = escTempC(jitter);
+  const vibration = frameVib(jitter);
+
+  const jam = commsJam();
+  const linkState = mock.comms >= 2.5 ? "normal" : mock.comms >= 1.5 ? "degraded" : "anomaly";
+
+  // 대기속도 = 대지속도 ± 바람(wind) 오프셋 mock.
+  const airspeed = Math.max(0, mock.speedMps - 0.6 + jitter * 0.3);
+  // 홈(출발지) 직선거리(m).
+  const homeDistM = Math.round(
+    Math.hypot(mock.pos.x - PATH[0].x, mock.pos.y - PATH[0].y) * MAP_EXTENT_M);
+  const maxRate = Math.max(Math.abs(gyro.p), Math.abs(gyro.q), Math.abs(gyro.r));
+
+  return {
+    att: {
+      value: "R " + fmtSigned(att.roll, 1) + "° P " + fmtSigned(att.pitch, 1) +
+        "° Y " + fmtHeading(att.yaw) + "°",
+      state: Math.abs(att.roll) < 25 ? "normal" : "degraded",
+    },
+    gyro: {
+      value: "p " + fmtSigned(gyro.p, 1) + " q " + fmtSigned(gyro.q, 1) +
+        " r " + fmtSigned(gyro.r, 1) + "°/s",
+      state: maxRate < 40 ? "normal" : "degraded",
+    },
+    battery: {
+      value: Math.round(mock.battery) + "% · " + voltage.toFixed(1) + "V · " +
+        battCurrentA().toFixed(1) + "A",
+      state: batteryState,
+    },
+    gpsins: {
+      value: "3D " + (gpsImuResidual < 2 ? "FUSED" : "DEGRADED") + " · " +
+        gpsSats() + "위성 · HDOP " + gpsHdop().toFixed(1),
+      state: gpsState,
+    },
+    baro: {
+      value: "ALT " + Math.round(mock.alt) + "m · VS " + fmtSigned(mock.vs, 1) + "m/s",
+      state: "normal",
+    },
+    speed: {
+      value: "GS " + mock.speedMps.toFixed(1) + "m/s · AS " + airspeed.toFixed(1) + "m/s",
+      state: "normal",
+    },
+    motor: {
+      value: rpmAvg + "rpm · " + motorTempC.toFixed(0) + "°C · 진동 " + vibration.toFixed(2) + "g",
+      state: motorTempC >= 80 ? "anomaly"
+        : (motorTempC >= 60 || vibration >= 0.2) ? "degraded" : "normal",
+    },
+    c2link: {
+      value: linkRssi(jam) + "dBm · " + linkLatency(jam) + "ms · loss " +
+        Math.round(linkLoss(jam) * 100) + "%",
+      state: linkState,
+    },
+    nav: {
+      value: "HDG " + fmtHeading(att.yaw) + "° · HOME " + homeDistM + "m",
+      state: "normal",
+    },
+  };
+}
+
+let _deviceRowsBuilt = false;
+const _devRowRefs = {};
+
+/** 기체 신호 행(9개, [dot] LABEL value)을 최초 1회 생성 — 이후엔 제자리 갱신만. */
+function ensureDeviceRows() {
+  if (_deviceRowsBuilt || !el.deviceStrip) return;
+  DEVICE_ROW_DEFS.forEach((def) => {
+    const row = document.createElement("div");
+    row.className = "dev-row";
+
+    const dot = document.createElement("span");
+    dot.className = "sig-dot";
+
+    const label = document.createElement("span");
+    label.className = "dev-label";
+    label.textContent = def.label;
+
+    const value = document.createElement("span");
+    value.className = "dev-value";
+
+    row.append(dot, label, value);
+    el.deviceStrip.appendChild(row);
+    _devRowRefs[def.key] = { dot, value };
+  });
+  _deviceRowsBuilt = true;
+}
+
+/** 매 tick 기체 텔레메트리 스냅샷으로 기존 행을 제자리 갱신. */
+function renderDeviceStats() {
+  ensureDeviceRows();
+  if (!el.deviceStrip) return;
+  const stats = computeDeviceStats();
+  DEVICE_ROW_DEFS.forEach((def) => {
+    const refs = _devRowRefs[def.key];
+    const s = stats[def.key];
+    if (!refs || !s) return;
+    refs.dot.className = "sig-dot dot-" + s.state;
+    refs.value.textContent = s.value;
+    refs.value.title = s.value;
+  });
 }
 
 // ── 애니메이션 루프 (requestAnimationFrame) ────────────────────
@@ -775,9 +1328,12 @@ function frame(ts) {
   const dt = _lastTs ? Math.min((ts - _lastTs) / 1000, 0.05) : 0.016;
   _lastTs = ts;
   updateMock(dt);
+  updateViewshedLayer(ts);
   drawMap();
+  updatePhaseChip();
   drawProfile();
-  drawSignals();
+  renderSignals();
+  renderDeviceStats();
   requestAnimationFrame(frame);
 }
 
@@ -787,40 +1343,83 @@ function startMockSim() {
     requestAnimationFrame(frame);
   } else {
     updateMock(0.016);
+    updateViewshedLayer(performance.now());
     drawMap();
+    updatePhaseChip();
     drawProfile();
-    drawSignals();
+    renderSignals();
+    renderDeviceStats();
   }
 }
 
 // ── 진입점 ────────────────────────────────────────────────────
 
-/** 서버 /config 에서 로그수집기 WS URL 기본값을 best-effort 로 가져온다. */
+/** 공유 설정 로더(window.D4D_CONFIG)에서 로그수집기 WS URL 을 가져온다. */
 function loadConfig() {
-  if (typeof fetch !== "function") return Promise.resolve();
-  return fetch("/config")
-    .then((r) => (r.ok ? r.json() : null))
+  const cfgPromise = typeof window !== "undefined" && window.D4D_CONFIG
+    ? window.D4D_CONFIG
+    : loadSharedConfig();
+  return cfgPromise
     .then((cfg) => {
-      if (cfg && cfg.log_ws_url && el.wsUrl) el.wsUrl.value = cfg.log_ws_url;
+      if (cfg && cfg.logWsUrl) state.logWsUrl = cfg.logWsUrl;
     })
     .catch(() => { /* 설정 조회 실패 시 기본값 유지 */ });
 }
 
-function init() {
-  if (el.wsUrl) el.wsUrl.value = DEFAULT_LOG_WS_URL;
-  startMockSim();
+/** 시스템 로그 회전 tick — 간격이 timeScale로 나뉘어 배속 시 로그 밀도도 함께 스케일된다. */
+function scheduleSysLog() {
+  setTimeout(() => {
+    emitPeriodicSysLog();
+    scheduleSysLog();
+  }, SYS_LOG_INTERVAL_MS / mock.timeScale);
+}
 
-  if (el.connectBtn) el.connectBtn.addEventListener("click", toggleConnect);
-  if (el.clearBtn) el.clearBtn.addEventListener("click", () => {
-    el.list.innerHTML = "";
-    updateCount();
+/** 탭 전환(관측 / 관측소) — 뷰 hidden 토글 + 탭 버튼 active 갱신.
+ * 전역 함수 — gcs.js 가 파이프라인 실행 후 관측 탭으로 복귀할 때도 호출한다.
+ * rAF 루프는 계속 돌고, 숨김 캔버스는 drawMap/drawProfile 의 clientWidth 가드가 스킵한다. */
+function switchTab(view) {
+  document.querySelectorAll("#tab-nav .tab-btn").forEach((btn) => {
+    const active = btn.dataset.view === view;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
   });
-  if (el.mockBtn) el.mockBtn.addEventListener("click", injectMock);
-  if (el.mockAuto) el.mockAuto.addEventListener("change", toggleMockAuto);
-  [el.filterLevel, el.filterLayer, el.filterCid].forEach((node) => {
-    if (node) node.addEventListener("input", applyFilters);
-    if (node) node.addEventListener("change", applyFilters);
+  const obs = document.getElementById("view-observation");
+  const gcsView = document.getElementById("view-gcs");
+  if (obs) obs.hidden = view !== "observation";
+  if (gcsView) gcsView.hidden = view !== "gcs";
+}
+
+/** 탭 버튼 클릭 바인딩. */
+function initTabs() {
+  const nav = document.getElementById("tab-nav");
+  if (!nav) return;
+  nav.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tab-btn");
+    if (btn && btn.dataset.view) switchTab(btn.dataset.view);
   });
+}
+
+/** 배속 세그먼트 컨트롤(×1/×2/×4/×8) — 클릭 시 mock.timeScale 갱신 + active 토글. */
+function initSpeedControl() {
+  const ctl = document.getElementById("speed-control");
+  if (!ctl) return;
+  ctl.addEventListener("click", (e) => {
+    const btn = e.target.closest(".speed-btn");
+    if (!btn) return;
+    mock.timeScale = Number(btn.dataset.scale) || 1;
+    ctl.querySelectorAll(".speed-btn").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+    });
+  });
+}
+
+function init() {
+  startMockSim();
+  initTabs();
+  initSpeedControl();
+
+  // UAV system log mock generator (panel C) — continuous, scenario-linked.
+  scheduleSysLog();
 
   // /config 로 기본 URL 확정 후 자동 연결(수집기 미기동이면 backoff 재연결).
   loadConfig().then(connect);
