@@ -84,10 +84,25 @@ def has_real_frame(imagery: dict) -> bool:
     return isinstance(src, dict) and bool(src.get("bytes_b64") or src.get("path"))
 
 
+def _safe_int(value, default: int) -> int:
+    """치수 필드 → int. 비숫자/None/float-str 등 malformed 는 default(크래시 대신 그레이스풀)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: value 가 이미 float("inf") 면 첫 int() 에서 발생.
+        try:
+            return int(float(value))  # "4.5" 류는 절삭 수용.
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: int(float("inf"))/"1e309" — 비유한 float 은 default 로.
+            return default
+
+
 def resolve_frame(imagery: dict) -> Optional[PerceptionFrame]:
     """02 raw imagery → 정규화 PerceptionFrame. 실 소스 없으면 None(mock 폴백).
 
     imagery.eo_frame(선택): {kind, fmt, width, height, channels, bytes_b64|path, meta}.
+    **malformed eo_frame(비숫자 치수·비-dict meta 등)은 크래시하지 않고 안전 파싱한다** —
+    perception 경로의 "crash 0, mock 폴백" 원칙(#357/#364). bytes 만 유효하면 프레임을 낸다.
     """
     if not has_real_frame(imagery):
         return None
@@ -96,14 +111,15 @@ def resolve_frame(imagery: dict) -> Optional[PerceptionFrame]:
     if raw is None:
         return None
     fmt = str(src.get("fmt", "raw"))
+    meta = src.get("meta")
     frame: PerceptionFrame = {
         "kind": str(src.get("kind", "eo")),
         "fmt": fmt,
-        "width": int(src.get("width", 0)),
-        "height": int(src.get("height", 0)),
-        "channels": int(src.get("channels", 3)),
+        "width": _safe_int(src.get("width", 0), 0),
+        "height": _safe_int(src.get("height", 0), 0),
+        "channels": _safe_int(src.get("channels", 3), 3),
         "raw_bytes": raw,
         "array": _try_decode(raw, fmt),
-        "meta": dict(src.get("meta") or {}),
+        "meta": dict(meta) if isinstance(meta, dict) else {},
     }
     return frame

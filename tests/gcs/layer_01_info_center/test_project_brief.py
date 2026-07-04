@@ -61,6 +61,50 @@ def test_no_alt_band_default_altitude() -> None:
     assert brief["corridor"]["waypoints"][0]["alt_m"] is not None  # 기본 고도
 
 
+def test_half_width_preserved_in_projected_corridor() -> None:
+    """corridor_spec.half_width 가 투영 후 corridor.half_width 로 보존돼야 한다 (#363)."""
+    state, sm = _state()
+    brief = project_onboard_brief(state, sortie_id=sm["sortie_id"])
+    assert brief["corridor"].get("half_width") == 20, (
+        "corridor_spec.half_width=20 이 투영 후 corridor.half_width 로 전달돼야 함"
+    )
+
+
+def test_half_width_none_when_not_in_spec() -> None:
+    """half_width 없는 corridor_spec 투영 시 corridor.half_width 는 None 또는 키 부재."""
+    sm = {
+        "sortie_id": "PRJ-02",
+        "mission_context": "정찰",
+        "posture": {"watchcon": 3, "defcon": 3, "infocon": 4},
+        "drone_profile": {"spare_asset_available": True, "armament": [], "battery_pct": 65},
+        "corridor_spec": {"type": "polyline_buffer", "axis": [[37.70, 127.20]],
+                          "alt_min": 50, "alt_max": 300},  # half_width 없음
+        "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
+        "uav_mission": {"name": "r", "purpose": "정찰", "type": "recon", "goal": None},
+        "bases": [],
+    }
+    state = assemble_mettc(sm, normalize_c4i({}), signals=[])
+    brief = project_onboard_brief(state, sortie_id=sm["sortie_id"])
+    # half_width 없으면 corridor_deviation 이 default fallback 을 써야 함
+    assert brief["corridor"].get("half_width") is None
+
+
+def test_half_width_used_as_threshold_source_end_to_end() -> None:
+    """GCS 투영 후 onboard corridor 이탈 감시가 half_width 를 임계로 사용해야 한다 (#363)."""
+    from onboard.corridor import assess_corridor_deviation
+    from onboard.layer_02_sensor.mock_source import build_normal_envelope
+
+    state, sm = _state()  # half_width=20
+    brief = project_onboard_brief(state, sortie_id=sm["sortie_id"])
+    raw = build_normal_envelope("E2E", 0, 0)
+    out = assess_corridor_deviation(raw, brief)
+    # half_width=20 이 브리핑에 실려 threshold_source 가 "half_width" 이어야 한다.
+    assert out["threshold_source"] == "half_width", (
+        f"threshold_source={out['threshold_source']!r} — 'half_width' 기대"
+    )
+    assert out["threshold_m"] == 20
+
+
 def test_legacy_corridor_preserves_waypoint_alt_and_ids_and_base_alt() -> None:
     # codex P1 회귀: 레거시 corridor 라운드트립이 per-waypoint alt_m/id, base alt_m 을
     # 소실하면 안 됨 (승인 비행계획 변경 방지).
