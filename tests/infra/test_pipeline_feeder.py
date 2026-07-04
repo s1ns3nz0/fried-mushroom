@@ -1,11 +1,20 @@
-"""pipeline_feeder 단위 테스트 (네트워크 없음)."""
+"""pipeline_feeder 단위 테스트 (네트워크 없음).
+
+이 테스트는 루트 CI(`python -m pytest`, testpaths=["tests"])가 수집하도록 tests/
+아래에 둔다 — infra/log 의 pipeline_feeder 는 sys.path 로 임포트한다.
+pipeline_feeder 는 표준 라이브러리만 사용(httpx 는 post_entries 내 지연 임포트)하므로
+importorskip 불필요.
+"""
+
+from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
+sys.path.insert(0, str(_INFRA_LOG))
 
-from pipeline_feeder import cycle_to_log_entries, post_entries
+from pipeline_feeder import cycle_to_log_entries, post_entries  # noqa: E402
 
 LAYER_ORDER = ["abstraction", "threat", "risk", "response", "flight_plan"]
 
