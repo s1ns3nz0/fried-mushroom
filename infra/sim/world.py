@@ -25,12 +25,20 @@ def _bearing_deg(a: dict, b: dict) -> float:
 
 
 def _advance(pos: dict, heading_deg: float, dist_m: float) -> dict:
-    """pos 에서 heading 방향으로 dist_m 이동한 새 좌표."""
+    """pos 에서 heading 방향으로 dist_m 이동한 새 좌표.
+
+    lat/lon 은 7자리(≈1cm)로 반올림한다 — cos/sin 의 마지막 ULP 가 libm(파이썬/플랫폼)
+    마다 달라 envelope→run_cycle 판정이 버전 간 갈리는 것을 막는다(포터블 결정론).
+    """
     rad = math.radians(heading_deg)
     dnorth, deast = dist_m * math.cos(rad), dist_m * math.sin(rad)
     dlat = dnorth / 111_320.0
     dlon = deast / (111_320.0 * math.cos(math.radians(pos["lat"])))
-    return {"lat": pos["lat"] + dlat, "lon": pos["lon"] + dlon, "alt_m": pos["alt_m"]}
+    return {
+        "lat": round(pos["lat"] + dlat, 7),
+        "lon": round(pos["lon"] + dlon, 7),
+        "alt_m": round(pos["alt_m"], 3),
+    }
 
 
 def _dist_m(a: dict, b: dict) -> float:
@@ -79,9 +87,11 @@ class World:
             step = max(-_ALT_RATE_M_PER_S * dt, min(_ALT_RATE_M_PER_S * dt, float(alt_delta)))
             self._pos["alt_m"] += step
 
-        # 헤딩 결정: 회피(REROUTE/RTL, target_bearing) → 지시 방위, 아니면 route 추종.
+        # 헤딩 결정: 회피(replan≠NONE + target_bearing 지시) → 그 방위로 조향, 아니면 route 추종.
+        # action 명(REROUTE/ALTITUDE_CHANGE 등)에 무관하게 target_bearing_deg 가 있으면
+        # 그게 위협 반대 회피방위이므로 그쪽으로 꺾는다 (수평 회피 궤적).
         target = self._target()
-        if action in ("REROUTE", "ALTITUDE_CHANGE_REROUTE") and command.get("target_bearing_deg") is not None:
+        if command.get("target_bearing_deg") is not None and command.get("replan_scope", "NONE") != "NONE":
             self._heading = float(command["target_bearing_deg"]) % 360.0
             self._phase = "EVADE"
         elif action == "RTL":
@@ -90,6 +100,8 @@ class World:
             self._phase = "RTL"
         elif target is not None:
             self._heading = _bearing_deg(self._pos, target)
+        # 헤딩 포터블 반올림(atan2 ULP 버전차 차단).
+        self._heading = round(self._heading % 360.0, 6)
         # 도착 판정.
         if target is None:
             self._phase = "ARRIVED"
