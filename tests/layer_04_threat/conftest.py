@@ -26,9 +26,16 @@ from onboard.shared.schemas import AbstractionOutput
 _EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 
 
-def _abstraction_from_raw(name: str) -> AbstractionOutput:
+def _abstraction_from_raw(
+    name: str, previous_qualities_name: str | None = None
+) -> AbstractionOutput:
     raw = json.loads((_EXAMPLES / name).read_text(encoding="utf-8"))
-    return layer_03.run(raw)
+    previous_qualities = (
+        json.loads((_EXAMPLES / previous_qualities_name).read_text(encoding="utf-8"))
+        if previous_qualities_name is not None
+        else None
+    )
+    return layer_03.run(raw, previous_qualities)
 
 
 @pytest.fixture
@@ -47,6 +54,17 @@ def abstraction_t4() -> AbstractionOutput:
 def abstraction_t7() -> AbstractionOutput:
     """raw_t7 → 실측 03 출력 (obstacle_proximity 충돌예상시간<3초, LAND → T7)."""
     return _abstraction_from_raw("raw_t7.json")
+
+
+@pytest.fixture
+def abstraction_t5() -> AbstractionOutput:
+    """raw_t5 + qualities_t5_primed → 실측 03 출력 (terrain_class quality_delta 급락 → T5).
+
+    #79/#97 종단 언블록. previous_qualities(terrain_class=1.0) 대비 raw_t5 의
+    terrain camera_confidence=0.65 → quality_delta=-0.35<-0.3 → T5 단일채널(terrain_class) 매칭.
+    proximity_object 는 previous_quality 미주입이라 delta=0.0 → 미매칭.
+    """
+    return _abstraction_from_raw("raw_t5.json", "qualities_t5_primed.json")
 
 
 @pytest.fixture

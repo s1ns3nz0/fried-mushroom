@@ -26,8 +26,13 @@ def _load(name: str) -> dict:
     return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
 
 
-def _run(scenario: str) -> dict:
-    return run_cycle(_load(f"raw_{scenario}.json"), _load(f"mission_brief_{scenario}.json"))
+def _run(scenario: str, prev_qualities_name: str | None = None) -> dict:
+    previous_qualities = _load(prev_qualities_name) if prev_qualities_name is not None else None
+    return run_cycle(
+        _load(f"raw_{scenario}.json"),
+        _load(f"mission_brief_{scenario}.json"),
+        previous_qualities=previous_qualities,
+    )
 
 
 def test_t3_proximity_smallarms_recon() -> None:
@@ -64,6 +69,31 @@ def test_t1_gps_spoof_remote() -> None:
     assert out["response"]["nav_mode"] is None
     assert out["flight_plan"]["replan_scope"] == "NONE"
     assert out["flight_plan"]["reroute_anchor"] is None  # MAINTAIN → 재계획 없으므로 anchor 불필요
+
+
+def test_t5_laser_optical_remote() -> None:
+    """t5(레이저/광학 교란, 정찰): terrain_class quality_delta 급락(1.0→0.65=-0.35<-0.3) → T5.
+
+    REMOTE, base_rate 0.08 → l_class D, watchcon/defcon=3 → +1 → C, mission_abort→Marginal(3),
+    RAC_MATRIX[(C,3)]=Medium. 단일채널 det confidence 0.7(교차검증 폴백), 중기.
+    previous_qualities 정본 주입 필요(quality_delta 파생, #79/#97).
+    """
+    out = _run("t5", "qualities_t5_primed.json")
+    primary = out["threat"]["primary"]
+    assert primary["threat_event"] == "T5"
+    assert primary["potential_outcome"] == "mission_abort"
+    assert primary["confidence"] == 0.7
+    assert primary["confidence_source"] == "deterministic"
+    assert primary["kill_chain_stage"] == "중기"
+    assert out["response"]["primary_threat_event"] == "T5"
+    assert out["response"]["threat_category"] == "REMOTE"
+    assert out["response"]["rac"] == "Medium"
+    assert out["response"]["flight_action"] == "MAINTAIN"
+    assert out["response"]["comms_level"] == "L1"
+    assert out["response"]["nav_mode"] is None
+    assert out["response"]["payload_action"] == []
+    assert out["flight_plan"]["replan_scope"] == "NONE"
+    assert out["flight_plan"]["reroute_anchor"] is None
 
 
 def test_t2_cyber_hijack_remote() -> None:
