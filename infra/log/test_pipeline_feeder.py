@@ -33,12 +33,16 @@ def _full_result_high_rac():
                 {
                     "threat_event": "T3",
                     "rac": "High",
+                    "l_class_final": "B",
+                    "severity_label_final": "Critical",
                     "compound_urgency_score": 0.4179,
                     "priority_rank": 1,
                 },
                 {
                     "threat_event": "T6",
                     "rac": "Medium",
+                    "l_class_final": "D",
+                    "severity_label_final": "Marginal",
                     "compound_urgency_score": 0.11,
                     "priority_rank": 2,
                 },
@@ -152,6 +156,95 @@ def test_missing_layers_are_skipped():
     assert entries[0]["layer"] == "risk"
     assert entries[0]["level"] == "info"
     assert "ambient=Medium" in entries[0]["log"]
+
+
+# ── 결정 로그 항목 계약 (#105 04 탐지 / #104 05 평가) — 라인 포맷 고정 ──
+
+
+def test_threat_decision_line_exact_contract():
+    """#105: primary 위협의 threat_event·confidence·kill_chain_stage + 후보 수."""
+    entries = cycle_to_log_entries("C1", _full_result_high_rac())
+    threat = entries[1]
+    assert threat["log"] == "04 위협 · primary=T3 conf=0.92 killchain=후기 cands=1"
+    assert threat["level"] == "warn"
+
+
+def test_threat_no_candidates_exact_contract():
+    """#105: 후보 없음 케이스 표기(실 04 출력 형태: primary=None, candidates=[])."""
+    result = {"threat": {"primary": None, "candidates": [], "mission_phase": "unknown"}}
+    entry = cycle_to_log_entries("C1", result)[0]
+    assert entry["log"] == "04 위협 · 후보 없음"
+    assert entry["level"] == "info"
+
+
+def test_risk_decision_line_exact_contract():
+    """#104: rank-1 후보의 rac·l_class_final·severity·urgency·priority 표기."""
+    entries = cycle_to_log_entries("C1", _full_result_high_rac())
+    risk = entries[2]
+    assert risk["log"] == "05 위험 · RAC=High L=B S=Critical urgency=0.42 rank=1"
+    assert risk["level"] == "error"
+
+
+def test_risk_rank1_selected_when_list_unordered():
+    """#104: candidates 가 rank 순이 아니어도 priority_rank=1 후보를 표기."""
+    result = {
+        "risk": {
+            "candidates": [
+                {
+                    "threat_event": "T6",
+                    "rac": "Medium",
+                    "l_class_final": "D",
+                    "severity_label_final": "Marginal",
+                    "compound_urgency_score": 0.11,
+                    "priority_rank": 2,
+                },
+                {
+                    "threat_event": "T3",
+                    "rac": "Serious",
+                    "l_class_final": "B",
+                    "severity_label_final": "Critical",
+                    "compound_urgency_score": 0.4179,
+                    "priority_rank": 1,
+                },
+            ],
+            "ambient_rac": None,
+        }
+    }
+    entry = cycle_to_log_entries("C1", result)[0]
+    assert entry["log"] == "05 위험 · RAC=Serious L=B S=Critical urgency=0.42 rank=1"
+    assert entry["level"] == "error"
+
+
+def test_risk_ambient_exact_contract():
+    """#104: ambient_rac(위협 없음) 케이스 표기(실 05 출력: candidates=[], ambient_rac='Low')."""
+    entry = cycle_to_log_entries("C1", {"risk": {"candidates": [], "ambient_rac": "Low"}})[0]
+    assert entry["log"] == "05 위험 · 위협 없음 ambient=Low"
+    assert entry["level"] == "info"
+
+
+def test_risk_level_mapping_by_rac():
+    """#104: High/Serious→error, 그 외(rank-1 존재)→warn 레벨 매핑 고정."""
+
+    def _entry(rac):
+        result = {
+            "risk": {
+                "candidates": [
+                    {
+                        "rac": rac,
+                        "l_class_final": "C",
+                        "severity_label_final": "Marginal",
+                        "compound_urgency_score": 0.2,
+                        "priority_rank": 1,
+                    }
+                ],
+                "ambient_rac": None,
+            }
+        }
+        return cycle_to_log_entries("C1", result)[0]
+
+    assert _entry("Serious")["level"] == "error"
+    assert _entry("Medium")["level"] == "warn"
+    assert _entry("Low")["level"] == "warn"
 
 
 class _FakeResponse:

@@ -51,8 +51,9 @@ def _threat_log(layer_out: dict) -> tuple[str, str]:
     except (TypeError, ValueError):
         conf = 0.0
     killchain = primary.get("kill_chain_stage", "-") or "-"
+    n_candidates = len(layer_out.get("candidates") or [])
     return (
-        f"04 위협 · primary={event} conf={conf:.2f} killchain={killchain}",
+        f"04 위협 · primary={event} conf={conf:.2f} killchain={killchain} cands={n_candidates}",
         "warn",
     )
 
@@ -74,12 +75,14 @@ def _risk_log(layer_out: dict) -> tuple[str, str]:
     if not isinstance(c, dict):
         c = {}
     rac = c.get("rac", "-")
+    l_class = c.get("l_class_final", "-") or "-"
+    severity = c.get("severity_label_final", "-") or "-"
     try:
         urgency = float(c.get("compound_urgency_score", 0.0))
     except (TypeError, ValueError):
         urgency = 0.0
     rank = c.get("priority_rank", "-")
-    log = f"05 위험 · RAC={rac} urgency={urgency:.2f} rank={rank}"
+    log = f"05 위험 · RAC={rac} L={l_class} S={severity} urgency={urgency:.2f} rank={rank}"
     return log, ("error" if rac in {"High", "Serious"} else "warn")
 
 
