@@ -73,10 +73,44 @@ uav 소스에서 수신 → 모든 뷰어로 브로드캐스트 (signal/decision
 
 ## 실행
 
+### 대시보드 단독
+
 ```bash
 pip install -r requirements.txt
 uvicorn main:app --reload
 # http://localhost:8000
+```
+
+### 전체 스택 (수집기 + 시뮬 피더 + 대시보드)
+
+로그수집기(`infra/log/log_server.py`)·신호발생기(`infra/vizsim/runner.py`)·대시보드를
+한 번에 띄우는 로컬 dev 런처가 있다:
+
+```bash
+./scripts/dev_stack.sh
+# 대시보드: http://localhost:8080  (Ctrl-C 로 전체 종료)
+```
+
+주요 환경변수(모두 선택, 기본값은 `scripts/dev_stack.sh` 참고):
+
+| 변수 | 기본값 | 의미 |
+|---|---|---|
+| `COLLECTOR_PORT` | `8500` | 로그수집기(`log_server.py`) 포트 |
+| `DASH_PORT` | `8080` | 대시보드 포트 |
+| `SEED` | `42` | 시뮬 시드 |
+| `BRIEF` | `examples/mission_brief_t3.json` | 미션 브리핑 JSON 경로 |
+| `RATE` | `2` | 사이클 속도(Hz) |
+| `SPEED` | `1` | 시뮬 속도 배율 |
+| `DIRECTIVE` | (없음) | GCS 지시서(set_mission) JSON 경로 — 지정 시 위협 편향 반영 |
+
+`COLLECTOR_PORT` 를 바꾸면 수집기·시뮬 피더·대시보드가 모두 그 포트로 정합된다.
+프론트(`static/app.js`)는 정적 `/config.json` 을 백엔드 `/config` 보다 먼저 조회하므로,
+`dev_stack.sh` 는 실행 중 `static/config.json` 을 `COLLECTOR_PORT` 기준으로 런타임
+재생성했다가 종료 시(Ctrl-C 포함) 원본으로 복원한다 — 저장소에 커밋된
+`config.json` 의 기본값(8500)은 실행 후에도 그대로 유지된다:
+
+```bash
+COLLECTOR_PORT=8600 ./scripts/dev_stack.sh
 ```
 
 ## 현재 상태
