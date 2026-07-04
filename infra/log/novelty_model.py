@@ -67,7 +67,10 @@ class NoveltyDetector:
         cats: list[float] = []
         for c in _CATEGORICAL:
             val = record.get(c)
-            cats.extend(1.0 if val == v else 0.0 for v in s["vocab"][c])
+            if val is None:  # 결측 카테고리 → 학습 주변빈도 대치(중립). 수치 평균대치와 대칭.
+                cats.extend(s["cat_freq"][c])
+            else:
+                cats.extend(1.0 if val == v else 0.0 for v in s["vocab"][c])
         return np.concatenate([num, np.array(cats, dtype=float)])
 
     def _knn_distance(self, x: "np.ndarray", *, exclude_self: bool) -> float:
@@ -111,6 +114,12 @@ def fit_novelty_detector(records: list[dict[str, Any]]) -> NoveltyDetector:
             val = r.get(c)
             if val is not None and val not in vocab[c]:
                 vocab[c].append(val)
+    # 카테고리 주변빈도(결측 대치용). 해당 필드 보유 표본 대비 각 값의 비율.
+    cat_freq: dict[str, list[float]] = {}
+    for c in _CATEGORICAL:
+        present = [r.get(c) for r in samples if r.get(c) is not None]
+        n = len(present)
+        cat_freq[c] = [present.count(v) / n if n else 0.0 for v in vocab[c]]
     num_matrix = np.array([_numeric_row(r) for r in samples], dtype=float)
     # 전열 결측인 컬럼은 0으로 채워 중립화(nanmean NaN 방지) 후 결측무시 평균/표준편차.
     all_nan = np.isnan(num_matrix).all(axis=0)
@@ -120,8 +129,8 @@ def fit_novelty_detector(records: list[dict[str, Any]]) -> NoveltyDetector:
     std[std == 0] = 1.0  # 상수/전열결측 피처 div0 방지
 
     k = min(_K, len(samples) - 1)  # 자기 제외 후 남는 이웃 수 보장
-    state = {"X": None, "mean": mean, "std": std, "vocab": vocab, "k": k,
-             "threshold": 0.0, "self_dists": None}
+    state = {"X": None, "mean": mean, "std": std, "vocab": vocab, "cat_freq": cat_freq,
+             "k": k, "threshold": 0.0, "self_dists": None}
     det = NoveltyDetector(state)
     X = np.array([det._vectorize(r) for r in samples], dtype=float)
     state["X"] = X
