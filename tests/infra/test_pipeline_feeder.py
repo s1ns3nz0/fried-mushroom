@@ -8,13 +8,7 @@ importorskip 불필요.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
-sys.path.insert(0, str(_INFRA_LOG))
-
-from pipeline_feeder import cycle_to_log_entries, post_entries  # noqa: E402
+from pipeline_feeder import cycle_to_log_entries, post_entries
 
 LAYER_ORDER = ["abstraction", "threat", "risk", "response", "flight_plan"]
 

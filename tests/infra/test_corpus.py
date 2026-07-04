@@ -5,14 +5,8 @@
 corpus.py 는 표준 라이브러리만 쓰므로 httpx/fastapi 불필요.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
-
 import pytest
 from corpus import CorpusStore, episode_to_corpus_records
-
 
 def _episode():
     """정찰 임무 enriched episode (docs/RAG-corpus.md §3-1 형태)."""
