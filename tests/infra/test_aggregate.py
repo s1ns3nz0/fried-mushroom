@@ -5,11 +5,6 @@ test_corpus.py와 동일하게 infra/log 를 sys.path 로 임포트(파이프라
 → 계약 소스 오브 트루스: docs/RAG-corpus.md §2-2, §3-1.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "log"))
-
 from aggregate import (  # noqa: E402
     aggregate_threat_events,
     aggregate_threat_judgments,

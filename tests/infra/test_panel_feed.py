@@ -7,11 +7,7 @@
 아래에 둔다 — infra/log 의 panel_feed 는 sys.path 로 임포트한다(파이프라인 무변경).
 """
 
-import sys
 from pathlib import Path
-
-_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
-sys.path.insert(0, str(_INFRA_LOG))  # panel_feed 임포트 (onboard 는 pythonpath=src)
 
 from onboard.layer_02_sensor.mock_source import (  # noqa: E402
     build_normal_envelope,

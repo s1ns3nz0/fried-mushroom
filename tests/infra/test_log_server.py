@@ -14,14 +14,9 @@ fastapi/starlette 미설치 환경에서는 자동 skip.
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
 import pytest
-
-_INFRA_LOG = Path(__file__).resolve().parents[2] / "infra" / "log"
-sys.path.insert(0, str(_INFRA_LOG))
 
 pytest.importorskip("fastapi")
 
