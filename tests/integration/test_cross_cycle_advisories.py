@@ -282,3 +282,66 @@ def test_chain_link_loss_escalates_over_cycles():
         assert severities[i] >= severities[i - 1], (
             f"cycle {i}: severity 감소 ({severities[i-1]}→{severities[i]}) — 에스컬레이션 단조성 위반"
         )
+
+
+# ── 5. 분할 스트림 resume — advisory 윈도우·interval seed (codex P2) ──────────
+
+
+def test_split_stream_resume_preserves_outage_streak():
+    """분할 이어붙이기(윈도우 seed)가 단일 호출과 동일 advisory 를 내야 한다."""
+    brief = _brief()
+    mono = run_cycle_chain([(_raw_link_lost(i), brief) for i in range(12)])
+    b1 = run_cycle_chain([(_raw_link_lost(i), brief) for i in range(8)])
+    b2 = run_cycle_chain(
+        [(_raw_link_lost(i), brief) for i in range(8, 12)],
+        previous_link_window=extract_link_window(b1),
+        previous_nav_window=extract_nav_window(b1),
+        previous_ts_ms=7 * 1000,
+    )
+    assert mono[-1]["link_loss"]["recommended_action"] == "RTL"  # 12s ≥ rtl 10s
+    assert b2[-1]["link_loss"]["recommended_action"] == mono[-1]["link_loss"]["recommended_action"]
+    assert b2[-1]["link_loss"]["outage_seconds"] == mono[-1]["link_loss"]["outage_seconds"]
+
+
+def test_three_batch_resume_accumulates_window():
+    """3개 배치: 윈도우 누적 seed 로 12 두절이 온전히 카운트돼 RTL."""
+    brief = _brief()
+    win: list = []
+    last_ts = None
+    last = None
+    for start in (0, 4, 8):
+        batch = [(_raw_link_lost(i), brief) for i in range(start, start + 4)]
+        res = run_cycle_chain(batch, previous_link_window=win, previous_ts_ms=last_ts)
+        win = win + extract_link_window(res)
+        last_ts = (start + 3) * 1000
+        last = res[-1]
+    assert last["link_loss"]["recommended_action"] == "RTL"
+
+
+def test_split_stream_without_seed_undercounts():
+    """대조군: 미seed 이어붙이면 스트릭 리셋 → 과소집계(RTL 아님)."""
+    brief = _brief()
+    b2 = run_cycle_chain([(_raw_link_lost(i), brief) for i in range(8, 12)])
+    assert b2[-1]["link_loss"]["recommended_action"] != "RTL"
+
+
+def test_cycle_interval_derived_from_ts_ms():
+    """지속시간이 ts_ms cadence 에서 도출 — 10Hz 스트림은 1Hz 처럼 오발하지 않음."""
+    brief = _brief()
+
+    def _lost_at(seq, ts_ms):
+        raw = build_normal_envelope("LL", seq, ts_ms)
+        raw["c2_link"].update({"rssi_dbm": -98, "packet_loss_rate": 1.0, "latency_ms": 400})
+        return raw
+
+    pairs = [(_lost_at(i, i * 100), brief) for i in range(12)]  # 10Hz × 12 ≈ 1.1s
+    last = run_cycle_chain(pairs)[-1]["link_loss"]
+    assert last["recommended_action"] != "RTL"
+    assert last["outage_seconds"] < 3.0
+
+
+def test_chain_result_contains_failsafe_key():
+    """run_cycle_chain 각 결과에 failsafe 통합 advisory 키가 있어야 한다 (#399)."""
+    results = run_cycle_chain([(_raw_normal(i), _brief()) for i in range(2)])
+    for r in results:
+        assert "failsafe" in r and r["failsafe"]["advisory_only"] is True

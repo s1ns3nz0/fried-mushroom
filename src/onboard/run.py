@@ -202,10 +202,23 @@ def extract_nav_window(results: list[dict]) -> list[dict]:
     return window
 
 
+def _cycle_interval_s(ts_ms, prev_ts_ms) -> float:
+    """연속 두 raw 의 ts_ms 델타(초). 산출 불가(결측/역행) 시 1.0 폴백.
+
+    advisory 지속시간(outage/untrusted_seconds)·HOLD/RTL/LAND 임계는 실경과시간에 좌우되므로
+    스트림 실제 cadence 를 ts_ms 로 도출한다(1Hz 하드코딩 금지, codex P2)."""
+    if isinstance(ts_ms, (int, float)) and isinstance(prev_ts_ms, (int, float)) and ts_ms > prev_ts_ms:
+        return (ts_ms - prev_ts_ms) / 1000.0
+    return 1.0
+
+
 def run_cycle_chain(
     pairs,
     previous_qualities: dict | None = None,
     previous_flight_plan_state: dict | None = None,
+    previous_link_window: list[dict] | None = None,
+    previous_nav_window: list[dict] | None = None,
+    previous_ts_ms: int | float | None = None,
 ) -> list[dict]:
     """(raw, mission_brief) 시퀀스를 연속 실행하며 사이클 간 상태를 자동 스레딩한다 (#133).
 
@@ -213,22 +226,33 @@ def run_cycle_chain(
     previous_qualities/previous_flight_plan_state 로 자동 연결한다 — CLI `--prev-qualities`
     수동 주입 없이도 quality_delta(T5 광학 교란 등)가 연속 스트림에서 자연 발화한다.
 
-    각 사이클 결과에 link_loss/nav_integrity cross-cycle advisory 를 추가한다 (#389):
-    - link_loss: 누적 link_status 윈도우 → C2 통신두절 failsafe 타임라인 advisory
-    - nav_integrity: 누적 position_consistency 윈도우 → GNSS 항법 failsafe 타임라인 advisory
+    각 사이클 결과에 cross-cycle advisory 를 추가한다:
+    - link_loss (#389): 누적 link_status 윈도우 → C2 통신두절 failsafe 타임라인
+    - nav_integrity (#389): 누적 position_consistency 윈도우 → GNSS 항법 failsafe 타임라인
+    - failsafe (#399): endurance(energy)·link_loss(comms)·nav_integrity(nav) 3축을
+      most-conservative-wins 로 융합한 통합 failsafe 권고
     CRITICAL: advisory_only — 결정론 판정(risk/threat/response/flight_plan) 불변(SCC-1).
 
     pairs: iterable of (raw, mission_brief). 반환: 사이클별 run_cycle 결과 리스트.
-    선택 인자로 스트림 시작 시점의 직전 상태를 주입할 수 있다(체인 이어붙이기).
+    체인 이어붙이기(분할 스트림): quality/flight_plan_state 뿐 아니라 **advisory 윈도우**
+    (previous_link_window/previous_nav_window)와 직전 ts_ms(previous_ts_ms)도 주입해야
+    지속 두절/신뢰상실 스트릭이 배치 경계에서 리셋되지 않는다(codex P2). 3+배치는 윈도우를
+    **누적**해서 넘긴다(마지막 배치만 추출하면 히스토리 소실):
+        win = win + extract_link_window(batch_results)
+
+    cycle_interval_s 는 raw.ts_ms 델타에서 도출된다(1Hz 하드코딩 아님) — 등cadence 정확.
+    가변 cadence 구간 스트릭의 실경과 합산 정밀화는 후속 #410.
     """
     from .link_loss import assess_link_loss
     from .nav_integrity import assess_nav_integrity
+    from .failsafe_arbiter import assess_failsafe
 
     results: list[dict] = []
     prev_q = previous_qualities
     prev_fp = previous_flight_plan_state
-    link_window: list[dict] = []
-    nav_window: list[dict] = []
+    link_window: list[dict] = list(previous_link_window or [])
+    nav_window: list[dict] = list(previous_nav_window or [])
+    prev_ts = previous_ts_ms
 
     for raw, mission_brief in pairs:
         result = run_cycle(
@@ -243,9 +267,18 @@ def run_cycle_chain(
                 link_window.append(ch)
             elif ch["channel"] == "position_consistency":
                 nav_window.append(ch)
+        ts = raw.get("ts_ms")
+        interval = _cycle_interval_s(ts, prev_ts)
+        if isinstance(ts, (int, float)):
+            prev_ts = ts
         result = dict(result)
-        result["link_loss"] = assess_link_loss(link_window)
-        result["nav_integrity"] = assess_nav_integrity(nav_window)
+        result["link_loss"] = assess_link_loss(link_window, cycle_interval_s=interval)
+        result["nav_integrity"] = assess_nav_integrity(nav_window, cycle_interval_s=interval)
+        result["failsafe"] = assess_failsafe({
+            "energy": result["endurance"],
+            "comms": result["link_loss"],
+            "nav": result["nav_integrity"],
+        })
         results.append(result)
         prev_q = extract_qualities(result)
         prev_fp = extract_flight_plan_state(result)
