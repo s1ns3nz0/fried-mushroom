@@ -45,19 +45,30 @@ _ENEMY_DETECT_RADIUS_M = 400.0
 _EVENT_WINDOW = 3  # 팝업 위협 지속 tick 수(회피 안정화용).
 
 
+def _num(v):
+    """숫자로 강제 — 비숫자/None 은 None(운용자 폼 malformed 방어)."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _track_pos(track: dict) -> tuple[float, float] | None:
     """E.tracks 위치 추출 — 두 정본 형상을 모두 수용:
     - 관측소 폼: top-level `lat`/`lon`
     - C4I/assemble_mettc: `pos: [lat, lon]` (또는 `pos: {lat, lon}`)
-    해석 불가하면 None."""
-    if track.get("lat") is not None and track.get("lon") is not None:
-        return track["lat"], track["lon"]
-    pos = track.get("pos")
-    if isinstance(pos, (list, tuple)) and len(pos) >= 2 and pos[0] is not None and pos[1] is not None:
-        return pos[0], pos[1]
-    if isinstance(pos, dict) and pos.get("lat") is not None and pos.get("lon") is not None:
-        return pos["lat"], pos["lon"]
-    return None
+    lat/lon 이 비숫자(malformed)거나 해석 불가하면 None(트랙 스킵) — 다운스트림 route/
+    haversine 의 float 크래시 방지."""
+    lat, lon = _num(track.get("lat")), _num(track.get("lon"))
+    if lat is None or lon is None:
+        pos = track.get("pos")
+        if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+            lat, lon = _num(pos[0]), _num(pos[1])
+        elif isinstance(pos, dict):
+            lat, lon = _num(pos.get("lat")), _num(pos.get("lon"))
+    if lat is None or lon is None:
+        return None
+    return lat, lon
 
 
 def _track_to_enemy(track: dict, latlon: tuple[float, float]) -> dict:
@@ -67,7 +78,7 @@ def _track_to_enemy(track: dict, latlon: tuple[float, float]) -> dict:
     return {
         "id": track.get("id") or track.get("track_id") or "E?",
         "pos": {"lat": lat, "lon": lon},
-        "detect_radius_m": float(track.get("radius_m") or track.get("radius") or _ENEMY_DETECT_RADIUS_M),
+        "detect_radius_m": _num(track.get("radius_m")) or _num(track.get("radius")) or _ENEMY_DETECT_RADIUS_M,
         "kind": track.get("kind"),            # 표시/위협유형(선택)
         "confidence": track.get("confidence"),
     }
