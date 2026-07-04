@@ -148,6 +148,40 @@ def test_brief_not_object_graceful_message(tmp_path):
     assert "error" in err.lower()
 
 
+# ── 3b. 스키마 위반 raw (필수 키 누락) ────────────────────────────────────────
+
+
+def test_schema_violation_raw_exits_nonzero(tmp_path):
+    """필수 키 누락 raw → 비-0 exit (#214)."""
+    minimal = tmp_path / "minimal_raw.json"
+    minimal.write_text(json.dumps({"ts_ms": 1000}))
+    rc, _, _ = _run(str(minimal), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+
+
+def test_schema_violation_raw_graceful_message(tmp_path):
+    """필수 키 누락 raw → 스택트레이스 아닌 명확한 에러 메시지 (#214)."""
+    minimal = tmp_path / "minimal_raw.json"
+    minimal.write_text(json.dumps({"ts_ms": 1000}))
+    rc, _, err = _run(str(minimal), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+    assert "Traceback" not in err, f"스택트레이스 노출: {err[:300]}"
+    assert "error" in err.lower()
+    assert any(k in err for k in ("navigation", "ew", "health", "environment", "c2_link")), (
+        f"누락 키 이름이 에러 메시지에 없음: {err[:300]}"
+    )
+
+
+def test_raw_not_object_graceful_message(tmp_path):
+    """raw 가 dict 아님(예: 리스트) → 명확한 에러 + 비-0 exit (#214)."""
+    notobj = tmp_path / "list_raw.json"
+    notobj.write_text(json.dumps(["not", "a", "dict"]))
+    rc, _, err = _run(str(notobj), str(_EXAMPLES / "mission_brief_t3.json"))
+    assert rc != 0
+    assert "Traceback" not in err
+    assert "error" in err.lower()
+
+
 # ── 4. 인자 개수 오류 ─────────────────────────────────────────────────────────
 
 

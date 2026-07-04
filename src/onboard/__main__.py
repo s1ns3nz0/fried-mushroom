@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from onboard.run import run_cycle
-from onboard.shared.schemas import MissionBrief
+from onboard.shared.schemas import MissionBrief, RawSensorEnvelope
 
 _USAGE = (
     "usage: python -m onboard <raw.json> <mission_brief.json> "
@@ -65,6 +65,14 @@ def main(argv: list[str] | None = None) -> int:
         raw = json.loads(raw_text)
     except json.JSONDecodeError as exc:
         print(f"error: raw JSON 파싱 실패 ({args[0]}): {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(raw, dict):
+        print(f"error: raw 는 객체(dict)여야 함 ({args[0]}): {type(raw).__name__} 받음",
+              file=sys.stderr)
+        return 2
+    _missing = sorted(k for k in RawSensorEnvelope.__required_keys__ if k not in raw)
+    if _missing:
+        print(f"error: raw 필수 키 누락 ({args[0]}): {', '.join(_missing)}", file=sys.stderr)
         return 2
 
     try:

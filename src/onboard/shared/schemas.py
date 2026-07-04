@@ -134,3 +134,16 @@ class MissionBrief(TypedDict):
     drone_profile: dict
     corridor: dict
     weights: dict
+
+
+class RawSensorEnvelope(TypedDict):
+    ts_ms: int
+    navigation: dict
+    ew: dict
+    health: dict
+    environment: dict
+    c2_link: dict
+    acoustic: dict
+    imagery: dict
+    lidar: dict
+    mission_status: dict
