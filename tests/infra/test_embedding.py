@@ -65,12 +65,16 @@ def test_retrieve_semantic_degrades_when_model_unavailable(store, monkeypatch):
 
 
 def test_retrieve_semantic_reranks_with_model(store, monkeypatch):
+    # model_name 명시 + _VEC_BACKEND_AVAILABLE=True → embedding.embed 모델 경로 사용.
     # 모델이 쿼리를 [1,0,0]으로 임베딩 → 유사도로 m-a 가 앞으로(ts/confidence 반전).
     monkeypatch.setattr(embedding, "embed", lambda text, name=None: [1.0, 0.0, 0.0])
-    monkeypatch.setattr(corpus, "_VEC_BACKEND_AVAILABLE", True)  # 순수 Python 재순위 활성
+    monkeypatch.setattr(corpus, "_VEC_BACKEND_AVAILABLE", True)
     store.ingest_episode(_episode("m-a", [1.0, 0.0, 0.0], ts=1751600000000, confidence=0.10))
     store.ingest_episode(_episode("m-b", [0.0, 1.0, 0.0], ts=1751700000000, confidence=0.99))
-    hits = store.retrieve_semantic("적 저격조 조우", threat_event="T3")
+    hits = store.retrieve_semantic(
+        "적 저격조 조우", threat_event="T3",
+        model_name="test-model",  # #347: model_name 명시 시 embedding.embed 경로
+    )
     assert [r["mission_id"] for r in hits] == ["m-a", "m-b"]  # 시맨틱 유사도 우선
 
 

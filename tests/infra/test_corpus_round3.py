@@ -147,9 +147,10 @@ def test_retrieve_degrades_to_metafilter_only_without_vec_backend(store, monkeyp
         )
     )
 
-    # narrative_query_embedding을 줘도 예외 없이 메타필터-only(ts desc) 결과를 반환해야 한다.
+    # #347: 순수 파이썬 rerank 는 sqlite_vec 불필요 — _VEC_BACKEND_AVAILABLE=False 여도 적용된다.
+    # [1,0,0] 질의 → m-a(embedding=[1,0,0]) 가 m-b 보다 유사도 높아 앞으로 재순위된다.
     hits = store.retrieve(threat_event="T3", narrative_query_embedding=[1.0, 0.0, 0.0])
-    assert [r["mission_id"] for r in hits] == ["m-b", "m-a"]
+    assert [r["mission_id"] for r in hits] == ["m-a", "m-b"]
 
 
 def test_retrieve_without_narrative_query_embedding_unaffected_by_vec_flag(store, monkeypatch):
