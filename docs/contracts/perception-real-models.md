@@ -20,10 +20,10 @@ acoustic=YAMNet 2차)을 **stub 우선**으로 두고 실모델을 후순위로 
 | 소스(선택, 하위호환) | 해석기 | 표준 입력 인터페이스 |
 |---|---|---|
 | `imagery.eo_frame` = `{kind, fmt, width, height, channels, bytes_b64\|path, meta}` | `resolve_frame(imagery)` | `PerceptionFrame` |
-| `acoustic.waveform` = `{fmt, sample_rate, channels, bytes_b64\|path, meta}` | `resolve_audio(acoustic)` | `AudioClip` |
+| ⏳ `acoustic.waveform` = `{fmt, sample_rate, channels, bytes_b64\|path, meta}` | `resolve_audio(acoustic)` *(후속 #375)* | `AudioClip` *(후속 #375)* |
 
 - 실 소스가 **없으면** 해석기는 `None` 을 반환 → 호출 채널이 **기존 mock 힌트로 폴백**
-  (골든·결정론 판정 무변경). `has_real_frame`/`has_real_audio` 로 mock ref 와 구분한다.
+  (골든·결정론 판정 무변경). `has_real_frame` 로 mock ref 와 구분한다(`has_real_audio` 는 ⏳ 후속 #375).
 - decode 는 무거운 의존(cv2/PIL/numpy)이라 **lazy** — 있으면 `array`/`samples` 를 채우고,
   없으면 `None` + `raw_bytes`(치수/포맷 동반)로 넘겨 **모델이 자체 decode** 한다.
 
