@@ -172,3 +172,25 @@ def test_no_secrets_literal_fallback(wf_path: pathlib.Path) -> None:
     assert not matches, (
         f"{wf_path.name}: secrets fallback 리터럴 발견: {matches[:3]}"
     )
+
+
+# ── 4. 공급망 F-05(#248): ECR IMMUTABLE + 이동태그 push 금지 ──────────────────
+
+_ECR_TF = pathlib.Path(__file__).resolve().parents[2] / "infra" / "terraform" / "ecr.tf"
+
+
+def test_ecr_repos_are_immutable():
+    """F-05(#248): ECR image_tag_mutability=IMMUTABLE — 동일 SHA 태그 사후 덮어쓰기
+    금지로 '이 SHA=이 이미지' 추적성 보장. MUTABLE 재발 방지."""
+    text = _ECR_TF.read_text(encoding="utf-8")
+    assert 'image_tag_mutability = "IMMUTABLE"' in text, "ecr.tf IMMUTABLE 아님"
+    assert '"MUTABLE"' not in text, "ecr.tf 에 MUTABLE 잔존"
+
+
+@pytest.mark.parametrize("wf_path", _deploy_workflow_files(), ids=lambda p: p.name)
+def test_deploy_does_not_push_mutable_latest(wf_path: pathlib.Path) -> None:
+    """F-05: 이동태그 `:latest` push 금지 — IMMUTABLE repo 와 충돌하고 추적성을 훼손한다.
+    불변 `:${sha}` 태그만 push 하고 배포는 SHA 로 핀한다."""
+    text = wf_path.read_text(encoding="utf-8")
+    assert not re.search(r"docker\s+push\s+\S*:latest", text), \
+        f"{wf_path.name}: 이동태그 :latest push 발견(SHA 태그만 push)"
