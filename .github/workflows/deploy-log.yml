@@ -1,6 +1,7 @@
 # 로그수집기(log collector) 이미지 빌드 → ECR push → 지상 EC2에 SSM으로 재기동.
 #
-# 필요한 repo secrets/vars:
+# 필요한 repo secrets/vars: 없음 (아래 값들이 폴백으로 하드코딩되어 있어 secret/var 미설정 시에도 배포됨).
+# repo secrets/vars를 설정하면 그 값이 폴백보다 우선 적용됨:
 #   secrets.AWS_ROLE_ARN     ← terraform output deploy_role_arn
 #   secrets.AWS_REGION       ← terraform var region (예: ap-northeast-2)
 #   vars.GROUND_INSTANCE_ID  ← terraform output ground_instance_id
@@ -28,8 +29,8 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN || 'arn:aws:iam::589794546244:role/fried-mushroom-uav-deploy-dev' }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-northeast-2' }}
 
       - name: Login to Amazon ECR
         id: ecr-login
@@ -46,11 +47,10 @@ jobs:
           docker push "$REGISTRY/$IMAGE:latest"
 
       - name: Redeploy log container on ground EC2 via SSM
-        if: ${{ vars.GROUND_INSTANCE_ID != '' }}
         run: |
           # compose 경로는 terraform templates/ground_user_data.sh.tftpl의 APP_DIR과 일치해야 함.
           aws ssm send-command \
-            --instance-ids "${{ vars.GROUND_INSTANCE_ID }}" \
+            --instance-ids "${{ vars.GROUND_INSTANCE_ID || 'i-050d8ebccb227cec0' }}" \
             --document-name "AWS-RunShellScript" \
             --comment "deploy log collector ${{ github.sha }}" \
-            --parameters 'commands=["cd /opt/fried-mushroom-uav && aws ecr get-login-password --region '"${{ secrets.AWS_REGION }}"' | docker login --username AWS --password-stdin $(grep ECR_REGISTRY .env | cut -d= -f2) && docker compose pull log && docker compose up -d log"]'
+            --parameters 'commands=["cd /opt/fried-mushroom-uav && aws ecr get-login-password --region '"${{ secrets.AWS_REGION || 'ap-northeast-2' }}"' | docker login --username AWS --password-stdin $(grep ECR_REGISTRY .env | cut -d= -f2) && docker compose pull log && docker compose up -d log"]'

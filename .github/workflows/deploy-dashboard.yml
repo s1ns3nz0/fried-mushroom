@@ -1,7 +1,8 @@
 # ⚠️ 대시보드는 정적 자산만 배포된다. GCS 탭의 /gcs/run 백엔드는 별도 서비스(로그수집기/ground)로
 # 이관 필요 — 정적 S3에서는 동작하지 않음.
 #
-# 필요한 repo secrets/vars:
+# 필요한 repo secrets/vars: 없음 (아래 값들이 폴백으로 하드코딩되어 있어 secret/var 미설정 시에도 배포됨).
+# repo secrets/vars를 설정하면 그 값이 폴백보다 우선 적용됨:
 #   secrets.AWS_ROLE_ARN            ← terraform output deploy_role_arn
 #   secrets.AWS_REGION              ← terraform var region (예: ap-northeast-2)
 #   vars.DASHBOARD_BUCKET           ← terraform output dashboard_bucket
@@ -27,13 +28,13 @@ jobs:
 
       - uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN || 'arn:aws:iam::589794546244:role/fried-mushroom-uav-deploy-dev' }}
+          aws-region: ${{ secrets.AWS_REGION || 'ap-northeast-2' }}
 
       - name: Sync static assets to S3
         env:
           # terraform output dashboard_bucket 값을 repo variable로 등록
-          BUCKET: ${{ vars.DASHBOARD_BUCKET }}
+          BUCKET: ${{ vars.DASHBOARD_BUCKET || 'fried-mushroom-uav-dashboard-20260703162305959200000001' }}
         # Split layout: JS/CSS assets go under /static/ (index.html references
         # them as /static/...), while index.html and config.json sit at the
         # bucket root (frontend fetches /config.json; CloudFront DefaultRootObject=index.html).
@@ -43,8 +44,7 @@ jobs:
           aws s3 cp infra/dashboard/static/config.json "s3://$BUCKET/config.json"
 
       - name: Invalidate CloudFront cache
-        if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID || 'E1VM1G7T42YD2Y' }}" \
             --paths "/*"
