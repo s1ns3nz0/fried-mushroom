@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euxo pipefail
+
+# --- 지상기지국 + 로그 서버 EC2 부트스트랩 (Amazon Linux 2023) ---
+# Docker + docker-compose(v2 plugin) 설치 후 2컨테이너(ground app / log collector) 기동 자리.
+
+dnf update -y
+dnf install -y docker awscli
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# SSM agent 보장
+systemctl enable --now amazon-ssm-agent || true
+
+# docker compose v2 플러그인 설치
+mkdir -p /usr/local/lib/docker/cli-plugins
+curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64" \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose || true
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose || true
+
+APP_DIR=/opt/fried-mushroom-uav
+mkdir -p "$APP_DIR"
+
+# docker-compose.yml — ① 지상기지국(ground) ② 로그 서버(log collector)
+cat > "$APP_DIR/docker-compose.yml" <<'COMPOSE'
+${compose_file}
+COMPOSE
+
+cat > "$APP_DIR/.env" <<ENV
+ECR_REGISTRY=${ecr_registry}
+GROUND_IMAGE=${ground_image}
+LOG_IMAGE=${log_image}
+GROUND_APP_PORT=${ground_app_port}
+LOG_SERVER_PORT=${log_server_port}
+AWS_REGION=${region}
+ENV
+
+# ECR 로그인 후 compose up — 이미지 미준비 시 배포 워크플로가 이후 SSM으로 갱신.
+aws ecr get-login-password --region "${region}" | docker login --username AWS --password-stdin "${ecr_registry}" || true
+cd "$APP_DIR" && docker compose pull || true
+cd "$APP_DIR" && docker compose up -d || true

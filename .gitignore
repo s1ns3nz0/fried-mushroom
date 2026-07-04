@@ -23,3 +23,11 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.egg-info/
+
+# terraform (상태·계획·변수는 커밋 금지 — 민감)
+infra/terraform/.terraform/
+infra/terraform/.terraform.lock.hcl
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/tfplan
+infra/terraform/terraform.tfvars

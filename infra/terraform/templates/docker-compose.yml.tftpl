@@ -1,0 +1,28 @@
+# 지상 EC2에서 실행되는 2컨테이너 구성.
+# 이미지/포트는 .env(위 user_data가 생성)에서 주입된다.
+services:
+  ground:
+    image: $${GROUND_IMAGE}
+    container_name: ground-station
+    restart: unless-stopped
+    ports:
+      - "$${GROUND_APP_PORT}:$${GROUND_APP_PORT}"
+    environment:
+      - APP_PORT=$${GROUND_APP_PORT}
+      - LOG_ENDPOINT=http://log:$${LOG_SERVER_PORT}
+    depends_on:
+      - log
+
+  log:
+    image: $${LOG_IMAGE}
+    container_name: log-collector
+    restart: unless-stopped
+    ports:
+      - "$${LOG_SERVER_PORT}:$${LOG_SERVER_PORT}"
+    environment:
+      - LOG_PORT=$${LOG_SERVER_PORT}
+    volumes:
+      - log-data:/var/log/fried-mushroom-uav
+
+volumes:
+  log-data:

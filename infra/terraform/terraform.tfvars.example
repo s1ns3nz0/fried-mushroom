@@ -1,0 +1,29 @@
+# 실제 값으로 복사: cp terraform.tfvars.example terraform.tfvars
+# 시크릿(계정ID·액세스키)은 여기에 넣지 않는다 — placeholder만.
+
+region = "ap-northeast-2"
+env    = "dev"
+
+# EC2 접속용 기존 key pair 이름 (SSM만 쓰면 빈 문자열)
+ssh_key_name = ""
+
+# 인스턴스 타입
+uav_instance_type    = "t3.medium" # 2 vCPU / 4GB (amd64)
+ground_instance_type = "t3.small"
+
+# SSH 허용 CIDR — 본인 IP로 좁힐 것 (예: "203.0.113.10/32")
+allowed_ssh_cidr = "0.0.0.0/0"
+
+# 노출 포트
+ground_app_port = 8400
+log_server_port = 8500
+
+# 대시보드 CloudFront 사용 여부
+enable_cloudfront = false
+
+# GitHub OIDC assume 대상 (본인 org/repo)
+github_org  = "hobeen-kim"
+github_repo = "fried-mushroom"
+
+# 온보드 컨테이너 이미지 (미지정 시 배포 워크플로가 SSM으로 주입)
+# uav_container_image = "<ACCOUNT_ID>.dkr.ecr.ap-northeast-2.amazonaws.com/fried-mushroom-uav/uav:latest"

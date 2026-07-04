@@ -1,0 +1,32 @@
+#!/bin/bash
+set -euxo pipefail
+
+# --- 온보드 UAV EC2 부트스트랩 (Amazon Linux 2023) ---
+# Docker + SSM agent 설치 후, 온보드 컨테이너를 CPU/메모리 제약으로 실행하는 자리.
+
+dnf update -y
+dnf install -y docker
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+# SSM agent (AL2023 기본 포함이나 방어적으로 보장)
+systemctl enable --now amazon-ssm-agent || true
+
+# ECR 로그인 헬퍼
+dnf install -y awscli || true
+
+REGION="${region}"
+ECR_REGISTRY="${ecr_registry}"
+UAV_IMAGE="${uav_image}"
+
+# 이미지 미지정 시 실제 pull/run 은 배포 워크플로(deploy-uav.yml)가 SSM으로 수행.
+if [ -n "$UAV_IMAGE" ]; then
+  aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$ECR_REGISTRY" || true
+  docker pull "$UAV_IMAGE" || true
+
+  # 온보드 자원 제약: 2 vCPU / 4GB
+  docker rm -f uav-onboard || true
+  docker run -d --name uav-onboard --restart unless-stopped \
+    --cpus=2 --memory=4g \
+    "$UAV_IMAGE"
+fi
