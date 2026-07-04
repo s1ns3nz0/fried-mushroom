@@ -42,6 +42,8 @@ def test_layer01_brief_drives_onboard_end_to_end() -> None:
     res = finalize(draft, approved=True, ts_ms=1720051200000)
     mb = res["mission_brief"]
     assert set(mb) == {"sortie_id", "mission_context", "posture", "drone_profile", "corridor", "weights"}
+    # 라운드2: mettc 상태모델이 조립·확정본에 동반되며, 투영본이 온보드를 구동한다.
+    assert set(res["mettc_state"]["mettc"]) == {"M", "E", "T_terrain", "T_troops", "T_time", "C"}
 
     out = run_cycle(_load("raw_t3.json"), mb)  # 01 출력 → 온보드 입력
     assert set(out) == {
