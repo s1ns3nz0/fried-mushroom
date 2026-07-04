@@ -1,0 +1,31 @@
+{
+  "sortie_id": "GIREOGI-0704-T2",
+  "mission_context": "정찰",
+  "posture": {
+    "watchcon": 3,
+    "defcon": 3,
+    "infocon": 2
+  },
+  "drone_profile": {
+    "armament": [],
+    "spare_asset_available": true,
+    "battery_pct": 68
+  },
+  "corridor": {
+    "waypoints": [
+      { "id": "wp1", "lat": 37.5, "lon": 127.0, "alt_m": 150 },
+      { "id": "wp2", "lat": 37.51, "lon": 127.01, "alt_m": 150 },
+      { "id": "wp3", "lat": 37.52, "lon": 127.02, "alt_m": 150 }
+    ],
+    "bases": {
+      "emergency": { "id": "base_emergency", "lat": 37.49, "lon": 127.0, "alt_m": 50 },
+      "alternate": { "id": "base_alternate", "lat": 37.48, "lon": 127.005, "alt_m": 50 }
+    }
+  },
+  "weights": {
+    "stealth": 0.30,
+    "survival": 0.30,
+    "info_value": 0.30,
+    "timeliness": 0.10
+  }
+}

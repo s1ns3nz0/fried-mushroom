@@ -13,7 +13,7 @@ import copy
 
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 
-SCHEMA_SCENARIOS: tuple[str, ...] = ("t3", "t4", "t7")
+SCHEMA_SCENARIOS: tuple[str, ...] = ("t1", "t2", "t3", "t4", "t7")
 
 # imagery 에 심는 mock 객체 라벨 hint. 03 proximity_object(AI 채널) stub 이 그대로 읽어
 # class/weapon_shape/closing 을 산출한다 (step2: mock 라벨 필드를 심어둔다).
@@ -122,7 +122,26 @@ def build_scenario_envelope(scenario_id: str, seq: int, ts_ms: int) -> RawSensor
 
     env = build_normal_envelope(f"scenario-{scenario_id}", seq, ts_ms)
 
-    if scenario_id == "t3":
+    if scenario_id == "t1":
+        # GPS 스푸핑: IMU 관성항법 추정 위치가 GPS 보고값과 크게 어긋남 →
+        # 03 position_consistency 가 gps_imu_residual_m > 5.0 산출 (04 SIGNAL_TO_THREAT T1).
+        # est_lat 를 0.0005도(≈55m) 틀어 잔차가 임계값 5.0m 를 확실히 초과하게 한다.
+        env["navigation"]["imu"]["est_lat"] = 37.5005
+        env["ew"].update({"gnss_confidence": 0.35, "gnss_position_jump_m": 55.0})
+
+    elif scenario_id == "t2":
+        # 사이버/C2 하이재킹: 암호화 강제 다운그레이드 + 링크 무결성 이상 (04 SIGNAL_TO_THREAT T2).
+        # encryption_status(downgrade) + link_integrity(checksum/seq) 두 채널이 anomaly.
+        env["c2_link"].update(
+            {
+                "encryption_mode": "AES128",
+                "downgrade_detected": True,
+                "checksum_fail_rate": 0.12,
+                "seq_gap_count": 3,
+            }
+        )
+
+    elif scenario_id == "t3":
         # 근접 소화기: 사람+무기 형태(proximity_object T3) + 총성(acoustic_event T3),
         # declared_phase=LOITER_ROI 유도.
         env["imagery"]["object_label"] = {

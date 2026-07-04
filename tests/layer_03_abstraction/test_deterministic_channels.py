@@ -5,7 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from onboard.layer_02_sensor.mock_source import build_normal_envelope
+from onboard.layer_02_sensor.mock_source import (
+    build_normal_envelope,
+    build_scenario_envelope,
+)
 from onboard.layer_03_abstraction.run import run
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
@@ -24,6 +27,21 @@ def test_normal_envelope_all_channels_normal():
     out = run(build_normal_envelope("s", 0, 0))
     assert len(out["channels"]) == 11
     assert all(c["state"] == "normal" for c in out["channels"])
+
+
+def test_t1_position_consistency_anomaly():
+    # T1 GPS 스푸핑: gps_imu_residual_m > 5.0 → position_consistency anomaly.
+    ch = _channel(run(build_scenario_envelope("t1", 0, 0)), "position_consistency")
+    assert ch["state"] == "anomaly"
+    assert ch["payload"]["gps_imu_residual_m"] > 5.0
+
+
+def test_t2_encryption_and_link_integrity_anomaly():
+    # T2 사이버: 암호화 다운그레이드 + 링크 무결성 이상.
+    out = run(build_scenario_envelope("t2", 0, 0))
+    assert _channel(out, "encryption_status")["state"] == "anomaly"
+    assert _channel(out, "encryption_status")["payload"]["downgrade_detected"] is True
+    assert _channel(out, "link_integrity")["state"] == "anomaly"
 
 
 def test_t3_acoustic_gunshot():

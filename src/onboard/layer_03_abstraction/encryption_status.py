@@ -12,7 +12,9 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
 
     # NONE(암호화 해제) 또는 강제 다운그레이드 이력 → anomaly (A-1).
     state = "anomaly" if downgrade_detected or mode == "NONE" else "normal"
-    quality = 0.99 if state == "normal" else 0.5
+    # quality = 센서 신뢰도(A-1): 프로토콜 필드 판독이라 이상 여부와 무관하게 높다.
+    # (위협 크기를 quality 에 섞으면 04 Q_MIN 게이트에서 실제 이상신호가 걸러진다.)
+    quality = 0.99
 
     payload = {"mode": mode, "downgrade_detected": downgrade_detected}
     return make_output("encryption_status", state, quality, payload, previous_quality)

@@ -18,7 +18,9 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
         else "normal"
     )
 
-    quality = 1.0 - checksum_fail_rate * 5.0 - min(seq_gap_count, 10) * 0.05
+    # quality = 센서 신뢰도(A-1): 체크섬 실패율·시퀀스 누락은 결정론적 계측이라
+    # 값이 나빠도 측정 신뢰도는 높다. 위협 크기(값 자체)는 payload 로 전달된다.
+    quality = 0.95
 
     payload = {"checksum_fail_rate": checksum_fail_rate, "seq_gap_count": seq_gap_count}
     return make_output("link_integrity", state, quality, payload, previous_quality)
