@@ -29,9 +29,10 @@ _SCENARIOS = [
     ("raw_t6.json", "mission_brief_t6.json", None, "expected_t6.json"),
     ("raw_t7.json", "mission_brief_t7.json", None, "expected_t7.json"),
     ("raw_t3.json", "mission_brief_strike.json", None, "expected_strike.json"),
+    ("raw_multi.json", "mission_brief_multi.json", "qualities_multi_primed.json", "expected_multi.json"),
 ]
 
-_IDS = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "strike"]
+_IDS = ["t1", "t2", "t3", "t4", "t5", "t6", "t7", "strike", "multi"]
 
 
 def _load(name: str) -> dict:
