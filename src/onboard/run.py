@@ -24,6 +24,7 @@ import math
 from .shared.constants import RAC_ORDER
 from .corridor import assess_corridor_deviation
 from .endurance import assess_endurance
+from .sensor_health import assess_sensor_health
 
 _LAYER_MODULE = {
     "03": "onboard.layer_03_abstraction.run",
@@ -78,6 +79,7 @@ def run_cycle(
 
     endurance = assess_endurance(raw, mission_brief)
     corridor = assess_corridor_deviation(raw, mission_brief)
+    sensor_health = assess_sensor_health(abstraction)
 
     return {
         "abstraction": abstraction,
@@ -88,6 +90,7 @@ def run_cycle(
         "flight_plan_state": flight_plan_state,
         "endurance": endurance,
         "corridor": corridor,
+        "sensor_health": sensor_health,
     }
 
 

@@ -36,7 +36,7 @@ RESULT_SCHEMA = {
 # + endurance advisory 채널 1개).
 # flight_plan_state 는 FlightPlanOutput 스키마에 속하지 않는 별도 채널(ADR-004 07 한정 예외).
 # endurance 는 advisory_only 채널(#360) — 결정론 판정에 영향 없음(SCC-1).
-RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state", "endurance", "corridor"]
+RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state", "endurance", "corridor", "sensor_health"]
 RESULT_KEYS = set(RESULT_KEYS_ORDERED)
 
 

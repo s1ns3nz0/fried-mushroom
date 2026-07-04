@@ -225,5 +225,16 @@
     "nearest_segment_index": 0,
     "advisory_only": true,
     "note": "코리더 이탈 0m ≤ 임계 150m — 정상 경로."
+  },
+  "sensor_health": {
+    "assessable": true,
+    "health": "NOMINAL",
+    "channel_count": 11,
+    "min_quality": 0.8,
+    "mean_quality": 0.9189,
+    "impaired": [],
+    "confidence_discount": 1.0,
+    "advisory_only": true,
+    "note": "센서 11채널 전부 정상 — 건전성 NOMINAL."
   }
 }

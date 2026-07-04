@@ -283,5 +283,23 @@
     "nearest_segment_index": 0,
     "advisory_only": true,
     "note": "⚠ 코리더 이탈 14194m > 임계 150m (세그먼트 0) — 표류/스푸핑/무단이탈 점검 요망."
+  },
+  "sensor_health": {
+    "assessable": true,
+    "health": "CRITICAL",
+    "channel_count": 11,
+    "min_quality": 0.04,
+    "mean_quality": 0.8318,
+    "impaired": [
+      {
+        "channel": "link_status",
+        "state": "anomaly",
+        "quality": 0.04,
+        "tier": "critical"
+      }
+    ],
+    "confidence_discount": 0.6,
+    "advisory_only": true,
+    "note": "센서 11채널 중 1 열화/이상 — 건전성 CRITICAL."
   }
 }
