@@ -25,8 +25,12 @@ def _corridor_from_inputs(set_mission: dict) -> dict:
         }
     legacy = set_mission.get("corridor") or {}
     axis = [[wp["lat"], wp["lon"]] for wp in legacy.get("waypoints") or []]
+    # 레거시 온보드 corridor(waypoints alt_m/id, bases alt_m)를 그대로 보존한다.
+    # 투영(project_brief)이 이 원본을 우선 사용해 라운드트립 데이터 손실을 막는다(codex P1).
     return {"type": "polyline_buffer", "axis": axis,
-            "half_width": None, "alt_min": None, "alt_max": None}
+            "half_width": None, "alt_min": None, "alt_max": None,
+            "_onboard_corridor": {"waypoints": [dict(w) for w in legacy.get("waypoints") or []],
+                                  "bases": {k: dict(v) for k, v in (legacy.get("bases") or {}).items()}}}
 
 
 def _bases_from_inputs(set_mission: dict) -> list[dict]:

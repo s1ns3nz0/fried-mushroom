@@ -59,3 +59,22 @@ def test_no_alt_band_default_altitude() -> None:
     state["mettc"]["T_terrain"]["corridor"]["alt_max"] = None
     brief = project_onboard_brief(state, sortie_id="X")
     assert brief["corridor"]["waypoints"][0]["alt_m"] is not None  # 기본 고도
+
+
+def test_legacy_corridor_preserves_waypoint_alt_and_ids_and_base_alt() -> None:
+    # codex P1 회귀: 레거시 corridor 라운드트립이 per-waypoint alt_m/id, base alt_m 을
+    # 소실하면 안 됨 (승인 비행계획 변경 방지).
+    from gcs.layer_01_info_center.run import assemble_draft
+    inp = {
+        "sortie_id": "L", "directive_text": "", "mission_context": "정찰",
+        "posture": {"watchcon": 3, "defcon": 3, "infocon": 4},
+        "drone_profile": {"spare_asset_available": True, "armament": [], "battery_pct": 65},
+        "corridor": {"waypoints": [{"id": "wpA", "lat": 37.7, "lon": 127.2, "alt_m": 150}],
+                     "bases": {"emergency": {"id": "base_e", "lat": 37.49, "lon": 127.0, "alt_m": 50}}},
+        "weights": {"stealth": 0.4, "survival": 0.35, "info_value": 0.2, "timeliness": 0.05},
+    }
+    corr = assemble_draft(inp)["draft_brief"]["corridor"]
+    wp = corr["waypoints"][0]
+    assert wp["id"] == "wpA" and wp["alt_m"] == 150
+    assert corr["bases"]["emergency"]["alt_m"] == 50
+    assert corr["bases"]["emergency"]["id"] == "base_e"

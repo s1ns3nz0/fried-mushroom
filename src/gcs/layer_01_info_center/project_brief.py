@@ -18,6 +18,20 @@ def project_onboard_brief(state: dict, sortie_id: str) -> dict:
     m = mettc["M"]
     corridor = mettc["T_terrain"]["corridor"]
 
+    # 레거시 온보드 corridor 가 보존돼 있으면 그대로 통과 — waypoint alt_m/id, base alt_m
+    # 을 합성하지 않고 원본 유지 (하위호환, codex P1).
+    onboard = corridor.get("_onboard_corridor")
+    if onboard and onboard.get("waypoints"):
+        return {
+            "sortie_id": sortie_id,
+            "mission_context": (m.get("uav_mission") or {}).get("purpose") or None,
+            "posture": dict(m["posture"]),
+            "drone_profile": dict(state["drone_profile"]),
+            "corridor": {"waypoints": [dict(w) for w in onboard["waypoints"]],
+                         "bases": {k: dict(v) for k, v in (onboard.get("bases") or {}).items()}},
+            "weights": dict(m["weights"]),
+        }
+
     alt_min, alt_max = corridor.get("alt_min"), corridor.get("alt_max")
     alt = (alt_min + alt_max) / 2.0 if alt_min is not None and alt_max is not None else _DEFAULT_ALT_M
 
