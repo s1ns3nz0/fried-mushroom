@@ -36,6 +36,20 @@ def compute_bbox(waypoints):
     }
 
 
+def frame_to_bbox(frame):
+    """고정 지리 프레임(전체가 캔버스 [0,1]에 매핑되도록) → to_norm용 bbox.
+    to_norm은 bbox를 [MARGIN, 1-MARGIN]에 매핑하므로, 프레임을 MARGIN만큼 안으로
+    inset한 bbox를 주면 프레임 전체 모서리가 캔버스 0/1 에 정확히 닿는다."""
+    lr = frame["lat_max"] - frame["lat_min"]
+    gr = frame["lon_max"] - frame["lon_min"]
+    return {
+        "lat_min": frame["lat_min"] + MARGIN * lr,
+        "lat_max": frame["lat_max"] - MARGIN * lr,
+        "lon_min": frame["lon_min"] + MARGIN * gr,
+        "lon_max": frame["lon_max"] - MARGIN * gr,
+    }
+
+
 def to_norm(lat, lon, bbox):
     lat_range = (bbox["lat_max"] - bbox["lat_min"]) or 1.0
     lon_range = (bbox["lon_max"] - bbox["lon_min"]) or 1.0
@@ -232,7 +246,8 @@ def generate_route(brief, enemies=None):
     weights = brief.get("weights", {})
     posture = brief.get("posture", {})
 
-    bbox = compute_bbox(corridor["waypoints"])
+    frame = brief.get("frame")
+    bbox = frame_to_bbox(frame) if frame else compute_bbox(corridor["waypoints"])
     skeleton = [to_norm(wp["lat"], wp["lon"], bbox) for wp in corridor["waypoints"]]
 
     effective_stealth = _effective_stealth(weights, posture)
