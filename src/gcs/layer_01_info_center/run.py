@@ -11,6 +11,9 @@ finalize: 운용자 승인 게이트. 승인 시 온보드 MissionBrief + mettc_
 
 from __future__ import annotations
 
+from typing import Any
+
+from gcs.layer_01_info_center.briefing_advisor import build_briefing_advisory
 from gcs.layer_01_info_center.c4i_schema import normalize_c4i
 from gcs.layer_01_info_center.cross_check import cross_check
 from gcs.layer_01_info_center.mettc_assemble import assemble_mettc
@@ -43,8 +46,12 @@ def _card(sig: dict) -> dict:
     }
 
 
-def assemble_draft(inputs: dict) -> dict:
-    """수집 입력 → mettc 상태 + 온보드 투영 브리핑 + 승인용 신호 카드 + 경고."""
+def assemble_draft(inputs: dict, *, store: Any = None, ts_ms: int = 0) -> dict:
+    """수집 입력 → mettc 상태 + 온보드 투영 브리핑 + 승인용 신호 카드 + 경고.
+
+    store: CorpusStore 선택 주입. None 이면 briefing_advisory 를 생략(무-DB graceful).
+    ts_ms: advisory generated_ts 용 타임스탬프(기본 0, 운용 시 유즈사이트에서 주입).
+    """
     signals = extract_signals(inputs.get("directive_text", ""))
     c4i = normalize_c4i(inputs.get("c4i"))
     adjusted, warnings = cross_check(
@@ -55,12 +62,26 @@ def assemble_draft(inputs: dict) -> dict:
     )
     state = assemble_mettc(inputs, c4i, adjusted)
     draft_brief = project_onboard_brief(state, sortie_id=inputs["sortie_id"])
-    return {
+
+    # RAG advisory — store 주입 시에만 산출. 결정론 판정/신호 무변경(SCC-1).
+    advisory: dict | None = None
+    if store is not None:
+        advisory = build_briefing_advisory(
+            adjusted,
+            inputs.get("mission_context"),
+            inputs.get("posture"),
+            store,
+            generated_ts=ts_ms,
+        )
+
+    result: dict[str, Any] = {
         "mettc_state": state,
         "draft_brief": draft_brief,
         "signal_cards": [_card(s) for s in adjusted],
         "warnings": warnings,
+        "briefing_advisory": advisory,
     }
+    return result
 
 
 # 운용자가 승인 시 수정 가능한 GCS-소유 결정필드 → 기대 타입 (sortie_id=식별자·온보드-소유 제외).
