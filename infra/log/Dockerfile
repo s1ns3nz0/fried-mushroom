@@ -14,7 +14,8 @@ FROM --platform=linux/amd64 python:3.11-slim@sha256:b27df5841f3355e9473f9a516d38
 WORKDIR /app/infra/log
 
 COPY infra/log/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY infra/log/requirements.lock .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 COPY infra/log/ .
 COPY pyproject.toml /app/

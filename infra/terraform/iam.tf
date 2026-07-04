@@ -76,11 +76,20 @@ data "aws_iam_policy_document" "deploy" {
     resources = [for r in aws_ecr_repository.this : r.arn]
   }
 
-  # EC2에 배포 명령 전달 (SSM send-command)
+  # EC2에 배포 명령 전달 (SSM send-command) — F-04(#232): 대상 인스턴스 + 문서로 최소범위.
   statement {
-    sid = "SsmSendCommand"
+    sid     = "SsmSendCommand"
+    actions = ["ssm:SendCommand"]
+    resources = [
+      aws_instance.ground.arn,
+      "arn:aws:ssm:${var.region}::document/AWS-RunShellScript",
+    ]
+  }
+
+  # 명령 상태 조회는 command-invocation ID 가 동적이라 리소스 스코프 불가 → 읽기전용 * 유지.
+  statement {
+    sid = "SsmCommandStatus"
     actions = [
-      "ssm:SendCommand",
       "ssm:GetCommandInvocation",
       "ssm:ListCommandInvocations",
     ]
@@ -94,11 +103,15 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["*"]
   }
 
-  # CloudFront 무효화 (옵션)
-  statement {
-    sid       = "CloudFrontInvalidate"
-    actions   = ["cloudfront:CreateInvalidation"]
-    resources = ["*"]
+  # CloudFront 무효화 (옵션) — F-04(#232): 최소범위. enable_cloudfront 활성 시에만 권한 부여하고
+  # 그 배포판 ARN 으로 스코프. 비활성 시 statement 자체를 생성하지 않음(불필요 권한 제거).
+  dynamic "statement" {
+    for_each = var.enable_cloudfront ? [1] : []
+    content {
+      sid       = "CloudFrontInvalidate"
+      actions   = ["cloudfront:CreateInvalidation"]
+      resources = [aws_cloudfront_distribution.dashboard[0].arn]
+    }
   }
 }
 
