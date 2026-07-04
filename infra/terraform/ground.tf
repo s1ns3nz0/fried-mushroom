@@ -23,6 +23,7 @@ resource "aws_instance" "ground" {
     log_image       = local.log_image
     ground_app_port = var.ground_app_port
     log_server_port = var.log_server_port
+    raw_log_port    = var.raw_log_port
     compose_file    = local.compose_file
   })
 
