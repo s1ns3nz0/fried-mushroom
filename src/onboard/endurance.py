@@ -103,7 +103,10 @@ def assess_endurance(
     endurance = endurance_rated_s if endurance_rated_s is not None \
         else (mission_brief.get("drone_profile") or {}).get("endurance_rated_s")
     if endurance is None or battery_pct is None:
-        return _report(False, "UNKNOWN", dist_home_m=dist_home_m, rtl_time_s=rtl_time_s,
+        # dist_home_m/rtl_time_s 는 haversine(asin/sqrt/sin/cos) 유래라 py3.11/3.13 libm ULP
+        # 차이로 골든이 CI에서만 깨진다 → assessable 브랜치와 동일하게 1자리 반올림(이식성).
+        return _report(False, "UNKNOWN",
+                       dist_home_m=round(dist_home_m, 1), rtl_time_s=round(rtl_time_s, 1),
                        battery_pct=battery_pct, home_base_id=home_id,
                        note=f"홈까지 {dist_home_m:.0f}m — 내구/배터리 정보 부재로 여유 계산 불가.")
 
