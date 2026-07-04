@@ -82,6 +82,9 @@ def test_07_bearing_follows_bearing_fields_not_source() -> None:
     assert out_gis["flight_plan"]["target_bearing_deg"] == pytest.approx(
         out_cam["flight_plan"]["target_bearing_deg"]
     ), "bearing 필드 동일 + source만 교체 → target_bearing_deg 동일해야 한다"
+    assert out_gis["flight_plan"]["target_bearing_deg"] == pytest.approx(bearing_val), (
+        "NAVIGATION + optimal_terrain_bearing_deg 주입 → target_bearing_deg 가 주입값과 일치해야 한다"
+    )
 
 
 def test_lowest_exposure_bearing_fallback_e2e() -> None:
