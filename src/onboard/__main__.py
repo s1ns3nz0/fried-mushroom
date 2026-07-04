@@ -1,5 +1,5 @@
 """CLI 엔트리포인트: `python -m onboard <raw.json> <mission_brief.json> [--log <path>]
-[--prev-qualities <path>] [--flight-plan-state <path>]`.
+[--prev-qualities <path>] [--flight-plan-state <path>] [--sitrep] [--explain]`.
 
 한 사이클 실행 결과(run_cycle 반환 dict)를 stdout 에 JSON 으로 출력한다.
 `--log <path>` 지정 시 사이클 로그(레이어당 1줄 JSON Lines)를 해당 파일에 append 한다.
@@ -8,6 +8,8 @@
 `--flight-plan-state <path>` 지정 시 직전 사이클 07 디바운스 상태(JSON)를
   previous_flight_plan_state 로 주입한다 → RAC 완화(de-escalation) 디바운스 이어감(신규).
   결과의 `flight_plan_state` 키를 다음 호출에 그대로 다시 넘기면 된다(extract_flight_plan_state 와 동일 값).
+`--sitrep` 지정 시 build_sitrep 결과를 결과 dict 에 추가(advisory_only).
+`--explain` 지정 시 explain_cycle 결과를 결과 dict 에 추가(advisory_only).
 오케스트레이터는 순수 유지 — 로깅은 CLI(유즈사이트) 책임 (ARCHITECTURE 상태 관리).
 """
 
@@ -23,7 +25,8 @@ from onboard.shared.schemas import MissionBrief
 
 _USAGE = (
     "usage: python -m onboard <raw.json> <mission_brief.json> "
-    "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>]"
+    "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>] "
+    "[--sitrep] [--explain]"
 )
 
 
@@ -33,6 +36,17 @@ def main(argv: list[str] | None = None) -> int:
     log_path: str | None = None
     prev_qualities_path: str | None = None
     flight_plan_state_path: str | None = None
+    include_sitrep: bool = False
+    include_explain: bool = False
+
+    # boolean 플래그 먼저 추출
+    for bflag in ("--sitrep", "--explain"):
+        if bflag in args:
+            if bflag == "--sitrep":
+                include_sitrep = True
+            else:
+                include_explain = True
+            args = [a for a in args if a != bflag]
 
     for flag in ("--log", "--prev-qualities", "--flight-plan-state"):
         if flag in args:
@@ -125,6 +139,16 @@ def main(argv: list[str] | None = None) -> int:
 
     if log_path is not None:
         _append_cycle_log(log_path, raw.get("seq"), result)
+
+    if include_sitrep:
+        from onboard.sitrep import build_sitrep
+        result = dict(result)
+        result["sitrep"] = build_sitrep([result])
+
+    if include_explain:
+        from onboard.explain import explain_cycle
+        result = dict(result)
+        result["explanation"] = explain_cycle(result)
 
     json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
     sys.stdout.write("\n")
