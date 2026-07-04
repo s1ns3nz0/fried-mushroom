@@ -50,6 +50,16 @@ def abstraction_t7() -> AbstractionOutput:
 
 
 @pytest.fixture
+def abstraction_t6() -> AbstractionOutput:
+    """raw_t6 → 실측 03 출력 (open_field 고노출 exposure_score=0.8, 활성 위협 신호 없음 → 매칭 없음).
+
+    #52 배경노출 종단 시나리오. terrain_class.quality_delta=0.0 (급락 아님) 이라 T5 매칭도
+    없고, 나머지 채널 전부 normal → candidates=[] · primary=None 이면서 노출도만 통과된다.
+    """
+    return _abstraction_from_raw("raw_t6.json")
+
+
+@pytest.fixture
 def abstraction_stub() -> AbstractionOutput:
     """orchestrator 가 03 실패/degrade 시 넘기는 stub (mission_phase 채널 없음)."""
     return {
