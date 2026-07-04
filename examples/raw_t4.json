@@ -1,0 +1,16 @@
+{
+  "ts": 1720000500,
+  "mission_phase": { "declared": "WAYPOINT", "confidence": 0.8, "match": false },
+  "gps": { "fix": "3d", "sats": 9, "snr_db": 33, "lat": 37.52, "lon": 127.02, "alt_m": 120 },
+  "imu": { "accel_rms_mss": 0.2, "gyro_rms_dps": 1.1 },
+  "acoustic": { "rms": 0.3, "peak_db": 88, "band": "broadband" },
+  "camera": {
+    "objects": [
+      { "label": "vehicle", "class": "vehicle", "closing": true, "bbox": [180, 260, 300, 180], "score": 0.88, "bearing_deg": 12.0 }
+    ]
+  },
+  "terrain": { "exposure_score": 0.55, "class": "road" },
+  "obstacle": { "distance_m": 180.0, "closure_rate_mps": 8.0 },
+  "link": { "rssi_dbm": -95, "state": "degraded" },
+  "rf": { "noise_floor_dbm": -80, "anomaly": true }
+}
