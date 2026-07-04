@@ -11,6 +11,6 @@
     { "step": 6, "name": "layer-05-risk-assessment", "status": "completed", "summary": "src/onboard/layer_05_risk/ 5개 모듈(run, likelihood, severity, rac_matrix, compound) — RAC_MATRIX read-only 조회(오버라이드 불가), 결정론 RAC 지배 + continuous_L/S·ai_reliability 병렬 참고, urgency 정렬·priority_rank, 빈 후보 시 ambient_rac degrade. orchestrator 시그니처 run(threat, mission_brief, link_quality=None) 정합. tests/layer_05_risk/ 56개(D-1 손계산 골든 + matrix 불변성 + degradation) 통과, 전체 213 passed" },
     { "step": 7, "name": "layer-06-response", "status": "completed", "summary": "src/onboard/layer_06_response/ — flight_comms(RAC×kill_chain_stage×threat_category 조회), payload_nav(DATA_WIPE/WEAPON_DROP/INS_ONLY 오버레이), run(1순위 실행+secondary_threats 요약). tests/layer_06_response/ 26 PASSED." },
     { "step": 8, "name": "layer-07-flight-planning", "status": "completed", "summary": "src/onboard/layer_07_planning/ — bearing(threat_category별 target bearing), altitude(flight_action별 delta_m 상수 테이블), run(replan_scope 매핑+bearing/altitude 조합→FlightPlanOutput). tests/layer_07_planning/ 20 PASSED." },
-    { "step": 9, "name": "end-to-end-orchestrator", "status": "pending" }
+    { "step": 9, "name": "end-to-end-orchestrator", "status": "completed", "summary": "src/onboard/run.py(03→04→05→06→07 체인, try-import 자동배선), __main__.py(CLI). tests/integration/ 26→29 PASSED: 배선 하니스(TestRunCycleShape·TestLayerWiring·TestCli) + 시나리오 시맨틱(T1/T3/T4/T7/strike/normal) + raw fixture 검증. T2는 #28(Q_MIN 버그) 수정 후 xfail 해제 예정, T7 고도상승은 #24 스펙 판정 후 확정." }
   ]
 }

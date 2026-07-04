@@ -11,7 +11,7 @@
 |---|---|---|---|
 | `channel` | `str` | 필수 | 채널명(예: `position_consistency`, `proximity_object` 등 11종) |
 | `state` | `Literal["normal", "degraded", "anomaly"]` | 필수 | `normal`(정상범위) / `degraded`(측정은 되나 신뢰도 낮음) / `anomaly`(값 자체가 위협 신호) |
-| `quality` | `float` | 필수 | 0.0(신뢰불가)~1.0(완전신뢰). 센서 자체 신뢰도 또는 AI 모델 확신도. 04의 채널 가중치 계산에 그대로 반영 |
+| `quality` | `float` | 필수 | 0.0(신뢰불가)~1.0(완전신뢰). **판독기/모델 건전성**(센서 자체 신뢰도 또는 AI 모델 확신도)이며 **위협 크기와 분리**한다. 04의 채널 가중치 계산에 그대로 반영. 결정론적 프로토콜 판독 채널(`encryption_status`, `link_integrity`)은 이상(anomaly)이어도 판독 신뢰도가 떨어지는 게 아니므로 quality를 낮추지 않고, 이상 **증거**는 `state`/`payload`로만 전달한다(quality에 위협 강도를 인코딩하면 04 Q_MIN 게이트가 실제 이상신호를 필터해 T2가 종단 미탐지됨 — 이슈 #28). 계측기 자체가 손상돼 판독을 못 하는 경우(예: 무결성 샘플 부족·링크 두절)에만 degraded로 quality를 낮춘다. |
 | `quality_delta` | `float` | 필수 | 전 사이클 대비 `quality` 변화량(`quality(t) - quality(t-1)`, 첫 사이클은 0.0). 04가 T5(레이저) 판정에 사용(-0.3 미만이면 매칭) |
 | `payload` | `dict` | 필수 | 채널별 세부 필드. 채널마다 스키마가 달라 `schemas.py`는 dict로만 선언 — 채널별 payload 필드 상세는 [`A-1. 추상 결과 세부 내용`](../D4D/A-1.%20추상%20결과%20세부%20내용.md) 참고 |
 
@@ -53,7 +53,7 @@
       "payload": { "declared": "LOITER_ROI", "behavioral": "loiter_pattern", "match": true, "mission_phase_confidence": 0.9 } },
 
     { "channel": "terrain_class", "state": "degraded", "quality": 0.55, "quality_delta": -0.05,
-      "payload": { "dominant_class": "open_field", "source": "camera_verified", "gis_last_updated": "2025-11", "camera_mismatch": true, "exposure_score": 0.72, "risk_map_ref": "buf://terrain_seg/4471" } },
+      "payload": { "dominant_class": "open_field", "source": "camera_verified", "gis_last_updated": "2025-11", "camera_mismatch": true, "exposure_score": 0.72, "risk_map_ref": "buf://terrain_seg/4471", "optimal_terrain_bearing_deg": null, "lowest_exposure_bearing_deg": null } },
 
     { "channel": "proximity_object", "state": "anomaly", "quality": 0.55, "quality_delta": -0.05,
       "payload": { "class": "person", "weapon_shape": true, "bearing_deg": 142.3, "closing": true, "closure_rate_mps": 3.2, "degraded_reason": "low_visibility" } },

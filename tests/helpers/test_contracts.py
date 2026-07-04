@@ -149,6 +149,8 @@ class TestShippedFixturesConform:
     @pytest.mark.parametrize(
         "name",
         [
+            "mission_brief_t1.json",
+            "mission_brief_t2.json",
             "mission_brief_t3.json",
             "mission_brief_t4.json",
             "mission_brief_t7.json",

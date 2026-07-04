@@ -23,7 +23,7 @@
 | 필드 | 타입 | 필수 | 의미 |
 |---|---|---|---|
 | `candidates` | `list[RiskCandidate]` | 필수 | `priority_rank`로 정렬된 위험평가 결과 배열 |
-| `ambient_rac` | `Literal["Medium", "Low"] \| None` | 선택(`NotRequired`) | candidates가 비었을 때만 값이 있음. `background_exposure_score`(04) 기반 최소 RAC 하한(≥0.7이면 Medium, 미만이면 Low) |
+| `ambient_rac` | `Literal["Medium", "Low"] \| None` | 선택(`NotRequired`) | candidates가 비었을 때만 값이 있으며 항상 `"Low"`(issue #24 Lead 결정, 2026-07-04 — exposure≥0.7→Medium 승격 규칙 폐기). `Medium`은 스키마 타입상 남아있으나 05는 더 이상 생성하지 않는다. `background_exposure_score`(04)는 참고 지표로 별도 유지되며 06 등에서 소비 가능 |
 
 ## 예시 JSON
 
