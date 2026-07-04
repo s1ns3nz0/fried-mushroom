@@ -94,8 +94,9 @@ def run_closed_loop(mission_brief: dict, seed: int, ticks: int, dt: float = 1.0)
     for seq in range(ticks):
         state = world.tick(dt, command)  # 직전 flight_plan 반영(폐루프)
         threat_object = _active_threat_object(events, seq)
+        ts_ms = int(seq * dt * 1000)  # dt 반영 — top-level tick payload ts 와 일치.
         env = world_to_envelope(
-            mission_brief.get("sortie_id", "SIM"), seq, seq * 1000, state,
+            mission_brief.get("sortie_id", "SIM"), seq, ts_ms, state,
             threat_object=threat_object,
         )
         result = run_cycle(
@@ -180,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     posted = 0
     for seq, f in enumerate(frames):
         payload = build_tick_payload(
-            seq, seq * int(args.dt * 1000) if args.dt else seq,
+            seq, int(seq * args.dt * 1000),
             f"{sortie}-{seq:04d}", f["world"], f["result"], scen["enemies"],
         )
         if collector_url:

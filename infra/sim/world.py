@@ -13,7 +13,10 @@ import math
 # 페이즈: 이동/조우/회피/복귀/도착.
 _ARRIVE_RADIUS_M = 30.0
 _ALT_RATE_M_PER_S = 5.0  # 물리적 승강률 상한.
-_SPEED_MODE_MPS = {"SLOW": 8.0, "CRUISE": 17.0, "DASH": 24.0}
+# 07 flight_plan.speed_mode enum(CAUTIOUS/NORMAL/MAX, shared/constants.SPEED_MODE_ORDER)
+# → 대지속도(m/s). 07 지시 속도가 폐루프에 실제 반영되도록 키를 07 enum 으로 맞춘다.
+_SPEED_MODE_MPS = {"CAUTIOUS": 10.0, "NORMAL": 17.0, "MAX": 24.0}
+_DEFAULT_SPEED_MODE = "NORMAL"
 
 
 def _bearing_deg(a: dict, b: dict) -> float:
@@ -77,47 +80,52 @@ class World:
         return self._route[self._seg] if self._seg < len(self._route) else None
 
     def tick(self, dt: float, command: dict) -> dict:
-        """dt(초) 동안 command 를 반영해 세계를 전진시킨다. 갱신된 state 반환."""
+        """dt(초) 동안 command 를 반영해 세계를 전진시킨다. 갱신된 state 반환.
+
+        phase 는 **매 tick 현재 command 기준으로 재계산**한다(래치 금지) — EVADE 후
+        MAINTAIN 이 오면 즉시 TRANSIT/ENCOUNTER 로 복귀한다.
+        """
         action = command.get("flight_action", "MAINTAIN")
-        self._speed = _SPEED_MODE_MPS.get(command.get("speed_mode", "CRUISE"), self._speed)
+        self._speed = _SPEED_MODE_MPS.get(
+            command.get("speed_mode") or _DEFAULT_SPEED_MODE, self._speed)
 
         # 고도: altitude_delta_m 를 승강률 상한 내에서 점진 적용.
         alt_delta = command.get("altitude_delta_m", 0) or 0
         if alt_delta:
             step = max(-_ALT_RATE_M_PER_S * dt, min(_ALT_RATE_M_PER_S * dt, float(alt_delta)))
-            self._pos["alt_m"] += step
+            self._pos["alt_m"] = round(self._pos["alt_m"] + step, 3)
 
-        # 헤딩 결정: 회피(replan≠NONE + target_bearing 지시) → 그 방위로 조향, 아니면 route 추종.
-        # action 명(REROUTE/ALTITUDE_CHANGE 등)에 무관하게 target_bearing_deg 가 있으면
-        # 그게 위협 반대 회피방위이므로 그쪽으로 꺾는다 (수평 회피 궤적).
+        # 헤딩·회피의도 결정: 회피(replan≠NONE + target_bearing) → 그 방위, RTL → 기지,
+        # 아니면 route 추종. action 명 무관하게 target_bearing 이 있으면 그 회피방위로 꺾는다.
         target = self._target()
+        evade_intent: str | None = None  # 이 tick 의 command 가 지시하는 특수 phase.
         if command.get("target_bearing_deg") is not None and command.get("replan_scope", "NONE") != "NONE":
             self._heading = float(command["target_bearing_deg"]) % 360.0
-            self._phase = "EVADE"
+            evade_intent = "EVADE"
         elif action == "RTL":
-            base = (self._route[0])  # 복귀 기준(시작점)으로 단순화.
-            self._heading = _bearing_deg(self._pos, base)
-            self._phase = "RTL"
+            self._heading = _bearing_deg(self._pos, self._route[0])
+            evade_intent = "RTL"
         elif target is not None:
             self._heading = _bearing_deg(self._pos, target)
-        # 헤딩 포터블 반올림(atan2 ULP 버전차 차단).
-        self._heading = round(self._heading % 360.0, 6)
-        # 도착 판정.
+        self._heading = round(self._heading % 360.0, 6)  # 포터블 반올림(atan2 ULP 차단).
+
+        # 도착 판정(경로 끝).
         if target is None:
             self._phase = "ARRIVED"
             return self.state()
 
         # 전진.
         self._pos = _advance(self._pos, self._heading, self._speed * dt)
-
-        # route waypoint 도달 시 다음 구간으로.
         if _dist_m(self._pos, target) < _ARRIVE_RADIUS_M:
             self._seg += 1
-            if self._seg >= len(self._route):
-                self._phase = "ARRIVED"
 
-        # 적 조우 페이즈 (EVADE 가 아니면).
-        if self._phase not in ("EVADE", "RTL", "ARRIVED"):
+        # phase 재계산(래치 없음): 경로 끝→ARRIVED, command 회피의도→EVADE/RTL,
+        # 아니면 적 근접 여부로 ENCOUNTER/TRANSIT.
+        if self._seg >= len(self._route):
+            self._phase = "ARRIVED"
+        elif evade_intent is not None:
+            self._phase = evade_intent
+        else:
             if any(_dist_m(self._pos, e["pos"]) < e["detect_radius_m"] for e in self._enemies):
                 self._phase = "ENCOUNTER"
             else:

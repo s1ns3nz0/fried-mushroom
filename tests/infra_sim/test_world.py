@@ -73,3 +73,21 @@ def test_deterministic_same_commands_same_trajectory():
             traj.append((round(w.state()["pos"]["lat"], 8), round(w.state()["pos"]["lon"], 8)))
         return traj
     assert run() == run()
+
+
+def test_evade_phase_not_latched_returns_after_maintain():
+    # REROUTE→EVADE 후 MAINTAIN tick 이 오면 phase 가 EVADE 로 고착되지 않는다(래치 없음).
+    w = _world()
+    w.tick(1.0, {**_MAINTAIN, "flight_action": "REROUTE", "target_bearing_deg": 270.0, "replan_scope": "LOCAL"})
+    assert w.state()["phase"] == "EVADE"
+    w.tick(1.0, _MAINTAIN)  # 회피 해제
+    assert w.state()["phase"] != "EVADE"
+
+
+def test_speed_mode_uses_07_enum():
+    # 07 enum(CAUTIOUS/NORMAL/MAX)이 실제 속도로 반영된다(구 SLOW/CRUISE/DASH fallback 아님).
+    w = _world()
+    w.tick(1.0, {**_MAINTAIN, "speed_mode": "MAX"})
+    assert w.state()["speed_mps"] == 24.0
+    w.tick(1.0, {**_MAINTAIN, "speed_mode": "CAUTIOUS"})
+    assert w.state()["speed_mps"] == 10.0

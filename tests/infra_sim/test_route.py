@@ -87,3 +87,15 @@ def test_enemy_near_endpoint_legs_clear():
     enemy = {"id": "E1", "pos": {"lat": 37.702, "lon": 127.20}, "detect_radius_m": 150}
     route = generate_route(brief, enemies=[enemy])
     assert all(c >= enemy["detect_radius_m"] for c in _leg_clearances(route, enemy))
+
+
+def test_endpoint_inside_radius_does_not_produce_invalid_coords():
+    # 적 반경이 구간 끝점을 포함(회피 불가) → 우회 스킵, 좌표는 정상 범위 유지(P1 회귀 방지).
+    brief = {"corridor": {"waypoints": [
+        {"lat": 37.700, "lon": 127.20, "alt_m": 120},
+        {"lat": 37.703, "lon": 127.20, "alt_m": 120},  # ~330m
+    ], "bases": {}}}
+    enemy = {"id": "E1", "pos": {"lat": 37.7015, "lon": 127.20}, "detect_radius_m": 400}
+    route = generate_route(brief, enemies=[enemy])
+    for wp in route:
+        assert -90 <= wp["lat"] <= 90 and -180 <= wp["lon"] <= 180, f"무효 좌표: {wp}"

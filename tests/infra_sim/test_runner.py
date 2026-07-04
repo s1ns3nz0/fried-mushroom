@@ -103,3 +103,10 @@ def test_cli_dry_run_prints_tick_payloads(capsys, tmp_path):
 def test_cli_missing_brief_errors():
     from runner import main
     assert main(["--seed", "1", "--ticks", "1", "--brief", "/no/such.json"]) == 2
+
+
+def test_tick_payload_ts_reflects_dt():
+    frames = run_closed_loop(_BRIEF, seed=42, ticks=3, dt=2.0)
+    scen = build_scenario(_BRIEF, seed=42)
+    p = build_tick_payload(2, int(2 * 2.0 * 1000), "SIM-0002", frames[2]["world"], frames[2]["result"], scen["enemies"])
+    assert p["ts_ms"] == 4000  # seq(2) * dt(2.0) * 1000

@@ -100,10 +100,16 @@ def generate_route(mission_brief: dict, enemies: list[dict] | None = None) -> li
     route = [waypoints[0]]
     for i in range(1, len(waypoints)):
         p1, p2 = route[-1], waypoints[i]
-        # 이 구간을 침범하는 적(가장 가까운 것부터) 우회.
+
+        def _feasible(e: dict) -> bool:
+            # 끝점이 이미 탐지원 안이면 기하학상 회피 불가 → 우회하지 않는다(무한 offset 방지).
+            r = e["detect_radius_m"]
+            return haversine_m(p1, e["pos"]) >= r and haversine_m(p2, e["pos"]) >= r
+
+        # 이 구간을 침범하고 회피 가능한 적(가장 가까운 것부터) 우회.
         threatening = [
             e for e in enemies
-            if _segment_clearance(p1, p2, e) < e["detect_radius_m"]
+            if _segment_clearance(p1, p2, e) < e["detect_radius_m"] and _feasible(e)
         ]
         for enemy in sorted(threatening, key=lambda e: _segment_clearance(p1, p2, e)):
             route.append(_avoid_waypoint(p1, p2, enemy))
