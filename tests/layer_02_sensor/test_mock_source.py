@@ -10,6 +10,8 @@ from onboard.layer_02_sensor.mock_source import (
     build_scenario_envelope,
 )
 from onboard.layer_02_sensor.schema import REQUIRED_KEYS
+# phase-intent 검증은 실제 03 분류기를 태운다(magic threshold 회피, codex P2).
+from onboard.layer_03_abstraction import mission_phase
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 GOLDEN_SEQ = 0
@@ -87,25 +89,32 @@ def test_unknown_scenario_raises():
 # 전체 envelope 동치는 test_golden_fixture_matches_builder 가 이미 잠근다. 여기서는
 # 04 declared_phase·T4 mismatch·T6 camera_verified 를 유발하는 개별 주입 의도만 가드한다
 # (기존 threshold/object 테스트가 안 짚는 축).
+#
+# phase-intent 는 raw 필드를 magic threshold(<3.0/<5.0)와 비교하지 않고, 실제 03
+# mission_phase 분류기를 직접 태워 declared/behavioral/match 결과를 잠근다 — 그래야
+# 분류기 컷오프(_LOITER_SPEED_MAX_MPS=2.0)와 어긋나 생기는 거짓 안심을 막는다 (codex P2).
 
 
 def test_t3_injects_loiter_declared_phase():
-    # LOITER + 저속 → 04 declared=LOITER_ROI 유도.
-    env = build_scenario_envelope("t3", 0, 0)
-    assert env["mission_status"]["flight_mode"] == "LOITER"
-    assert env["mission_status"]["ground_speed_mps"] < 3.0
+    # LOITER + 저속 → 03 mission_phase declared=LOITER_ROI, behavioral=LOITER_ROI.
+    ph = mission_phase.run(build_scenario_envelope("t3", 0, 0))["payload"]
+    assert ph["declared"] == "LOITER_ROI"
+    assert ph["behavioral"] == "LOITER_ROI"
 
 
-def test_t4_injects_declared_action_mismatch():
-    # declared=WAYPOINT(AUTO, cruise 기대)인데 실제 행동은 loiter(저속) → mission_phase match=False.
-    env = build_scenario_envelope("t4", 0, 0)
-    assert env["mission_status"]["flight_mode"] == "AUTO"       # declared=WAYPOINT
-    assert env["mission_status"]["ground_speed_mps"] < 5.0      # cruise 아님(행동 불일치)
+def test_t4_injects_declared_behavior_mismatch():
+    # T4 핵심 조건: declared=WAYPOINT(AUTO) ↔ behavioral=LOITER_ROI(저속) → match=False.
+    ph = mission_phase.run(build_scenario_envelope("t4", 0, 0))["payload"]
+    assert ph["declared"] == "WAYPOINT"
+    assert ph["behavioral"] == "LOITER_ROI"
+    assert ph["match"] is False
 
 
 def test_t7_injects_land_declared_phase():
-    env = build_scenario_envelope("t7", 0, 0)
-    assert env["mission_status"]["flight_mode"] == "LAND"
+    # LAND + 저고도(alt_agl < 30) → declared=LAND, behavioral=LAND.
+    ph = mission_phase.run(build_scenario_envelope("t7", 0, 0))["payload"]
+    assert ph["declared"] == "LAND"
+    assert ph["behavioral"] == "LAND"
 
 
 def test_t6_injects_camera_gis_mismatch():
