@@ -36,6 +36,29 @@ def test_most_conservative_wins():
     assert r["driving_axes"] == ["energy"]
 
 
+def test_unrecognized_action_alone_is_unknown_not_continue():
+    # codex P2: 미인식 action 이 유일 기여면 CONTINUE 로 하향하지 않고 UNKNOWN(불가지).
+    r = assess_failsafe({"comms": _rep("DITCH")})
+    assert r["recommended_action"] == "UNKNOWN"
+    assert r["assessable"] is False
+    assert r["contributions"] == {"comms": "DITCH"}
+
+
+def test_unrecognized_with_calm_recognized_is_unknown():
+    # 인식된 축이 전부 CONTINUE(sev0)이고 미인식 action 존재 → 하향 금지, UNKNOWN.
+    r = assess_failsafe({"nav": _rep("CONTINUE"), "comms": _rep("FOOBAR")})
+    assert r["recommended_action"] == "UNKNOWN"
+    assert r["assessable"] is False
+
+
+def test_unrecognized_does_not_downgrade_recognized_escalation():
+    # 인식된 에스컬레이션(LAND)은 미인식 action 이 있어도 지배, 미인식은 병기.
+    r = assess_failsafe({"nav": _rep("LAND"), "comms": _rep("DITCH")})
+    assert r["recommended_action"] == "LAND"
+    assert r["severity"] == 4
+    assert r["contributions"]["comms"] == "DITCH"
+
+
 def test_land_dominates():
     r = assess_failsafe({"energy": _rep("RTL"), "comms": _rep("LAND"), "nav": _rep("RTL")})
     assert r["recommended_action"] == "LAND"

@@ -59,21 +59,35 @@ def assess_failsafe(axis_reports: dict[str, Any] | None) -> dict[str, Any]:
            severity, driving_axes, contributions, advisory_only, note}.
     """
     reports = axis_reports or {}
-    # 기여 가능한 축만: {axis: action}.
+    # 기여 가능한 축을 인식(_SEVERITY 등재)/미인식으로 분리한다. 미인식 action 을 severity 0
+    # 으로 뭉개면 안전권고가 조용히 CONTINUE 로 하향됨(codex P2) — 별도 추적해 명시 처리.
     contrib: dict[str, str] = {}
+    unknown_actions: dict[str, str] = {}
     for axis, rep in reports.items():
         action = _action_of(rep)
-        if action is not None:
-            contrib[axis] = action
+        if action is None:
+            continue
+        (contrib if action in _SEVERITY else unknown_actions)[axis] = action
 
-    if not contrib:
+    if not contrib and not unknown_actions:
         return {
             "assessable": False, "recommended_action": "UNKNOWN", "severity": 0,
             "driving_axes": [], "contributions": {}, "advisory_only": True,
             "note": "판정 가능한 안전 축 없음 — 통합 failsafe 불가.",
         }
 
-    max_sev = max(_SEVERITY.get(a, 0) for a in contrib.values())
+    max_sev = max((_SEVERITY[a] for a in contrib.values()), default=0)
+
+    # 미인식 action + 인식된 에스컬레이션 없음 → 심각도 불가지. CONTINUE 하향은 위험하므로
+    # 불가지(UNKNOWN)로 보고한다(미인식 action 이 더 급할 수 있음). 인식된 에스컬레이션이
+    # 있으면(max_sev>0) 그 값이 지배하고 미인식 action 은 병기만 한다(하향 없음).
+    if unknown_actions and max_sev == 0:
+        return {
+            "assessable": False, "recommended_action": "UNKNOWN", "severity": 0,
+            "driving_axes": [], "contributions": {**contrib, **unknown_actions},
+            "advisory_only": True,
+            "note": f"미인식 failsafe action {unknown_actions} — 심각도 판정 불가, 안전상 CONTINUE 하향 금지.",
+        }
 
     if max_sev == 0:
         return {
@@ -82,13 +96,15 @@ def assess_failsafe(axis_reports: dict[str, Any] | None) -> dict[str, Any]:
             "note": "전 축 정상 — 임무 지속 가능.",
         }
 
-    # 최상위 심각도 축들 → 축 우선순위로 실행 action 결정.
-    top_axes = [ax for ax, a in contrib.items() if _SEVERITY.get(a, 0) == max_sev]
+    # 최상위 심각도 축들 → 축 우선순위로 실행 action 결정(인식된 축만 지배 후보).
+    top_axes = [ax for ax, a in contrib.items() if _SEVERITY[a] == max_sev]
     top_axes.sort(key=lambda ax: _AXIS_PRECEDENCE.index(ax) if ax in _AXIS_PRECEDENCE else len(_AXIS_PRECEDENCE))
     action = contrib[top_axes[0]]
     note = f"안전 3축 융합 → {action} (지배 축: {', '.join(top_axes)}, 심각도 {max_sev})."
+    if unknown_actions:
+        note += f" · 미인식 action 병기: {unknown_actions}"
     return {
         "assessable": True, "recommended_action": action, "severity": max_sev,
-        "driving_axes": top_axes, "contributions": contrib, "advisory_only": True,
-        "note": note,
+        "driving_axes": top_axes, "contributions": {**contrib, **unknown_actions},
+        "advisory_only": True, "note": note,
     }
