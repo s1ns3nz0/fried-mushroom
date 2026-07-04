@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra" / "sim"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from runner import build_scenario, run_closed_loop, build_tick_payload  # noqa: E402
+from runner import _ENEMY_DETECT_RADIUS_M as _RUNNER_DEFAULT_RADIUS  # noqa: E402
 
 _BRIEF = {
     "sortie_id": "SIM", "mission_context": "정찰",
@@ -110,3 +111,76 @@ def test_tick_payload_ts_reflects_dt():
     scen = build_scenario(_BRIEF, seed=42)
     p = build_tick_payload(2, int(2 * 2.0 * 1000), "SIM-0002", frames[2]["world"], frames[2]["result"], scen["enemies"])
     assert p["ts_ms"] == 4000  # seq(2) * dt(2.0) * 1000
+
+
+# --- F3: E.tracks(관측소 폼) → sim 적 배치 (#151 F3) ---
+
+_ETRACKS_BRIEF = {
+    **_BRIEF,
+    "enemy_tracks": [
+        {"id": "trk-1", "kind": "T3", "lat": 37.52, "lon": 127.02, "radius_m": 260, "confidence": 0.9},
+        {"id": "trk-2", "kind": "T3", "lat": 37.55, "lon": 127.06, "radius_m": 220, "confidence": 0.85},
+    ],
+}
+
+
+def test_place_enemies_uses_enemy_tracks_when_present():
+    from runner import place_enemies
+    enemies = place_enemies(_ETRACKS_BRIEF, seed=42)
+    assert [e["id"] for e in enemies] == ["trk-1", "trk-2"]
+    assert enemies[0]["pos"] == {"lat": 37.52, "lon": 127.02}
+    assert enemies[0]["detect_radius_m"] == 260
+    assert enemies[1]["detect_radius_m"] == 220
+
+
+def test_place_enemies_seed_fallback_without_tracks():
+    from runner import place_enemies
+    enemies = place_enemies(_BRIEF, seed=42)  # enemy_tracks 없음
+    assert len(enemies) == 1 and enemies[0]["id"] == "E1"
+
+
+def test_build_scenario_route_avoids_etrack_enemies():
+    from runner import build_scenario
+    from route import _segment_clearance
+    scen = build_scenario(_ETRACKS_BRIEF, seed=42)
+    route = scen["route"]
+    # feasible(끝점 원 밖) 적에 대해 모든 leg 가 detect_radius 밖.
+    for e in scen["enemies"]:
+        legs = [_segment_clearance(route[i], route[i + 1], e) for i in range(len(route) - 1)]
+        # 회피 가능한(끝점 원 밖) 적은 leg clearance 보장.
+        from route import haversine_m
+        if all(haversine_m(wp, e["pos"]) >= e["detect_radius_m"] for wp in (route[0], route[-1])):
+            assert all(c >= e["detect_radius_m"] for c in legs), \
+                f"{e['id']} leg 위반: {[round(c,1) for c in legs]}"
+
+
+def test_etracks_deterministic():
+    from runner import place_enemies
+    assert place_enemies(_ETRACKS_BRIEF, 42) == place_enemies(_ETRACKS_BRIEF, 7)  # seed 무관(트랙 고정)
+
+
+def test_place_enemies_accepts_c4i_pos_list_shape():
+    # C4I/assemble_mettc 정본 형상 {track_id, kind, pos:[lat,lon], confidence} 수용 (#195 P2).
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [
+        {"track_id": "t1", "kind": "humint", "pos": [37.53, 127.03], "confidence": 0.8},
+    ]}
+    enemies = place_enemies(brief, seed=42)
+    assert len(enemies) == 1
+    assert enemies[0]["id"] == "t1"
+    assert enemies[0]["pos"] == {"lat": 37.53, "lon": 127.03}
+    assert enemies[0]["detect_radius_m"] == _RUNNER_DEFAULT_RADIUS  # radius 없음 → 기본
+
+
+def test_place_enemies_pos_dict_shape():
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [{"track_id": "t1", "pos": {"lat": 37.53, "lon": 127.03}}]}
+    assert place_enemies(brief, 42)[0]["pos"] == {"lat": 37.53, "lon": 127.03}
+
+
+def test_place_enemies_all_malformed_falls_back_to_seed():
+    # 형상 불일치(위치 해석 불가) 트랙만 있으면 조용히 0기가 아니라 seed 폴백 (#195 P2).
+    from runner import place_enemies
+    brief = {**_BRIEF, "enemy_tracks": [{"kind": "humint", "label": "위치없음"}, {"foo": 1}]}
+    enemies = place_enemies(brief, seed=42)
+    assert len(enemies) == 1 and enemies[0]["id"] == "E1"  # seed 폴백

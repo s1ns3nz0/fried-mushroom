@@ -15,6 +15,19 @@ seed = 동일 적·이벤트·궤적·판정(재현성).
 | `envelope.py` | `world_to_envelope(sortie_id, seq, ts_ms, world_state, *, threat_object=None) -> RawSensorEnvelope`. `build_normal_envelope` baseline + 위치/헤딩/속도 주입(gps=imu est 로 T1 오탐 방지). `threat_object` → 근접위협 주입. |
 | `runner.py` | `run_closed_loop(mission_brief, seed, ticks, dt) -> [{world, result}]` 폐루프 되먹임 + `previous_qualities`/`flight_plan_state` 스레딩. `build_scenario`/`build_tick_payload`. CLI `main()`(`--seed --brief --ticks --dt --rate --collector`). |
 
+## `enemy_tracks` (E.tracks) 입력 스키마 — F3
+
+`mission_brief.enemy_tracks` 가 있으면 `place_enemies` 가 seed 배치 대신 그 위치에 적을
+놓는다(폼/C4I → route 회피 → 조우). **두 정본 형상을 모두 수용**:
+
+| 출처 | 형상 |
+|---|---|
+| 관측소 폼 (`gcs.js`) | `{ id, kind, lat, lon, radius_m, confidence }` — 위치 top-level `lat`/`lon` |
+| C4I / `assemble_mettc` (B-1 §5.1) | `{ track_id, kind, pos: [lat, lon], confidence, label, ... }` — 위치 `pos` 리스트(또는 `{lat,lon}`) |
+
+- id = `id` ‖ `track_id`. 반경 = `radius_m` (없으면 기본 400m). `kind`/`confidence` 보존(표시용).
+- 위치 해석 불가 항목은 스킵. **유효 변환이 0개면 조용히 0기로 두지 않고 seed 폴백**(적 없는 시뮬 방지).
+
 ## `POST /tick` payload 스키마 (정본)
 
 runner 가 사이클마다 산출하는 관측 패널 전송 계약 (`build_tick_payload` 출력). 수집기
