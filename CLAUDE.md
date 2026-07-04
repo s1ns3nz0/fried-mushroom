@@ -34,6 +34,8 @@
 ```bash
 python3 -m pytest                            # 전체 테스트
 python3 -m pytest tests/layer_04_threat/     # 특정 레이어
-python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json  # 종단 실행 (pythonpath=src)
+python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json  # 온보드 종단 (02..07)
 python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json --log run.jsonl  # + 사이클 로그
+python3 -m mission_pipeline examples/set_mission_recon.json examples/raw_t3.json --approve  # 01→07 종단 (GCS+온보드)
+python3 -m mission_pipeline examples/set_mission_recon.json examples/raw_t3.json  # 승인 전 리뷰(카드·경고)만
 ```
