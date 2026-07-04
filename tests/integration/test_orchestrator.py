@@ -34,7 +34,7 @@ RESULT_SCHEMA = {
 
 # run_cycle 반환 dict 의 전체 top-level 키(스키마 검증 대상 5개 + 07 디바운스 상태 채널 1개).
 # flight_plan_state 는 FlightPlanOutput 스키마에 속하지 않는 별도 채널(ADR-004 07 한정 예외).
-RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state"]
+RESULT_KEYS_ORDERED = list(RESULT_SCHEMA) + ["flight_plan_state", "endurance"]  # endurance=advisory(#360)
 RESULT_KEYS = set(RESULT_KEYS_ORDERED)
 
 
@@ -385,3 +385,36 @@ def _canned_flight_plan() -> dict:
         "flight_action": "MAINTAIN", "target_bearing_deg": None,
         "altitude_delta_m": 0, "replan_scope": "NONE", "reroute_anchor": None,
     }
+
+
+# --- #360: advisory 리포트 CLI 플래그(--explain/--sitrep) ---
+
+
+class TestAdvisoryReportFlags:
+    def _run(self, extra, tmp_path):
+        import os as _os
+        import pathlib
+        import subprocess
+        import sys as _sys
+        ex = pathlib.Path(__file__).resolve().parents[2] / "examples"
+        cmd = [_sys.executable, "-m", "onboard", str(ex / "raw_t3.json"),
+               str(ex / "mission_brief_t3.json"), *extra]
+        src = str(pathlib.Path(__file__).resolve().parents[2] / "src")
+        return subprocess.run(cmd, capture_output=True, text=True,
+                              env={**_os.environ, "PYTHONPATH": src})
+
+    def test_default_is_json(self, tmp_path):
+        r = self._run([], tmp_path)
+        assert r.returncode == 0
+        assert set(json.loads(r.stdout)) == RESULT_KEYS  # 기본: JSON(불변)
+
+    def test_explain_prints_human_report(self, tmp_path):
+        r = self._run(["--explain"], tmp_path)
+        assert r.returncode == 0
+        assert not r.stdout.lstrip().startswith("{")  # JSON 아님 — 사람이 읽는 텍스트
+        assert r.stdout.strip()  # 비어있지 않음
+
+    def test_sitrep_prints_human_report(self, tmp_path):
+        r = self._run(["--sitrep"], tmp_path)
+        assert r.returncode == 0
+        assert "[SITREP]" in r.stdout

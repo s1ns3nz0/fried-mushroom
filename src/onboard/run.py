@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import math
 
+from .endurance import assess_endurance
 from .shared.constants import RAC_ORDER
 
 _LAYER_MODULE = {
@@ -81,6 +82,8 @@ def run_cycle(
         "response": response,
         "flight_plan": flight_plan,
         "flight_plan_state": flight_plan_state,
+        # advisory(#360): 에너지 기반 RTL 권고. advisory_only — 결정론 판정·기존 필드 불변.
+        "endurance": assess_endurance(raw, mission_brief),
     }
 
 

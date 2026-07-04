@@ -19,11 +19,13 @@ from pathlib import Path
 
 from onboard.layer_02_sensor.schema import REQUIRED_KEYS as RAW_REQUIRED_KEYS
 from onboard.run import run_cycle
+from onboard.explain import explain_cycle, format_explanation
+from onboard.sitrep import build_sitrep
 from onboard.shared.schemas import MissionBrief
 
 _USAGE = (
     "usage: python -m onboard <raw.json> <mission_brief.json> "
-    "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>]"
+    "[--log <path>] [--prev-qualities <path>] [--flight-plan-state <path>] [--explain] [--sitrep]"
 )
 
 
@@ -48,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 flight_plan_state_path = val
             args = args[:i] + args[i + 2:]
+
+    # advisory 리포트 모드 boolean 플래그(#360) — 사람이 읽는 출력. 기본(미지정)은 JSON 유지.
+    want_explain = "--explain" in args
+    args = [a for a in args if a != "--explain"]
+    want_sitrep = "--sitrep" in args
+    args = [a for a in args if a != "--sitrep"]
 
     if len(args) < 2:
         print(_USAGE, file=sys.stderr)
@@ -126,9 +134,31 @@ def main(argv: list[str] | None = None) -> int:
     if log_path is not None:
         _append_cycle_log(log_path, raw.get("seq"), result)
 
-    json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
-    sys.stdout.write("\n")
+    # 리포트 모드(#360): --explain/--sitrep 은 사람이 읽는 advisory 리포트를 출력.
+    # 기본(미지정)은 결과 JSON — 골든/스크립트 소비 불변.
+    if want_explain:
+        sys.stdout.write(format_explanation(explain_cycle(result)) + "\n")
+    elif want_sitrep:
+        sys.stdout.write(_format_sitrep(build_sitrep([result])) + "\n")
+    else:
+        json.dump(result, sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
     return 0
+
+
+def _format_sitrep(sitrep: dict) -> str:
+    """SITREP dict → 사람이 읽는 텍스트 리포트(advisory)."""
+    lines = [
+        f"[SITREP] 주의수준: {sitrep.get('attention_level', '-')}",
+        f"  헤드라인   : {sitrep.get('headline', '-')}",
+        f"  비행조치   : {sitrep.get('flight_action', '-')}",
+        f"  주위협      : {sitrep.get('primary_threat_event', '-')}",
+        f"  권고         : {sitrep.get('recommendation', '-')}",
+    ]
+    trend = sitrep.get("trend") or {}
+    if trend.get("escalating"):
+        lines.append(f"  추세 경보   : {trend.get('level', '-')} ({', '.join(trend.get('signals', []))})")
+    return "\n".join(lines)
 
 
 def _append_cycle_log(path: str, seq, result: dict) -> None:
