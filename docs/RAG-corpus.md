@@ -8,6 +8,12 @@
 > RAG 코퍼스 축적은 PRD "MVP 제외 사항"이다(`docs/PRD.md` §MVP 제외 — "RAG 코퍼스 축적 및
 > CHANNEL_WEIGHTS 재학습"). 이 라운드는 그 킥오프이며, MVP 온보드 파이프라인(`src/onboard/`)은
 > 일절 건드리지 않는다(infra/log + docs 전용).
+>
+> **라운드 2 갱신(#143)**: 라운드 1이 이월한 2건을 실현한다 — ① `aggregate.py`가
+> `threat_modeling_log` → `threat_judgments`(위협별 confidence 보존)를 실제 집계해
+> 변환기가 자리표시(placeholder)가 아닌 **실 confidence**를 쓰도록(§2-2·§3-1),
+> ② 회수의 posture 필터에 **근접매칭**(±tolerance) 옵션 추가(§6-1). 라운드 1의
+> 정확일치·스키마·변환기 계약은 하위호환으로 보존한다.
 
 ## 1. 배경 — 왜 코퍼스인가
 
@@ -42,7 +48,8 @@
 | `mission_id` | str | PK |
 | `raw_log_ref` | str | raw_log 파일 포인터 |
 | `corridor_region` | str | 회랑 지역 코드 (예: `KR-hill-07`) |
-| `threat_events` | JSON 배열 | 예: `["T3","T1"]` (등장 위협 유니크) |
+| `threat_events` | JSON 배열 | 예: `["T3","T1"]` (등장 위협 유니크; `aggregate_threat_events`) |
+| `threat_judgments` | JSON 배열(객체) | **라운드 2**: 위협별 `{threat_event, confidence, kill_chain_stage, ts}` (판정 confidence 보존; `aggregate_threat_judgments`). episode_index 테이블엔 미영속 — `build_episode_index` 산출 dict에 실려 enriched episode로 전달 |
 | `outcome` | str | 임무 결과 (예: `rtb_success`) ← **실제 outcome 원천** |
 | `terrain_composition` | JSON 객체 | |
 | `narrative` / `narrative_status` | str | pending / human_confirmed |
@@ -78,9 +85,10 @@
 
 ### 3-1. 변환기 입력 — enriched episode
 
-`aggregate.build_episode_index`가 내는 episode_index는 `threat_events`를 **문자열 배열**로만
-보관해 위협별 confidence/kill_chain_stage를 잃는다. 코퍼스는 이를 보존해야 하므로, 변환기 입력은
-episode_index + mission_brief 컨텍스트 + 위협 판정 상세를 조인한 **enriched episode** dict다:
+라운드 1의 `threat_events`(**문자열 배열**)만으로는 위협별 confidence/kill_chain_stage를 잃는다.
+코퍼스는 이를 보존해야 하므로, **라운드 2**부터 `aggregate.build_episode_index`가 `threat_judgments`
+(위협별 판정 상세)를 함께 산출한다. 변환기 입력은 이 `threat_judgments` + episode_index +
+mission_brief 컨텍스트를 조인한 **enriched episode** dict다:
 
 ```jsonc
 {
@@ -98,10 +106,12 @@ episode_index + mission_brief 컨텍스트 + 위협 판정 상세를 조인한 *
 }
 ```
 
-> **설계 결정(Lead 확인 요망)**: `threat_judgments`는 현재 episode_index에 없다.
-> 라운드 1은 코퍼스 스키마·계약·변환기·회수 초안까지만 확정하고, `aggregate.py`가
-> `threat_modeling_log` → `threat_judgments`(위협별 confidence 보존)를 실제로 집계하도록
-> 확장하는 것은 **다음 라운드**(집계기 구현 라운드)에 둔다. 변환기는 이 계약 형태를 입력으로 받는다.
+> **라운드 2 확정(#143)**: `aggregate.aggregate_threat_judgments(threat_modeling_log)`가
+> 위협별 판정을 집계해 이 `threat_judgments` 형태를 산출한다. 같은 `threat_event`가 시계열에
+> 여러 번 등장하면 **최신(ts 최대) 판정이 이긴다** — 킬체인 후기 단계·최종 확신도를 보존하기
+> 위함(예: T3가 초기→후기로 발전하면 후기 판정의 confidence·kill_chain_stage 채택). 반환 순서는
+> 위협의 **첫 등장 순**. `build_episode_index`가 이 산출을 dict에 실어 변환기로 전달하며, 변환기
+> 계약(§4)은 라운드 1과 동일하다(판정별 `ts`는 corpus_record에 미사용, episode 레벨 `ts`를 씀).
 
 ## 4. episode → 학습레코드 변환 규칙
 
@@ -132,13 +142,32 @@ CRUD/회수를 제공한다.
 | 파라미터 | 타입 | 필수 | 의미 |
 |---|---|:---:|---|
 | `mission_context` | str｜None | | 임무유형 일치 필터 |
-| `posture` | dict｜None | | 경계태세 정확일치 필터(표준 JSON 직렬화 비교) |
+| `posture` | dict｜None | | 경계태세 필터(기본 정확일치; `posture_tolerance` 지정 시 근접매칭) |
+| `posture_tolerance` | int｜None | | **라운드 2**: None=정확일치(기본), 정수=±근접매칭(§6-1) |
 | `threat_event` | str｜None | | 위협 이벤트 일치 필터 |
 | `top_k` | int | | 최대 반환 수(기본 20) |
 
 - 세 필터는 AND 결합. 모두 None이면 전체(top_k 한도).
 - 회수 시나리오: 다음 임무 브리핑의 `(mission_context, posture)` + NLP가 뽑은 후보 `threat_event`로
   질의 → 과거 유사 사례의 판정 confidence·실제 outcome 참고.
+
+### 6-1. posture 근접매칭 (라운드 2, 정본)
+
+라운드 1의 posture 필터는 표준 JSON 정확일치뿐이라 경계태세가 한 단계만 달라도 유사 사례를
+놓친다. **`posture_tolerance`** 파라미터로 규칙기반 근접매칭을 추가한다:
+
+- `posture_tolerance=None`(기본) → **정확일치**(표준 JSON 직렬화 비교, 라운드 1 동작 그대로).
+- `posture_tolerance=t`(정수 ≥ 0) → **근접매칭**: 질의 posture에 담긴 각 키
+  (`watchcon`/`defcon`/`infocon` 등)에 대해 레코드 posture가 그 키를 가지고
+  **`|record[key] - query[key]| ≤ t`** 를 **모든 키에 대해** 만족하면 매칭.
+  - 예: `t=1` → `defcon ±1` **그리고** `watchcon ±1` **그리고** `infocon ±1` 동시 충족.
+  - 질의에 없는 키는 무시(레코드가 추가 키를 가져도 무방).
+  - 질의 키를 레코드가 결여하거나 레코드 posture가 `null`이면 **비매칭**(차원 결여 → 근접 판정 불가).
+  - `t=0` 은 값 정확일치이되 dict 부분집합 의미(질의 키만 비교)라 JSON 정확일치와 다를 수 있다.
+- `posture=None` 이면 `posture_tolerance` 는 무시(경계태세 필터 없음).
+- `posture_tolerance < 0` → `ValueError`(신뢰경계 입력 검증).
+- 근접매칭은 SQL 문자열 동등비교로 표현 불가하므로, 비-posture 필터로 후보를 좁힌 뒤 Python에서
+  posture 근접 필터 → `top_k` 슬라이스 순으로 적용한다(정렬 기준 §6 출력과 동일).
 
 ### 출력
 
@@ -156,10 +185,9 @@ CRUD/회수를 제공한다.
 ]
 ```
 
-> **초안 한계(다음 라운드 후보)**: 현 회수는 스칼라 정확일치(메타필터)만 한다. posture 근접
-> 매칭(예: watchcon ±1), narrative 임베딩 벡터유사도(sqlite-vec, `store.py`와 동형), pending 제외
-> 정책 연동은 초안 범위 밖이다. `store.EpisodeStore.search`(벡터 하이브리드)와 통합하는 것은
-> 별도 라운드에서 다룬다.
+> **잔여 한계(다음 라운드 후보)**: posture 근접매칭은 라운드 2에서 추가됐다(§6-1). 남은 항목 —
+> narrative 임베딩 벡터유사도(sqlite-vec, `store.py`와 동형), pending 제외 정책 연동,
+> `store.EpisodeStore.search`(벡터 하이브리드) 통합 — 은 별도 라운드에서 다룬다.
 
 ## 7. 경계 — 이번 라운드 범위 밖 (CRITICAL)
 
