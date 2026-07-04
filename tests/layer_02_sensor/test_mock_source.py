@@ -83,6 +83,40 @@ def test_unknown_scenario_raises():
         build_scenario_envelope("t9", 0, 0)
 
 
+# --- declared-phase / 행동 mismatch / t6 주입 SIGNAL 조건 커버리지 ---
+# 전체 envelope 동치는 test_golden_fixture_matches_builder 가 이미 잠근다. 여기서는
+# 04 declared_phase·T4 mismatch·T6 camera_verified 를 유발하는 개별 주입 의도만 가드한다
+# (기존 threshold/object 테스트가 안 짚는 축).
+
+
+def test_t3_injects_loiter_declared_phase():
+    # LOITER + 저속 → 04 declared=LOITER_ROI 유도.
+    env = build_scenario_envelope("t3", 0, 0)
+    assert env["mission_status"]["flight_mode"] == "LOITER"
+    assert env["mission_status"]["ground_speed_mps"] < 3.0
+
+
+def test_t4_injects_declared_action_mismatch():
+    # declared=WAYPOINT(AUTO, cruise 기대)인데 실제 행동은 loiter(저속) → mission_phase match=False.
+    env = build_scenario_envelope("t4", 0, 0)
+    assert env["mission_status"]["flight_mode"] == "AUTO"       # declared=WAYPOINT
+    assert env["mission_status"]["ground_speed_mps"] < 5.0      # cruise 아님(행동 불일치)
+
+
+def test_t7_injects_land_declared_phase():
+    env = build_scenario_envelope("t7", 0, 0)
+    assert env["mission_status"]["flight_mode"] == "LAND"
+
+
+def test_t6_injects_camera_gis_mismatch():
+    # T6 camera_verified: GIS=forest ↔ 카메라 open_field 불일치 → 03 terrain_class 카메라 우선.
+    env = build_scenario_envelope("t6", 0, 0)
+    assert env["environment"]["mock_gis_class"] == "forest"
+    terrain = env["imagery"]["terrain_label"]
+    assert terrain["dominant_class"] == "open_field"
+    assert terrain["camera_mismatch"] is True
+
+
 @pytest.mark.parametrize("scenario", ["t1", "t2", "t3", "t4", "t6", "t7"])
 def test_golden_fixture_matches_builder(scenario):
     fixture = EXAMPLES_DIR / f"raw_{scenario}.json"
