@@ -1133,3 +1133,161 @@ body {
 .gcs-status.err {
   color: var(--anomaly);
 }
+
+/* ── 디버그 모드 — DEBUG 토글 칩 + 🐛 버튼 + 레이어 I/O 로그 오버레이 ── */
+
+#debug-toggle {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+#debug-toggle:hover {
+  border-color: var(--degraded);
+  color: var(--degraded);
+}
+
+#debug-toggle.active {
+  border-color: var(--degraded);
+  color: var(--degraded);
+  background: rgba(229, 169, 61, 0.12);
+}
+
+#debug-toggle:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 🐛 버튼 — AI 결정 모델 패널(우측 컬럼) 우상단에 fixed로 뜬다(디버그 모드 ON에서만 표시). */
+#debug-bug-btn {
+  position: fixed;
+  top: 54px;
+  right: 16px;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  font-size: 14px;
+  line-height: 1;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+#debug-bug-btn[hidden] {
+  display: none;
+}
+
+#debug-bug-btn:hover {
+  border-color: var(--degraded);
+}
+
+#debug-bug-btn:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 로그 오버레이 — 우측을 덮는 스크롤 패널(레이어별 IN/OUT JSON). */
+#debug-log {
+  position: fixed;
+  top: 92px;
+  right: 16px;
+  bottom: 16px;
+  width: min(560px, calc(100vw - 32px));
+  z-index: 39;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+#debug-log[hidden] {
+  display: none;
+}
+
+.debug-log-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.debug-log-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--degraded);
+}
+
+#debug-log-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.dbg-layer {
+  margin-bottom: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+
+.dbg-layer > summary {
+  padding: 5px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dbg-layer[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.dbg-io {
+  padding: 6px 8px;
+}
+
+.dbg-io-label {
+  margin-bottom: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.dbg-io-label.out {
+  color: var(--normal);
+}
+
+.dbg-json {
+  margin: 0;
+  padding: 6px;
+  max-height: 240px;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre;
+}
