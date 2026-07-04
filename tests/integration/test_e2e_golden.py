@@ -16,8 +16,9 @@ def _load(name: str) -> dict:
     return json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
 
 
-def _run(raw_name: str, brief_name: str) -> dict:
-    return run_cycle(_load(raw_name), _load(brief_name))
+def _run(raw_name: str, brief_name: str, prev_qualities_name: str | None = None) -> dict:
+    previous_qualities = _load(prev_qualities_name) if prev_qualities_name is not None else None
+    return run_cycle(_load(raw_name), _load(brief_name), previous_qualities=previous_qualities)
 
 
 def _assert_golden(actual: dict, expected_name: str) -> None:
@@ -47,6 +48,15 @@ def test_golden_t7() -> None:
 
 def test_golden_t6() -> None:
     _assert_golden(_run("raw_t6.json", "mission_brief_t6.json"), "expected_t6.json")
+
+
+def test_golden_t5() -> None:
+    # T5(레이저/광학 교란) 는 quality_delta 급락 파생필드로만 탐지 → previous_qualities 필요.
+    # CLI(`python -m onboard ... --prev-qualities`) 와 동일하게 정본 주입 (#79/#97).
+    _assert_golden(
+        _run("raw_t5.json", "mission_brief_t5.json", "qualities_t5_primed.json"),
+        "expected_t5.json",
+    )
 
 
 def test_golden_strike() -> None:

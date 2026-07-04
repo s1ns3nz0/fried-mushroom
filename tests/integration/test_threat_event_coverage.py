@@ -9,15 +9,16 @@
     올라오지 않고 background_exposure_score 로만 소비되므로 커버리지 후보에서 제외.
   - 그 외 T1·T2·T3·T4·T5·T7 은 actionable.
 
-T5 블로커(#79):
+T5 블로커 해소(#79, #97):
   T5 는 proximity_object/terrain_class 의 quality_delta < -0.3 로만 탐지된다. quality_delta
-  는 03 이 previous_quality 대비 계산하는 "사이클 간 파생필드"라, 단일 사이클에서는 항상
-  0.0 이다(_common.make_output: previous_quality is None → delta 0.0). 골든 정본을 만드는
-  CLI(`python -m onboard raw brief`) 와 test_e2e_golden 은 둘 다 run_cycle 을
-  previous_qualities 없이 1회 호출하므로, 현재 배선으로는 T5 골든을 만들 수 없다
-  (orchestrator/CLI 가 previous_qualities 를 스레딩하도록 바꿔야 가능 — src 변경 필요).
-  따라서 T5 는 KNOWN_UNCOVERED_BLOCKED 로 명시 제외하고, 블로커가 해소되면 아래 두 assert
-  가 강제로 목록 갱신을 요구한다.
+  는 03 이 previous_quality 대비 계산하는 "사이클 간 파생필드"라, previous_qualities 없이는
+  항상 0.0 이다(_common.make_output: previous_quality is None → delta 0.0).
+  #97 이 orchestrator/CLI 에 previous_qualities 스레딩(`--prev-qualities`)을 추가해
+  이 블로커를 해소했다. examples/qualities_t5_primed.json(terrain_class=1.0) 을 주입하면
+  raw_t5(terrain camera_confidence=0.65) 에서 delta=-0.35<-0.3 → T5 종단 탐지된다.
+  golden(expected_t5.json)·test_e2e_golden.test_golden_t5 가 이를 정본으로 잠근다.
+  따라서 KNOWN_UNCOVERED_BLOCKED 는 비어 있고, 전 actionable threat_event(T1·T2·T3·T4·T5·T7)
+  가 골든으로 종단 커버된다.
 """
 
 import json
@@ -30,8 +31,8 @@ EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 # 배경 트랙(threat_event 아님) — 커버리지 후보에서 제외 (04 §T6).
 BACKGROUND_ONLY_EVENTS = frozenset({"T6"})
 
-# 현재 배선으로 종단 골든 재현 불가 — 블로커 해소 시 여기서 제거 (위 docstring 참조).
-KNOWN_UNCOVERED_BLOCKED = frozenset({"T5"})
+# 블로커 없음 — T5 는 #97 previous_qualities 스레딩으로 해소, 골든 커버됨 (위 docstring 참조).
+KNOWN_UNCOVERED_BLOCKED: frozenset[str] = frozenset()
 
 
 def _actionable_threats() -> set[str]:
