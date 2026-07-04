@@ -36,6 +36,23 @@ from onboard.layer_02_sensor.mock_source import build_normal_envelope
 from onboard.run import run_cycle
 
 
+@pytest.fixture(autouse=True)
+def _offline_nlp_model(monkeypatch):
+    """비-smoke 테스트 기본 오프라인화 — 실 NLP 모델 로더(sentence-transformers)가
+    네트워크/HF 다운로드를 타지 않게 `_load` 를 None 으로 stub. semantic extra 설치
+    환경에서도 기본 pytest 는 결정론·오프라인(keyword 폴백). RUN_MODEL_SMOKE=1(실모델
+    smoke) 이면 stub 안 함. 개별 테스트가 fake 모델을 다시 monkeypatch 하면 그 값이 우선.
+
+    NOTE: `corpus._embed_narrative` 는 zero-dep 결정론 임베딩(narrative_embed)이라 네트워크
+    무관 — stub 하지 않는다(인제스트 자동임베딩 테스트가 이에 의존). ST 다운로드 위험은
+    NLP `_load` 경로에 한정된다.
+    """
+    import os as _os
+    if _os.environ.get("RUN_MODEL_SMOKE"):
+        return
+    monkeypatch.setattr(nlp_model, "_load", lambda name: None, raising=False)
+
+
 # ── 공통 픽스처 ───────────────────────────────────────────────────────────────
 
 
