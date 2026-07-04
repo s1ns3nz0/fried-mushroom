@@ -129,6 +129,11 @@ def _extract_obstacle_ttc(abstraction: dict) -> float | None:
     return None
 
 
+def extract_qualities(result: dict) -> dict[str, float]:
+    """run_cycle 결과에서 채널명→quality 맵 추출. 다음 사이클 previous_qualities 인자용."""
+    return {ch["channel"]: ch["quality"] for ch in result["abstraction"]["channels"]}
+
+
 def _run_layer(num: str, invoke):
     """레이어 run() 이 있으면 invoke(run) 으로 호출, 없으면 canned passthrough."""
     run = _import_layer_run(num)
