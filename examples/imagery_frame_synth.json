@@ -1,0 +1,15 @@
+{
+  "note": "#355 합성 imagery 실프레임 번들 — perception 실모델 PR 용 샘플. eo_frame 을 raw envelope.imagery 에 병합해 사용.",
+  "eo_frame": {
+    "kind": "eo",
+    "fmt": "raw",
+    "width": 4,
+    "height": 4,
+    "channels": 3,
+    "bytes_b64": "AAAAKCgoUFBQeHh4AAAAKCgoUFBQeHh4AAAAKCgoUFBQeHh4AAAAKCgoUFBQeHh4",
+    "meta": {
+      "gimbal_deg": 15.0,
+      "source": "synthetic"
+    }
+  }
+}
