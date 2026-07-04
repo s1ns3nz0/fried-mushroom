@@ -20,11 +20,21 @@ from pathlib import Path
 from gcs.layer_01_info_center.run import assemble_draft, finalize
 from onboard.run import run_cycle
 
-_USAGE = "usage: python -m mission_pipeline <set_mission.json> <raw.json> [--approve]"
+_USAGE = "usage: python -m mission_pipeline <set_mission.json> <raw.json> [--approve] [--ts <ms>]"
 
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+
+    ts_override: int | None = None
+    if "--ts" in args:
+        i = args.index("--ts")
+        if i + 1 >= len(args):
+            print(_USAGE, file=sys.stderr)
+            return 2
+        ts_override = int(args[i + 1])
+        args = args[:i] + args[i + 2 :]
+
     approve = "--approve" in args
     positionals = [a for a in args if a != "--approve"]
     if len(positionals) < 2:
@@ -40,7 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         # 리뷰만 — 온보드 미실행 (운용자 승인 대기).
         result: dict = {"status": "review", **draft}
     else:
-        ts_ms = int(time.time() * 1000)  # 유즈사이트(CLI) 시계 — 파이프라인은 순수 유지
+        # --ts 주입 시 결정론(골든 재현), 없으면 유즈사이트 시계. 파이프라인은 순수 유지.
+        ts_ms = ts_override if ts_override is not None else int(time.time() * 1000)
         finalized = finalize(draft, approved=True, ts_ms=ts_ms)
         cycle = run_cycle(raw, finalized["mission_brief"])
         result = {
