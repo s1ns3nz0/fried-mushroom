@@ -2,7 +2,7 @@
   "abstraction": {
     "schema_version": "1.0",
     "id": "scenario-t5-0",
-    "ts": 1000,
+    "ts": 1730620801200,
     "channels": [
       {
         "channel": "position_consistency",
