@@ -101,11 +101,13 @@ def classify_acoustic_model(clip: AudioClip) -> Optional[dict]:
 
     반환: {event_type∈{gunshot,explosion,propeller,unknown}, yamnet_confidence}.
     """
-    model = _load_yamnet()
-    if model is None:
-        return None
+    # 파형 검증을 모델 로드보다 먼저 — 비호환(48kHz/스테레오 등)이면 값비싼 TF Hub
+    # 로드/다운로드 없이 즉시 폴백(codex P2).
     wav = _decode_waveform(clip)
     if wav is None:
+        return None
+    model = _load_yamnet()
+    if model is None:
         return None
     try:
         scores, _embeddings, _spec = model(wav)
