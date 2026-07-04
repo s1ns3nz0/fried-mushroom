@@ -23,6 +23,9 @@
     raw: null,
     rawTag: null,
     baseIds: { emergency: "base_emergency", alternate: "base_alternate" },
+    // #111: /gcs/assemble(실 layer 01)이 발급한 상관ID. run 에 이어주면
+    // 조립·사이클 로그가 스트림에서 연결된다. 수동 프리셋 로드 시 해제.
+    correlationId: null,
   };
 
   // ── 수집기 API 헬퍼 ─────────────────────────────────────────
@@ -278,17 +281,69 @@
     });
   }
 
-  /** 프리셋 선택 — 브리핑 폼 채우기 + raw 바인딩. */
+  /** 프리셋 선택 — 브리핑 폼 채우기 + raw 바인딩. (수동 브리핑 → 01 조립 상관ID 해제) */
   function loadScenario(tag) {
     return fetchScenario(tag)
       .then((data) => {
         fillForm(data.mission_brief || {});
         bindRaw(tag, data.raw || null);
+        gcs.correlationId = null;
         markActivePreset(tag);
         updatePreview();
         setStatus("프리셋 " + tag + " 로드 완료", "");
       })
       .catch((e) => setStatus("프리셋 로드 실패(" + tag + "): " + e.message, "err"));
+  }
+
+  /** #111: 지시서(set_mission) 프리셋 → 실 layer 01 조립 → 폼 채움 + 상관ID 보관. */
+  function loadFromLayer01(tag) {
+    setStatus("layer 01 조립 중… (" + tag + ")", "");
+    return assembleFromSetMission(tag)
+      .then((body) => {
+        fillForm(body.draft_brief || {});
+        gcs.correlationId = body.correlation_id || null;
+        markActivePreset("01:" + tag);
+        updatePreview();
+        const cards = (body.signal_cards || []).map((c) => c.source_phrase).join(", ");
+        const nWarn = (body.warnings || []).length;
+        let msg = "01 조립 완료 · 신호카드 [" + (cards || "없음") + "] · 경고 " + nWarn;
+        if (!gcs.raw) msg += " — raw 미선택: raw 선택기에서 지정 후 실행";
+        setStatus(msg, nWarn ? "err" : "ok");
+      })
+      .catch((e) => setStatus("layer 01 조립 실패(" + tag + "): " + e.message, "err"));
+  }
+
+  /** #111: set_mission 프리셋 목록을 시나리오 패널에 렌더 (실 layer 01 경로). */
+  function loadSetMissions() {
+    return collectorFetch("/gcs/set-missions")
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then((items) => {
+        if (!items || !items.length) return;
+        const list = $("gcs-scenario-list");
+        const head = document.createElement("div");
+        head.className = "gcs-preset-head";
+        head.textContent = "지시서 → layer 01 조립";
+        list.appendChild(head);
+        items.forEach((it) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "gcs-preset gcs-preset-01";
+          btn.dataset.tag = "01:" + it.tag;
+          const tagEl = document.createElement("span");
+          tagEl.className = "gcs-preset-tag";
+          tagEl.textContent = "01·" + String(it.tag).toUpperCase();
+          const meta = document.createElement("span");
+          meta.className = "gcs-preset-meta";
+          meta.textContent = (it.sortie_id || "—") + " · " + (it.mission_context || "—");
+          btn.append(tagEl, meta);
+          btn.addEventListener("click", () => loadFromLayer01(it.tag));
+          list.appendChild(btn);
+        });
+      })
+      .catch((e) => setStatus("set_mission 목록 조회 실패: " + e.message, "err"));
   }
 
   /** raw 선택기 변경 — raw 만 교체(브리핑 폼은 유지). */
@@ -373,7 +428,12 @@
     collectorFetch("/gcs/run", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ raw: gcs.raw, mission_brief: brief }),
+      body: JSON.stringify({
+        raw: gcs.raw,
+        mission_brief: brief,
+        // 01 조립을 거친 브리핑이면 상관ID 를 이어 조립·사이클 로그를 연결(#111).
+        ...(gcs.correlationId ? { correlation_id: gcs.correlationId } : {}),
+      }),
     })
       .then((r) => r.json().then((data) => ({ ok: r.ok, data })))
       .then(({ ok, data }) => {
@@ -440,7 +500,7 @@
       if (e.target.value) loadRawOnly(e.target.value);
     });
 
-    loadScenarios();
+    loadScenarios().then(loadSetMissions);
   }
 
   if (document.readyState === "loading") {
