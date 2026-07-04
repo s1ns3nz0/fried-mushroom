@@ -14,3 +14,10 @@ phases/**/step*-output.json
 .claude/**/*.local.md
 .claude/commands/local/
 .claude/hooks/local/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
