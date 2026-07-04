@@ -87,7 +87,7 @@ pip install -e '.[dev]'
 ```bash
 python3 -m pytest                            # 전체
 python3 -m pytest tests/layer_04_threat/     # 특정 레이어
-python3 -m onboard.run examples/scenario_t3.json  # E2E (step9 이후)
+python3 -m onboard examples/raw_t3.json examples/mission_brief_t3.json  # 한 사이클 (step9 CLI)
 ```
 
 ### 5. Harness 실행 (Claude Code 사용자 대상)

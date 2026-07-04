@@ -1,0 +1,132 @@
+"""온보드 파이프라인 오케스트레이터 (하니스).
+
+한 사이클을 03→04→05→06→07 순서로 엮는다 (step9.md 계약).
+각 레이어는 `src/onboard/layer_XX_*/run.py` 의 순수 함수:
+
+    layer_03.run(raw, previous_qualities)
+    layer_04.run(abstraction, cycle_context)
+    layer_05.run(threat, mission_brief, link_quality=...)
+    layer_06.run(risk, mission_brief)
+    layer_07.run(response, primary_context, cycle_context)
+
+아직 미구현인 레이어는 스키마 적합 passthrough(canned)로 대체한다 (try-import 배선).
+dev 가 layer_XX/run.py 에 run() 을 추가하면 orchestrator 수정 없이 자동 배선된다.
+
+파이프라인은 순수(IO 없음). 파일 read / stdout 은 __main__.py(CLI) 가 담당.
+로깅(JSONL 등)은 유즈사이트 책임 — 오케스트레이터에 넣지 않는다 (ARCHITECTURE 상태 관리).
+"""
+
+from __future__ import annotations
+
+import importlib
+
+_LAYER_MODULE = {
+    "03": "onboard.layer_03_abstraction.run",
+    "04": "onboard.layer_04_threat.run",
+    "05": "onboard.layer_05_risk.run",
+    "06": "onboard.layer_06_response.run",
+    "07": "onboard.layer_07_planning.run",
+}
+
+
+def run_cycle(
+    raw: dict,
+    mission_brief: dict,
+    previous_qualities: dict | None = None,
+    cycle_context: dict | None = None,
+) -> dict:
+    """한 사이클 실행. 반환:
+
+        {"abstraction": ..., "threat": ..., "risk": ...,
+         "response": ..., "flight_plan": ...}
+    """
+    cycle_context = cycle_context or _default_cycle_context()
+
+    abstraction = _run_layer("03", lambda run: run(raw, previous_qualities))
+    threat = _run_layer("04", lambda run: run(abstraction, cycle_context))
+    link_quality = _extract_link_quality(abstraction)
+    risk = _run_layer("05", lambda run: run(threat, mission_brief, link_quality=link_quality))
+    response = _run_layer("06", lambda run: run(risk, mission_brief))
+
+    primary = threat.get("primary")
+    primary_context = primary.get("context") if primary else None
+    flight_plan = _run_layer("07", lambda run: run(response, primary_context, cycle_context))
+
+    return {
+        "abstraction": abstraction,
+        "threat": threat,
+        "risk": risk,
+        "response": response,
+        "flight_plan": flight_plan,
+    }
+
+
+def _default_cycle_context() -> dict:
+    # MVP: 실제 지형 조회는 후순위. 07 골든 케이스 만족용 고정값.
+    return {"optimal_terrain_bearing_deg": 0.0, "lowest_exposure_bearing_deg": 0.0}
+
+
+def _extract_link_quality(abstraction: dict) -> float | None:
+    """abstraction 채널에서 link_status quality 추출 (없으면 None). 05 link_quality 인자용."""
+    for channel in abstraction.get("channels", []):
+        if channel.get("channel") == "link_status":
+            return channel.get("quality")
+    return None
+
+
+def _run_layer(num: str, invoke):
+    """레이어 run() 이 있으면 invoke(run) 으로 호출, 없으면 canned passthrough."""
+    run = _import_layer_run(num)
+    if run is not None:
+        return invoke(run)
+    return _STUB_OUTPUT[num]()
+
+
+def _import_layer_run(num: str):
+    try:
+        module = importlib.import_module(_LAYER_MODULE[num])
+    except ModuleNotFoundError:
+        return None
+    run = getattr(module, "run", None)
+    return run if callable(run) else None
+
+
+# 미구현 레이어용 최소 스키마 적합 고정 출력 (각 OutputSchema 의 최소 인스턴스).
+_STUB_OUTPUT = {
+    "03": lambda: {
+        "schema_version": "0.0-stub",
+        "id": "stub",
+        "ts": 0,
+        "channels": [],
+    },
+    "04": lambda: {
+        "declared_phase": "unknown",
+        "mission_phase_confidence": 0.0,
+        "candidates": [],
+        "primary": None,
+        "background_exposure_score": 0.0,
+    },
+    "05": lambda: {
+        "candidates": [],
+    },
+    "06": lambda: {
+        "primary_threat_event": None,
+        "rac": "Low",
+        "kill_chain_stage": None,
+        "threat_category": None,
+        "flight_action": "CONTINUE",
+        "comms_level": "NORMAL",
+        "payload_action": [],
+        "nav_mode": None,
+        "special_action": None,
+        "secondary_threats": [],
+        "ai_reliability": "normal",
+    },
+    "07": lambda: {
+        "flight_action": "CONTINUE",
+        "target_bearing_deg": None,
+        "altitude_delta_m": 0,
+        "replan_scope": "NONE",
+        "reroute_anchor": None,
+    },
+}
