@@ -21,9 +21,19 @@ from onboard.shared.constants import RAC_ORDER, THREAT_CATALOG
 from onboard.trend import assess_threat_trend
 
 _LEVEL_ORDER = ("ROUTINE", "MONITOR", "ALERT", "ACT")
+_LEVEL_RANK = {l: i for i, l in enumerate(_LEVEL_ORDER)}
 
 # RAC_ORDER: High=1, Serious=2, Medium=3, Low=4. 심각(즉시 주목) = High/Serious.
 _SEVERE_MAX_RANK = 2
+
+# failsafe action → 최소 attention_level (#414). CONTINUE/MONITOR/UNKNOWN 은 영향 없음.
+_FAILSAFE_MIN_LEVEL: dict[str, str] = {
+    "HOLD": "MONITOR",
+    "DR_HOLD": "MONITOR",
+    "RTL": "ALERT",
+    "EMCON_EVADE": "ALERT",
+    "LAND": "ACT",
+}
 
 
 def _rac_from_explain(current: dict[str, Any]) -> str | None:
@@ -33,17 +43,28 @@ def _rac_from_explain(current: dict[str, Any]) -> str | None:
     return None
 
 
-def _attention_level(primary_te, rac, flight_action, trend) -> str:
+def _failsafe_floor(failsafe: dict[str, Any] | None) -> str:
+    """통합 failsafe report → 최소 attention_level. assessable=False/UNKNOWN 이면 ROUTINE."""
+    if not failsafe or not failsafe.get("assessable"):
+        return "ROUTINE"
+    return _FAILSAFE_MIN_LEVEL.get(failsafe.get("recommended_action", ""), "ROUTINE")
+
+
+def _attention_level(primary_te, rac, flight_action, trend, failsafe: dict[str, Any] | None = None) -> str:
     rank = RAC_ORDER.get(rac) if rac else None
     severe = rank is not None and rank <= _SEVERE_MAX_RANK
     acting = flight_action not in (None, "MAINTAIN")
     if not primary_te:
-        return "ROUTINE"
-    if trend.get("level") == "critical" or (severe and acting):
-        return "ACT"
-    if trend.get("escalating") or trend.get("level") == "warning" or severe:
-        return "ALERT"
-    return "MONITOR"
+        threat_level = "ROUTINE"
+    elif trend.get("level") == "critical" or (severe and acting):
+        threat_level = "ACT"
+    elif trend.get("escalating") or trend.get("level") == "warning" or severe:
+        threat_level = "ALERT"
+    else:
+        threat_level = "MONITOR"
+    # most-conservative-wins — failsafe floor 가 위협 기반 레벨을 낮추지 않음(SCC-1).
+    floor = _failsafe_floor(failsafe)
+    return floor if _LEVEL_RANK[floor] > _LEVEL_RANK[threat_level] else threat_level
 
 
 def build_sitrep(
@@ -60,6 +81,7 @@ def build_sitrep(
     latest = seq[-1] if seq else {}
     current = explain_cycle(latest)
     trend = assess_threat_trend(seq, window=window)
+    failsafe: dict[str, Any] | None = latest.get("failsafe")
 
     # 표시 위협은 **결정(05/06)의 primary** 기준 — RAC·flight_action 과 같은 후보라야 헤드라인이
     # 일관된다(04 threat.primary 는 match_count 로 다를 수 있음). 부재 시 explain 값으로 폴백.
@@ -67,14 +89,21 @@ def build_sitrep(
         or current.get("primary_threat_event")
     flight_action = current.get("flight_action")
     rac = _rac_from_explain(current)
-    level = _attention_level(primary_te, rac, flight_action, trend)
+    level = _attention_level(primary_te, rac, flight_action, trend, failsafe)
+
+    # failsafe suffix — HOLD 이상이면 헤드라인에 지배 축 포함(advisory).
+    fs_action = (failsafe or {}).get("recommended_action", "") if failsafe and failsafe.get("assessable") else ""
+    fs_suffix = ""
+    if fs_action in _FAILSAFE_MIN_LEVEL:
+        axes = ", ".join((failsafe or {}).get("driving_axes") or []) or "?"
+        fs_suffix = f" | failsafe:{fs_action}({axes})"
 
     if not primary_te:
-        headline = f"[{level}] 위협 없음 — {flight_action or '대기'}"
-        rec = "정상 운용. 특이 조치 불요."
+        headline = f"[{level}] 위협 없음 — {flight_action or '대기'}{fs_suffix}"
+        rec = "정상 운용. 특이 조치 불요." if not fs_suffix else f"안전 축 이상({fs_action}) — 운용자 확인."
     else:
         desc = THREAT_CATALOG.get(primary_te, primary_te)
-        headline = f"[{level}] {primary_te}({desc}) RAC={rac} → {flight_action}"
+        headline = f"[{level}] {primary_te}({desc}) RAC={rac} → {flight_action}{fs_suffix}"
         if level == "ACT":
             rec = f"즉시 주목 — {flight_action} 실행 중, 궤적 {trend.get('level')}. 운용자 확인 요망."
         elif level == "ALERT":
