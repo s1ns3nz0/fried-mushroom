@@ -20,6 +20,8 @@ COPY infra/log/ .
 COPY pyproject.toml /app/
 COPY src/ /app/src/
 COPY examples/ /app/examples/
+# 피더(vizsim runner)를 이 이미지로 함께 구동 — EC2 자립 데모
+COPY infra/vizsim/ /app/infra/vizsim/
 
 # onboard 패키지 import 경로 — pip install -e . 대신 PYTHONPATH 로 단순 유지.
 ENV PYTHONPATH=/app/src
