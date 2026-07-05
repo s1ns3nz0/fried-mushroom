@@ -52,3 +52,44 @@ def test_low_altitude_negative_clearance():
     p2 = {"lat": _BBOX["lat_min"], "lon": _BBOX["lon_max"], "alt_m": 10}
     r = segment_min_clearance(p1, p2, _BBOX, samples=40)
     assert r["min_clearance_m"] < 0  # 봉우리(최대 ~100m) > alt 10m
+
+
+# --- #341/#382 후속: 경로 전체 지형 프로파일 ---
+
+from onboard.layer_07_planning.terrain import (  # noqa: E402
+    min_route_clearance,
+    route_terrain_profile,
+)
+
+_ROUTE = [
+    {"lat": 37.50, "lon": 127.00, "alt_m": 120},
+    {"lat": 37.55, "lon": 127.05, "alt_m": 120},
+    {"lat": 37.60, "lon": 127.10, "alt_m": 120},
+]
+
+
+def test_route_profile_one_entry_per_segment():
+    prof = route_terrain_profile(_ROUTE, _BBOX)
+    assert len(prof) == len(_ROUTE) - 1
+    for i, s in enumerate(prof):
+        assert s["seg_index"] == i
+        assert set(s) >= {"seg_index", "from", "to", "min_clearance_m", "terrain_max_m"}
+
+
+def test_route_profile_short_route_empty():
+    assert route_terrain_profile([_ROUTE[0]], _BBOX) == []
+
+
+def test_min_route_clearance_is_worst_segment():
+    prof = route_terrain_profile(_ROUTE, _BBOX)
+    worst = min_route_clearance(_ROUTE, _BBOX)
+    assert worst["min_clearance_m"] == min(s["min_clearance_m"] for s in prof)
+    assert worst["seg_index"] in {s["seg_index"] for s in prof}
+
+
+def test_min_route_clearance_short_route_none():
+    assert min_route_clearance([_ROUTE[0]], _BBOX)["min_clearance_m"] is None
+
+
+def test_route_profile_deterministic():
+    assert route_terrain_profile(_ROUTE, _BBOX) == route_terrain_profile(_ROUTE, _BBOX)

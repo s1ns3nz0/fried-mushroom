@@ -266,12 +266,40 @@
     "advisory_only": true,
     "rtl_required": false,
     "margin_s": null,
-    "dist_home_m": 13337.136449561684,
-    "rtl_time_s": 784.5374382095108,
+    "dist_home_m": 13337.1,
+    "rtl_time_s": 784.5,
     "remaining_endurance_s": null,
     "reserve_s": null,
     "battery_pct": 78,
     "home_base_id": "base_emergency",
     "note": "홈까지 13337m — 내구/배터리 정보 부재로 여유 계산 불가."
+  },
+  "corridor": {
+    "assessable": true,
+    "deviation_m": 14193.8,
+    "within_corridor": false,
+    "threshold_m": 150.0,
+    "threshold_source": "default",
+    "nearest_segment_index": 0,
+    "advisory_only": true,
+    "note": "⚠ 코리더 이탈 14194m > 임계 150m (세그먼트 0) — 표류/스푸핑/무단이탈 점검 요망."
+  },
+  "sensor_health": {
+    "assessable": true,
+    "health": "CRITICAL",
+    "channel_count": 11,
+    "min_quality": 0.04,
+    "mean_quality": 0.8318,
+    "impaired": [
+      {
+        "channel": "link_status",
+        "state": "anomaly",
+        "quality": 0.04,
+        "tier": "critical"
+      }
+    ],
+    "confidence_discount": 0.6,
+    "advisory_only": true,
+    "note": "센서 11채널 중 1 열화/이상 — 건전성 CRITICAL."
   }
 }

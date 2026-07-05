@@ -16,7 +16,7 @@ _DEFAULT = {
 def classify_terrain(raw_imagery: dict) -> dict:
     """imagery.terrain_label 힌트 → 카메라 지형 분류 + 지형 방위. 힌트 없으면 기본값."""
     label = raw_imagery.get("terrain_label")
-    if not label:
+    if not isinstance(label, dict):  # 힌트 없음/malformed(비-dict) → 기본값(크래시 방지).
         return dict(_DEFAULT)
     return {
         "dominant_class": label.get("dominant_class", "open_field"),

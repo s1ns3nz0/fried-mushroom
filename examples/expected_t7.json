@@ -280,12 +280,33 @@
     "advisory_only": true,
     "rtl_required": false,
     "margin_s": null,
-    "dist_home_m": 27510.85104728644,
-    "rtl_time_s": 1618.2853557227318,
+    "dist_home_m": 27510.9,
+    "rtl_time_s": 1618.3,
     "remaining_endurance_s": null,
     "reserve_s": null,
     "battery_pct": 78,
     "home_base_id": "base_emergency",
     "note": "홈까지 27511m — 내구/배터리 정보 부재로 여유 계산 불가."
+  },
+  "corridor": {
+    "assessable": true,
+    "deviation_m": 28387.7,
+    "within_corridor": false,
+    "threshold_m": 150.0,
+    "threshold_source": "default",
+    "nearest_segment_index": 0,
+    "advisory_only": true,
+    "note": "⚠ 코리더 이탈 28388m > 임계 150m (세그먼트 0) — 표류/스푸핑/무단이탈 점검 요망."
+  },
+  "sensor_health": {
+    "assessable": true,
+    "health": "NOMINAL",
+    "channel_count": 11,
+    "min_quality": 0.8,
+    "mean_quality": 0.9189,
+    "impaired": [],
+    "confidence_discount": 1.0,
+    "advisory_only": true,
+    "note": "센서 11채널 전부 정상 — 건전성 NOMINAL."
   }
 }

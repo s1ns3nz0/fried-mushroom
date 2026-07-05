@@ -394,7 +394,7 @@
       ["태세", "WATCHCON " + p.watchcon + " · DEFCON " + p.defcon + " · INFOCON " + p.infocon],
       ["기체 제원", "배터리 " + dp.battery_pct + "% · 무장 " + arms + " · 예비기 " + (dp.spare_asset_available ? "가용" : "없음")],
       ["회랑", "웨이포인트 " + nWp + "개 · 기지 emergency/alternate"],
-      ["가중치", "S " + w.stealth + " · 생존 " + w.survival + " · 정보 " + w.info_value + " · 적시 " + w.timeliness],
+      ["가중치", "은밀성 " + w.stealth + " · 생존 " + w.survival + " · 정보 " + w.info_value + " · 적시 " + w.timeliness],
     ];
     host.textContent = "";
     rows.forEach(([k, v]) => {
@@ -447,114 +447,14 @@
     const W = cv.width, H = cv.height;
     ctx.clearRect(0, 0, W, H);
 
-    // 배경: 상황도 이미지(있으면) + 어두운 스크림, 없으면 단색.
+    // 배경: 상황도 이미지(이미 적/아군/공격루트 전술기호 포함) 그대로 표시.
+    // 없으면 단색 배경만(로드 전).
     if (situMapImg) {
       ctx.drawImage(situMapImg, 0, 0, W, H);
-      ctx.fillStyle = "rgba(6,10,16,0.44)";
-      ctx.fillRect(0, 0, W, H);
     } else {
       ctx.fillStyle = "#10131a";
       ctx.fillRect(0, 0, W, H);
     }
-
-    const b = collectBrief();
-    const co = b.corridor || {};
-    const wps = Array.isArray(co.waypoints) ? co.waypoints : [];
-    const bases = co.bases || {};
-    const baseList = [bases.emergency, bases.alternate].filter(Boolean);
-    const enemies = collectEnemyTracks();
-
-    const isPt = (la, lo) => Number.isFinite(la) && Number.isFinite(lo) && (la !== 0 || lo !== 0);
-    const all = [];
-    wps.forEach((p) => { if (isPt(p.lat, p.lon)) all.push([p.lat, p.lon]); });
-    baseList.forEach((p) => { if (isPt(p.lat, p.lon)) all.push([p.lat, p.lon]); });
-    enemies.forEach((e) => { const [la, lo] = trackLatLon(e); if (isPt(la, lo)) all.push([la, lo]); });
-    if (!all.length) return;
-
-    // 관측 탭(위성 프레임) 과 동일한 고정 프레임으로 정규화 — 폼-유래 bbox 대신 SITU_FRAME 사용.
-    const { latMin, latMax, lonMin, lonMax } = SITU_FRAME;
-    const dLat = latMax - latMin, dLon = lonMax - lonMin;
-    const proj = (la, lo) => [
-      ((lo - lonMin) / dLon) * W,
-      ((latMax - la) / dLat) * H, // 북쪽이 위.
-    ];
-    // 미터→px 근사(적 탐지반경 원). lon 방향 스케일 사용.
-    const midLat = (latMin + latMax) / 2;
-    const mPerDegLon = 111320 * Math.cos((midLat * Math.PI) / 180) || 111320;
-    const pxPerM = W / dLon / mPerDegLon;
-
-    // 아군 공격루트(waypoints, 출발지→목표) — 굵은 청색 화살표(글로우+본선).
-    const routePts = wps.filter((p) => isPt(p.lat, p.lon)).map((p) => proj(p.lat, p.lon));
-    if (routePts.length > 1) {
-      ctx.save();
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.beginPath();
-      routePts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.strokeStyle = "rgba(59,156,255,0.35)"; ctx.lineWidth = 9; ctx.stroke();
-      ctx.beginPath();
-      routePts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-      ctx.strokeStyle = "#3B9CFF"; ctx.lineWidth = 3; ctx.stroke();
-      ctx.restore();
-      const [px, py] = routePts[routePts.length - 2];
-      const [tx, ty] = routePts[routePts.length - 1];
-      drawArrowHead(ctx, px, py, tx, ty, "#3B9CFF");
-    }
-
-    // 웨이포인트 점 + 출발지(첫 wp) 아군 심볼 + 목표(마지막 wp) 목표 심볼.
-    routePts.forEach(([x, y], i) => {
-      if (i === 0) {
-        drawFriendlyMarker(ctx, x, y); // 아군 출발(LP) — 청색 원.
-      } else if (i === routePts.length - 1) {
-        drawTargetMarker(ctx, x, y); // 목표(마지막 wp) — 청색 조준 심볼.
-      } else {
-        ctx.beginPath();
-        ctx.arc(x, y, 4, 0, Math.PI * 2);
-        ctx.fillStyle = "#0D0D0F"; ctx.fill();
-        ctx.strokeStyle = "#3B9CFF"; ctx.lineWidth = 1.5; ctx.stroke();
-      }
-    });
-
-    // 기지(청색 diamond, 소형) — 흰/검 외곽선으로 대비.
-    baseList.forEach((p) => {
-      if (!isPt(p.lat, p.lon)) return;
-      const [x, y] = proj(p.lat, p.lon);
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(Math.PI / 4);
-      ctx.fillStyle = "#7FC7FF";
-      ctx.fillRect(-4, -4, 8, 8);
-      ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 1.4; ctx.strokeRect(-4, -4, 8, 8);
-      ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 0.8; ctx.strokeRect(-4, -4, 8, 8);
-      ctx.restore();
-    });
-
-    // 적 트랙 — 탐지반경 원(붉은 점선) + 붉은 적대 마커(다이아몬드) + 짧은 라벨.
-    ctx.save();
-    ctx.font = "700 10px ui-monospace, Menlo, monospace";
-    ctx.textAlign = "left";
-    enemies.forEach((e) => {
-      const [la, lo] = trackLatLon(e);
-      if (!isPt(la, lo)) return;
-      const [x, y] = proj(la, lo);
-      const r = Number(e.radius_m) > 0 ? e.radius_m * pxPerM : 0;
-      if (r > 2) {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.setLineDash([5, 4]);
-        ctx.strokeStyle = "rgba(240,85,93,0.7)"; ctx.lineWidth = 1.4; ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = "rgba(240,85,93,0.1)"; ctx.fill();
-      }
-      drawEnemyMarker(ctx, x, y);
-      const label = (e.kind || "E") + " " + (e.id || "");
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "rgba(0,0,0,0.85)";
-      ctx.strokeText(label, x + 11, y + 3);
-      ctx.fillStyle = "#FFD9DA";
-      ctx.fillText(label, x + 11, y + 3);
-    });
-    ctx.restore();
   }
 
   /** 화살표 머리 — (x1,y1)→(x2,y2) 방향으로 끝점(x2,y2)에 그림. */
@@ -858,6 +758,112 @@
     });
   }
 
+  // ── 좌하단 "임무기반위험평가란?" → 설명 모달 ────────────────
+
+  function openMbcraModal() {
+    const modal = $("gcs-mbcra-modal");
+    if (modal) modal.hidden = false;
+  }
+
+  function closeMbcraModal() {
+    const modal = $("gcs-mbcra-modal");
+    if (modal) modal.hidden = true;
+  }
+
+  function initMbcraModal() {
+    const modal = $("gcs-mbcra-modal");
+    const btn = $("gcs-mbcra-btn");
+    if (!modal || !btn) return;
+    btn.addEventListener("click", openMbcraModal);
+    $("gcs-mbcra-modal-close").addEventListener("click", closeMbcraModal);
+    $("gcs-mbcra-modal-backdrop").addEventListener("click", closeMbcraModal);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !modal.hidden) closeMbcraModal();
+    });
+  }
+
+  // ── "위험 탐지기반 아키텍처" → 6레이어 흐름 애니메이션 오버레이 ──
+  // 정적 콘텐츠(index.html) + JS 순차 하이라이트. 데이터가 02→07 순으로 흐르며
+  // 현재 레이어를 앰버 강조(is-active), 지나간 레이어는 은은(is-past), 앞은 dim.
+  // 레이어 사이 연결선(is-flowing)의 입자가 CSS 키프레임으로 흐른다. loop.
+  // 오버레이 닫힐 때 rAF 정지(누수 방지). prefers-reduced-motion 이면 정적 표시.
+
+  const ARCH_STEP_MS = 1100;
+  const arch = { raf: 0, flow: null, nodes: [], links: [], start: 0, last: -1 };
+
+  function archRender(step) {
+    arch.nodes.forEach((n, i) => {
+      n.classList.toggle("is-active", i === step);
+      n.classList.toggle("is-past", i < step);
+    });
+    // link i 는 node i→node i+1 연결 — 데이터가 node i+1 에 도달할 때 흐름.
+    arch.links.forEach((l, i) => {
+      l.classList.toggle("is-flowing", i === step - 1);
+    });
+  }
+
+  function archTick(ts) {
+    if (!arch.start) arch.start = ts;
+    const n = arch.nodes.length;
+    const step = Math.floor((ts - arch.start) / ARCH_STEP_MS) % n;
+    if (step !== arch.last) {
+      archRender(step);
+      arch.last = step;
+    }
+    arch.raf = requestAnimationFrame(archTick);
+  }
+
+  function archStop() {
+    if (arch.raf) cancelAnimationFrame(arch.raf);
+    arch.raf = 0;
+    arch.start = 0;
+    arch.last = -1;
+    if (arch.flow) arch.flow.classList.remove("anim");
+    arch.nodes.forEach((n) => n.classList.remove("is-active", "is-past"));
+    arch.links.forEach((l) => l.classList.remove("is-flowing"));
+  }
+
+  function archStart() {
+    const flow = $("gcs-arch-flow");
+    if (!flow) return;
+    arch.flow = flow;
+    arch.nodes = Array.from(flow.querySelectorAll(".gcs-arch-node"));
+    arch.links = Array.from(flow.querySelectorAll(".gcs-arch-link"));
+    const reduce =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return; // 정적 표시 — 애니메이션 미실행.
+    flow.classList.add("anim");
+    arch.start = 0;
+    arch.last = -1;
+    arch.raf = requestAnimationFrame(archTick);
+  }
+
+  function openArchOverlay() {
+    const ov = $("gcs-arch-overlay");
+    if (!ov) return;
+    ov.hidden = false;
+    archStart();
+  }
+
+  function closeArchOverlay() {
+    const ov = $("gcs-arch-overlay");
+    if (!ov) return;
+    ov.hidden = true;
+    archStop();
+  }
+
+  function initArchOverlay() {
+    const ov = $("gcs-arch-overlay");
+    const btn = $("gcs-arch-btn");
+    if (!ov || !btn) return;
+    btn.addEventListener("click", openArchOverlay);
+    $("gcs-arch-close").addEventListener("click", closeArchOverlay);
+    $("gcs-arch-overlay-backdrop").addEventListener("click", closeArchOverlay);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !ov.hidden) closeArchOverlay();
+    });
+  }
+
   // ── 발표 진행 마법사 — 좌(상황도)→중(폼)→우(brief)→확인 ──────
   // 켜면 클릭할 때마다 다음 섹션으로 진행하며 현재 섹션을 점선 강조·나머지 dim.
   // (관측 탭 결정모델 마법사 .wiz-active/.wiz-dim·전역 클릭 진행 패턴 참고.)
@@ -962,6 +968,8 @@
     });
 
     initConfirmModal();
+    initMbcraModal();
+    initArchOverlay();
     initPresent();
     window.addEventListener("resize", drawSituMap);
 

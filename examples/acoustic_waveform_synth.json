@@ -1,0 +1,12 @@
+{
+  "note": "perception acoustic 합성 파형 번들 — YAMNet 실모델 PR/테스트용. waveform 을 raw.acoustic 에 병합.",
+  "waveform": {
+    "fmt": "pcm16",
+    "sample_rate": 16000,
+    "channels": 1,
+    "bytes_b64": "0IqIlkCi+K2wuWjFINHY3JDoSPQAALgLcBcoI+AumDpQRghSwF14adCKiJZAovitsLloxSDR2NyQ6Ej0AAC4C3AXKCPgLpg6UEYIUsBdeGnQioiWQKL4rbC5aMUg0djckOhI9AAAuAtwFygj4C6YOlBGCFLAXXhp0IqIlkCi+K2wuWjFINHY3JDoSPQAALgLcBcoI+AumDpQRghSwF14adCKiJZAovitsLloxSDR2NyQ6Ej0AAC4C3AXKCPgLpg6UEYIUsBdeGnQioiWQKL4rbC5aMUg0djckOhI9AAAuAtwFygj4C6YOlBGCFLAXXhp0IqIlkCi+K2wuWjFINHY3JDoSPQAALgLcBcoI+AumDpQRghSwF14adCKiJZAovitsLloxSDR2NyQ6Ej0AAC4C3AXKCPgLpg6UEYIUsBdeGk=",
+    "meta": {
+      "source": "synthetic"
+    }
+  }
+}

@@ -12,14 +12,14 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>D4D Dashboard</title>
-<link rel="stylesheet" href="/static/style.css" />
+<link rel="stylesheet" href="/static/style.css?v=obs20" />
 
 <header id="topbar">
   <span class="brand">D4D · UAV 관측</span>
   <span class="sortie">SORTIE D4D-2606-A3</span>
   <nav id="tab-nav" role="tablist" aria-label="뷰 전환">
-    <button type="button" class="tab-btn active" data-view="gcs" role="tab" aria-selected="true">관측소</button>
-    <button type="button" class="tab-btn" data-view="observation" role="tab" aria-selected="false">관측</button>
+    <button type="button" class="tab-btn active" data-view="gcs" role="tab" aria-selected="true">지상기지</button>
+    <button type="button" class="tab-btn" data-view="observation" role="tab" aria-selected="false">운항</button>
   </nav>
   <span id="phase-chip" class="chip">—</span>
   <span class="topbar-spacer"></span>
@@ -362,8 +362,13 @@
       </details>
     </section>
 
-    <!-- 하단 액션바 — 발표 진행/초기화/검증/실행/확인 -->
+    <!-- 하단 액션바 — 좌: 설명 버튼 그룹(MBCRA + 추후 아키텍처 버튼) | 우: 발표 진행/초기화/검증/실행/확인 -->
     <div class="panel" id="gcs-actionbar">
+      <div id="gcs-actionbar-left" class="gcs-actionbar-group">
+        <button type="button" id="gcs-mbcra-btn" class="gcs-btn">임무기반위험평가란?</button>
+        <button type="button" id="gcs-arch-btn" class="gcs-btn">위험 탐지기반 아키텍처</button>
+      </div>
+      <span class="gcs-actionbar-spacer"></span>
       <button type="button" id="gcs-present-toggle" class="gcs-btn" aria-pressed="false">발표 진행</button>
       <button type="button" id="gcs-reset" class="gcs-btn">초기화</button>
       <button type="button" id="gcs-validate" class="gcs-btn">검증</button>
@@ -385,6 +390,284 @@
   </div>
 </div>
 
+<!-- 좌하단 "임무기반위험평가란?" → 설명 중앙 모달 (gcs.js 구동) -->
+<div id="gcs-mbcra-modal" class="gcs-modal" hidden>
+  <div class="gcs-modal-backdrop" id="gcs-mbcra-modal-backdrop"></div>
+  <div class="gcs-modal-card gcs-modal-card-wide" role="dialog" aria-modal="true" aria-labelledby="gcs-mbcra-modal-title">
+    <button type="button" id="gcs-mbcra-modal-close" class="gcs-modal-close" aria-label="닫기">✕</button>
+    <h2 id="gcs-mbcra-modal-title">임무 기반 위험 평가란?</h2>
+    <div class="gcs-mbcra-body">
+      <div class="gcs-mbcra-grid">
+
+        <!-- 카드1 — 위험 평가란 (시안 네온) -->
+        <section class="gcs-mbcra-card gcs-mbcra-card--cyan">
+          <header class="gcs-mbcra-card-head">
+            <span class="gcs-mbcra-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg></span>
+            <h3 class="gcs-mbcra-card-title">위험 평가란</h3>
+          </header>
+          <div class="gcs-mbcra-card-body">
+            <p>특정 시점에서의 위험은 다음 함수로 정의됩니다.</p>
+            <p class="gcs-mbcra-formula"><code>f(위협, 위해조건, 발생 빈도, 파급력, 발생 가능성, 예상 결과)</code> = 등급</p>
+            <p>위험은 고정값이 아니라 <span class="gcs-hl">특정 시점 조건에 종속</span>되며, 결과는 등급으로 표시됩니다.</p>
+            <div class="gcs-grade-chips">
+              <span class="gcs-grade-chip gcs-grade-chip--crit">Critical</span>
+              <span class="gcs-grade-chip gcs-grade-chip--high">High</span>
+              <span class="gcs-grade-chip gcs-grade-chip--med">Medium</span>
+              <span class="gcs-grade-chip gcs-grade-chip--low">Low</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 카드2 — 작전 프로세스 ⊃ 위험 관리 (보라 네온) -->
+        <section class="gcs-mbcra-card gcs-mbcra-card--purple">
+          <header class="gcs-mbcra-card-head">
+            <span class="gcs-mbcra-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg></span>
+            <h3 class="gcs-mbcra-card-title">작전 프로세스 &#8835; 위험 관리</h3>
+          </header>
+          <div class="gcs-mbcra-card-body">
+            <p>미군은 <span class="gcs-hl">위험 관리를 작전 프로세스 전체에 통합된 절차</span>로 규정합니다. 계획·준비·실행·평가의 순환 고리를 관통하며 위험 관리가 작동합니다.</p>
+            <svg class="gcs-mbcra-svg" viewBox="0 0 260 180" role="img" aria-label="작전 프로세스 순환 고리 안에 위험 관리가 통합된 다이어그램">
+              <!-- 순환 링 -->
+              <circle cx="130" cy="92" r="62" fill="none" stroke="#A06BFF" stroke-width="1.5" stroke-dasharray="5 5" opacity="0.55"/>
+              <!-- 회전 방향 화살촉 (시계방향) -->
+              <polygon points="130,24 124,34 136,34" fill="#A06BFF"/>
+              <polygon points="198,92 188,86 188,98" fill="#A06BFF"/>
+              <polygon points="130,160 136,150 124,150" fill="#A06BFF"/>
+              <polygon points="62,92 72,98 72,86" fill="#A06BFF"/>
+              <!-- 4단계 노드 -->
+              <g font-size="12" font-weight="600" fill="#E8E7E2" text-anchor="middle">
+                <text x="130" y="16">계획</text>
+                <text x="232" y="96">준비</text>
+                <text x="130" y="176">실행</text>
+                <text x="20" y="96">평가</text>
+              </g>
+              <!-- 중앙 위험 관리 배지 -->
+              <circle cx="130" cy="92" r="34" fill="rgba(160,107,255,0.16)" stroke="#A06BFF" stroke-width="1.5"/>
+              <text x="130" y="89" font-size="12" font-weight="700" fill="#C9A9FF" text-anchor="middle">위험</text>
+              <text x="130" y="103" font-size="12" font-weight="700" fill="#C9A9FF" text-anchor="middle">관리</text>
+            </svg>
+            <p class="gcs-mbcra-caption">위험 관리는 작전 프로세스 전체에 통합된 절차</p>
+          </div>
+        </section>
+
+        <!-- 카드3 — 합참 위험 평가 프레임워크 (앰버 네온) -->
+        <section class="gcs-mbcra-card gcs-mbcra-card--amber">
+          <header class="gcs-mbcra-card-head">
+            <span class="gcs-mbcra-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" x2="18" y1="12" y2="12"/><line x1="6" x2="2" y1="12" y2="12"/><line x1="12" x2="12" y1="6" y2="2"/><line x1="12" x2="12" y1="22" y2="18"/></svg></span>
+            <h3 class="gcs-mbcra-card-title">합참 위험 평가 프레임워크</h3>
+          </header>
+          <div class="gcs-mbcra-card-body">
+            <svg class="gcs-mbcra-svg" viewBox="0 0 260 180" role="img" aria-label="가로축 Risk to Force(생존성), 세로축 Risk to Mission이 중앙에서 교차하는 4분면 그래프. Risk to Mission을 낮추는 분면에 최적 지점 강조">
+              <defs>
+                <filter id="gcsOptGlow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur stdDeviation="3.5" result="b"/>
+                  <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+                </filter>
+              </defs>
+              <!-- 최적 분면 강조 배경 (Risk to Mission 높음 = 상단, Risk to Force 높음 = 우측 → 1분면) -->
+              <rect x="130" y="24" width="118" height="66" fill="rgba(240,160,60,0.08)"/>
+              <!-- 십자축 — 캔버스 중앙에서 x·y축 교차 (4분면) -->
+              <line x1="16" y1="90" x2="246" y2="90" stroke="#35353C" stroke-width="1.5"/>
+              <line x1="130" y1="18" x2="130" y2="162" stroke="#35353C" stroke-width="1.5"/>
+              <!-- 축 화살촉 (x축 오른쪽 · y축 위) -->
+              <polygon points="252,90 242,85 242,95" fill="#35353C"/>
+              <polygon points="130,12 125,22 135,22" fill="#35353C"/>
+              <!-- 최적 지점 (1분면, 네온) -->
+              <circle cx="188" cy="54" r="9" fill="#F0A03C" filter="url(#gcsOptGlow)"/>
+              <circle cx="188" cy="54" r="4" fill="#FFE0B0"/>
+              <text x="188" y="34" font-size="12" font-weight="700" fill="#FFB95A" text-anchor="middle">최적</text>
+              <!-- 축 라벨 (끝단) -->
+              <text x="244" y="104" font-size="9.5" fill="#98979F" text-anchor="end">Risk to Force↑(생존성)</text>
+              <text x="136" y="16" font-size="9.5" fill="#98979F" text-anchor="start">Risk to Mission↑</text>
+            </svg>
+          </div>
+        </section>
+
+        <!-- 카드4 — 언제 수행하는가 (초록 네온) -->
+        <section class="gcs-mbcra-card gcs-mbcra-card--green">
+          <header class="gcs-mbcra-card-head">
+            <span class="gcs-mbcra-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
+            <h3 class="gcs-mbcra-card-title">언제 수행하는가</h3>
+          </header>
+          <div class="gcs-mbcra-card-body">
+            <p>위험은 정의상 <span class="gcs-hl">평가 시점에 종속</span>된 판단입니다.</p>
+            <p>위협·배터리·통신 품질이 급변하는 UAV에서는 위험이 순간마다 달라지므로, 위험 평가를 <span class="gcs-hl">실시간·지속적으로 수행</span>해야 합니다.</p>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- "위험 탐지기반 아키텍처" → 6레이어 파이프라인 흐름 애니메이션 오버레이 (발표용, gcs.js 구동) -->
+<div id="gcs-arch-overlay" class="gcs-modal gcs-arch-overlay" hidden>
+  <div class="gcs-modal-backdrop" id="gcs-arch-overlay-backdrop"></div>
+  <div class="gcs-arch-card" role="dialog" aria-modal="true" aria-labelledby="gcs-arch-title">
+    <button type="button" id="gcs-arch-close" class="gcs-modal-close" aria-label="닫기">✕</button>
+    <h2 id="gcs-arch-title">위험 탐지기반 아키텍처</h2>
+    <p class="gcs-arch-sub">
+      원시 센서 데이터가 6계층 온보드 파이프라인을 따라 흐르며 위험을 평가하고
+      <code>MAVLink</code>급 비행 지시값으로 산출되는 과정.
+    </p>
+    <div class="gcs-arch-flow" id="gcs-arch-flow">
+      <div class="gcs-arch-row">
+      <div class="gcs-arch-node" data-step="0">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">센서</span>
+          <span class="gcs-arch-code">02 sensor</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">기체 하드웨어</span>
+            <div class="gcs-arch-chips">
+              <code>camera_frame</code><code>gps{lat,lon,alt}</code><code>imu{gyro,accel}</code><code>rf_spectrum</code><code>acoustic_wave</code><code>lidar_points</code><code>battery/link</code>
+            </div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body">센서 샘플링 · 타임스탬프 정렬 → 단일 스냅샷으로 조립</div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">RawSensorEnvelope { imagery, navigation, ew, acoustic, health, environment, lidar }</code>
+          </div>
+        </div>
+      </div>
+      <div class="gcs-arch-link" data-link="0"><i class="gcs-arch-dot"></i></div>
+
+      <div class="gcs-arch-node" data-step="1">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">센서 추상화</span>
+          <span class="gcs-arch-code">03 abstraction</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">직전 레이어 산출 (02 OUT)</span>
+            <div class="gcs-arch-chips"><code>RawSensorEnvelope</code></div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body">채널별 특징 추출 → <code>quality(0~1)</code> · <code>state</code>(정상/저하/이상) 산출.<br />예) <code>position_consistency</code> = GPS vs IMU 관성추정 잔차, <code>acoustic_event</code> = 총성/폭발 탐지, <code>link_quality</code> = C2 패킷손실</div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">11채널 [{ channel, quality, state, delta }]</code>
+          </div>
+        </div>
+      </div>
+      <div class="gcs-arch-link" data-link="1"><i class="gcs-arch-dot"></i></div>
+
+      <div class="gcs-arch-node" data-step="2">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">위협 모델링</span>
+          <span class="gcs-arch-code">04 threat</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">직전 레이어 산출 (03 OUT)</span>
+            <div class="gcs-arch-chips"><code>11채널 [{ channel, quality, state, delta }]</code></div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body"><code>SIGNAL_TO_THREAT</code> 매핑 + <code>PHASE_THREAT_MULTIPLIER</code>(임무국면 배수) + AI 로그오즈 결합 → 위협 후보 점수화 · 킬체인 단계 추정</div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">threat { primary: { threat_event(T3…), confidence, kill_chain_stage } }</code>
+          </div>
+        </div>
+      </div>
+      </div>
+      <div class="gcs-arch-link gcs-arch-link--join" data-link="2" aria-hidden="true"><i class="gcs-arch-dot"></i><span class="gcs-arch-join-label">이어짐</span></div>
+      <div class="gcs-arch-row">
+      <div class="gcs-arch-node" data-step="3">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">위험 평가</span>
+          <span class="gcs-arch-code">05 risk</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">직전 레이어 산출 (04 OUT)</span>
+            <div class="gcs-arch-chips"><code>threat { threat_event, confidence }</code></div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body">가능성 <code>L(A~E)</code> × 심각도 <code>S(CatⅠ~Ⅳ)</code> → <code>RAC_MATRIX</code>(6×4, MIL-STD-882E) 조회 → RAC 등급 + <code>compound_urgency</code></div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">risk { rac(Critical/High/Medium/Low), candidates[…] }</code>
+          </div>
+        </div>
+      </div>
+      <div class="gcs-arch-link" data-link="3"><i class="gcs-arch-dot"></i></div>
+
+      <div class="gcs-arch-node" data-step="4">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">대응</span>
+          <span class="gcs-arch-code">06 response</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">직전 레이어 산출 (05 OUT)</span>
+            <div class="gcs-arch-chips"><code>risk { rac, compound_urgency }</code></div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body">교전규칙(ROE) · 경계태세 + 회피 방위 산출(적 방위 <code>+180°</code>) → 대응 결정</div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">response { flight_action(RTL/REROUTE/…), comms_level, threat_category }</code>
+          </div>
+        </div>
+      </div>
+      <div class="gcs-arch-link" data-link="4"><i class="gcs-arch-dot"></i></div>
+
+      <div class="gcs-arch-node" data-step="5">
+        <div class="gcs-arch-node-head">
+          <span class="gcs-arch-name">비행 계획</span>
+          <span class="gcs-arch-code">07 flight</span>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-in">
+          <span class="gcs-arch-sec-tag">IN</span>
+          <div class="gcs-arch-sec-body">
+            <span class="gcs-arch-note">직전 레이어 산출 (06 OUT)</span>
+            <div class="gcs-arch-chips"><code>response { flight_action }</code></div>
+          </div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-proc">
+          <span class="gcs-arch-sec-tag proc">처리</span>
+          <div class="gcs-arch-sec-body">회피 방위 · 고도 · 속도 조합 → MAVLink급 비행 지시값 산출</div>
+        </div>
+        <div class="gcs-arch-sec gcs-arch-out">
+          <span class="gcs-arch-sec-tag out">OUT</span>
+          <div class="gcs-arch-sec-body">
+            <code class="gcs-arch-schema">flight_plan { target_bearing_deg, altitude_delta_m, speed_mode, replan_scope }</code>
+          </div>
+        </div>
+      </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- 디버그 로그 오버레이 — 최신 tick의 레이어별 input/output JSON (app.js renderDebugLog 구동) -->
 <aside id="debug-log" hidden aria-label="디버그 로그">
   <div class="debug-log-head">
@@ -394,6 +677,6 @@
   <div id="debug-log-body"></div>
 </aside>
 
-<script src="/static/render.js"></script>
-<script src="/static/app.js"></script>
-<script src="/static/gcs.js"></script>
+<script src="/static/render.js?v=obs20"></script>
+<script src="/static/app.js?v=obs20"></script>
+<script src="/static/gcs.js?v=obs20"></script>

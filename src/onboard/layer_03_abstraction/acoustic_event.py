@@ -6,7 +6,9 @@ peak_db·rise_time_ms 로 총성을 1차 확정한다. 1차가 애매한 경우(
 """
 
 from onboard.ai_stubs.yamnet_stub import classify_acoustic
+from onboard.layer_03_abstraction import acoustic_model
 from onboard.layer_03_abstraction._common import make_output
+from onboard.layer_03_abstraction.perception_input import has_real_audio, resolve_audio
 from onboard.layer_02_sensor.schema import RawSensorEnvelope
 from onboard.shared.schemas import ChannelOutput
 
@@ -30,6 +32,21 @@ _EVENT_TO_STATE = {
 }
 
 
+def _classify_secondary(acoustic: dict) -> dict:
+    """YAMNet 2차 — opt-in 실모델(실 파형 존재 시) 우선, 실패/미가용/미활성 시 stub 폴백.
+
+    실모델은 stub 과 동일 키셋({event_type, yamnet_confidence})을 반환하므로 아래 게이팅
+    로직은 무변경(결정론·골든 유지).
+    """
+    if acoustic_model.enabled() and has_real_audio(acoustic):
+        clip = resolve_audio(acoustic)
+        if clip is not None:
+            res = acoustic_model.classify_acoustic_model(clip)
+            if res is not None:
+                return res
+    return classify_acoustic(acoustic)
+
+
 def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> ChannelOutput:
     acoustic = raw["acoustic"]
     peak_db = acoustic["peak_db"]
@@ -50,9 +67,9 @@ def run(raw: RawSensorEnvelope, previous_quality: float | None = None) -> Channe
         "bearing_deg": acoustic["bearing_deg"],
     }
 
-    # 게이팅: 애매한 경우에만 YAMNet 2차 승격.
+    # 게이팅: 애매한 경우에만 YAMNet 2차 승격 (opt-in 실모델 또는 stub).
     if event_type == "ambiguous":
-        secondary = classify_acoustic(acoustic)
+        secondary = _classify_secondary(acoustic)
         resolved = _YAMNET_EVENT_MAP.get(secondary["event_type"], "ambiguous")
         payload["event_type"] = resolved
         payload["detection_stage"] = "yamnet_secondary"

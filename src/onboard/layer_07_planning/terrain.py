@@ -57,9 +57,19 @@ def to_norm(lat: float, lon: float, bbox: dict) -> tuple[float, float]:
 
 
 def compute_bbox(waypoints: list[dict]) -> dict:
-    """코리더 waypoints 의 lat/lon 경계상자. vizsim/route.compute_bbox 동일."""
-    lats = [float(wp["lat"]) for wp in waypoints]
-    lons = [float(wp["lon"]) for wp in waypoints]
+    """코리더 waypoints 의 lat/lon 경계상자. vizsim/route.compute_bbox 동일.
+
+    빈 리스트/lat|lon 결측 waypoint 는 크래시 대신 0 경계상자를 반환한다(방어) — public
+    헬퍼가 degenerate 입력에 ValueError 로 죽지 않게. to_norm 이 range 0 을 or 1.0 로
+    처리하므로 0-bbox 도 안전하다.
+    """
+    # 양 좌표가 모두 있는 waypoint 만 유효 — lat-만/lon-만 부분결측이 한쪽 축에 phantom
+    # 기여하지 않게 한다(위치 불가 waypoint 는 통째 무시).
+    valid = [wp for wp in waypoints if wp.get("lat") is not None and wp.get("lon") is not None]
+    if not valid:
+        return {"lat_min": 0.0, "lat_max": 0.0, "lon_min": 0.0, "lon_max": 0.0}
+    lats = [float(wp["lat"]) for wp in valid]
+    lons = [float(wp["lon"]) for wp in valid]
     return {
         "lat_min": min(lats), "lat_max": max(lats),
         "lon_min": min(lons), "lon_max": max(lons),
@@ -112,4 +122,42 @@ def segment_min_clearance(
         "min_clearance_m": round(min_clr, 6),
         "min_at_frac": round(min_frac, 6),
         "terrain_max_m": round(terrain_max, 6),
+    }
+
+
+def route_terrain_profile(route: list[dict], bbox: dict, *, samples: int = 20) -> list[dict]:
+    """경로 전체의 구간별 지형 프로파일 (#341/#382 후속) — CFIT 위험 요약.
+
+    각 인접 waypoint 쌍에 segment_min_clearance 를 적용해 구간별 최저 clearance/최대 표고를
+    리스트로 반환. **경로 출력 불변 — 순수 분석**(골든 무영향). CFIT/브리핑에서 소비.
+
+    반환: [{seg_index, from, to, min_clearance_m, min_at_frac, terrain_max_m}, ...].
+    route 길이 < 2 면 빈 리스트.
+    """
+    prof = []
+    for i in range(len(route) - 1):
+        p1, p2 = route[i], route[i + 1]
+        seg = segment_min_clearance(p1, p2, bbox, samples=samples)
+        prof.append({
+            "seg_index": i,
+            "from": {"lat": p1["lat"], "lon": p1["lon"]},
+            "to": {"lat": p2["lat"], "lon": p2["lon"]},
+            **seg,
+        })
+    return prof
+
+
+def min_route_clearance(route: list[dict], bbox: dict, *, samples: int = 20) -> dict:
+    """경로 전 구간 통틀어 최저 clearance 와 그 구간 — CFIT 최악점 (#341/#382 후속).
+
+    반환: {min_clearance_m, seg_index, terrain_max_m} (route < 2 면 min_clearance_m=None).
+    """
+    prof = route_terrain_profile(route, bbox, samples=samples)
+    if not prof:
+        return {"min_clearance_m": None, "seg_index": None, "terrain_max_m": None}
+    worst = min(prof, key=lambda s: s["min_clearance_m"])
+    return {
+        "min_clearance_m": worst["min_clearance_m"],
+        "seg_index": worst["seg_index"],
+        "terrain_max_m": worst["terrain_max_m"],
     }
