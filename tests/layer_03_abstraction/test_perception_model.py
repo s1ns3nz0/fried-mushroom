@@ -163,3 +163,58 @@ def test_class_names_reads_boxes_for_detection():
     from onboard.layer_03_abstraction.perception_model import _class_names
     out = _class_names(_FakeDetResult())
     assert out[0] == ("person", 0.9)  # detection boxes → proximity 동작
+
+
+# --- #407: raw EO 프레임 픽셀 reshape → 실모델 게이트 통과 ---
+
+
+def _raw_frame(w=4, h=4, c=3, nbytes=None):
+    from onboard.layer_03_abstraction.perception_input import resolve_frame
+    import json as _json
+    bundle = _json.loads((_EXAMPLES / "imagery_frame_synth.json").read_text(encoding="utf-8"))
+    return resolve_frame({"eo_frame": bundle["eo_frame"]})
+
+
+def test_frame_array_reconstructs_raw_when_numpy():
+    import pytest as _pytest
+    _pytest.importorskip("numpy")
+    from onboard.layer_03_abstraction.perception_model import _frame_array
+    arr = _frame_array(_raw_frame())
+    assert arr is not None and arr.shape == (4, 4, 3)  # raw 예시 → 픽셀 복원
+
+
+def test_frame_array_none_on_dim_mismatch():
+    from onboard.layer_03_abstraction.perception_model import _frame_array
+    # width 위조로 치수 불일치 → 안전 None(reshape 실패 방지).
+    frame = dict(_raw_frame()); frame["width"] = 99
+    assert _frame_array(frame) is None
+
+
+def test_frame_array_none_without_dims():
+    from onboard.layer_03_abstraction.perception_model import _frame_array
+    frame = dict(_raw_frame()); frame["width"] = 0
+    assert _frame_array(frame) is None
+
+
+def test_frame_array_prefers_existing_array():
+    from onboard.layer_03_abstraction.perception_model import _frame_array
+    frame = dict(_raw_frame()); frame["array"] = "sentinel"
+    assert _frame_array(frame) == "sentinel"  # 이미 decode 된 array 우선
+
+
+def test_raw_frame_reaches_model_gate(monkeypatch):
+    # #407: raw 예시가 array-None 게이트를 넘어 실모델 호출까지 도달(numpy 있을 때).
+    import pytest as _pytest
+    _pytest.importorskip("numpy")
+    called = {}
+    class _Fake:
+        names = {0: "person"}
+        probs = None
+        boxes = []
+        def __call__(self, arr, **k):
+            called["arr_shape"] = getattr(arr, "shape", None)
+            return [self]
+    monkeypatch.setattr(perception_model, "_load_detector", lambda: _Fake())
+    out = perception_model.detect_proximity_model(_raw_frame())
+    assert called.get("arr_shape") == (4, 4, 3)  # 복원된 픽셀이 모델에 투입됨
+    assert out is not None  # 탐지 0 → 안전 기본 dict(폴백 아님, 실경로 도달)
