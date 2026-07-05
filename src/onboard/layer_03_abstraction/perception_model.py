@@ -88,14 +88,34 @@ def _class_names(result) -> list[tuple[str, float]]:
         return []
 
 
+def _frame_array(frame: PerceptionFrame):
+    """frame.array 우선. 없으면 fmt=="raw" + 치수로 raw_bytes 를 (h,w,c) uint8 배열 복원
+    (#407: shipped raw 예시가 실모델에 도달하도록). numpy 부재·치수 불일치 등 실패 시 None."""
+    arr = frame.get("array")
+    if arr is not None:
+        return arr
+    if frame.get("fmt") != "raw":
+        return None
+    w, h, c = frame.get("width") or 0, frame.get("height") or 0, frame.get("channels") or 0
+    raw = frame.get("raw_bytes")
+    if not (w and h and c) or not raw or len(raw) != w * h * c:
+        return None  # 치수 없음/불일치 → 안전 폴백(오해석 방지).
+    try:
+        import numpy as np  # noqa: PLC0415
+
+        return np.frombuffer(raw, dtype=np.uint8).reshape(h, w, c)
+    except Exception:
+        return None
+
+
 def detect_proximity_model(frame: PerceptionFrame) -> Optional[dict]:
     """EO 프레임 → proximity 탐지(yolo_stub 와 동일 키셋). 실패/미가용 시 None.
 
     단일 프레임이라 시계열 필드(closing/closure_rate)는 추정 불가 → 기본값(False/0.0);
     시계열 보강은 후속. bearing 은 gimbal 메타가 있으면 bbox 수평위치로 근사, 없으면 None.
     """
-    arr = frame.get("array")
-    if arr is None:  # raw 미decode(decode 라이브러리 부재) → 실추론 불가 → 폴백.
+    arr = _frame_array(frame)  # #407: raw 예시도 픽셀 복원해 실모델 투입.
+    if arr is None:  # decode/복원 불가 → 실추론 불가 → 폴백.
         return None
     model = _load_detector()
     if model is None:
@@ -165,7 +185,7 @@ def classify_terrain_model(frame: PerceptionFrame) -> Optional[dict]:
     top 씬 라벨이 지형 클래스로 매핑되지 않으면(예: COCO 객체 라벨) None → stub 폴백해
     지배 지형 오보(전부 open_field)를 막는다(codex #368 P2).
     """
-    arr = frame.get("array")
+    arr = _frame_array(frame)  # #407: raw 예시도 픽셀 복원해 실모델 투입.
     if arr is None:
         return None
     model = _load_segmenter()
