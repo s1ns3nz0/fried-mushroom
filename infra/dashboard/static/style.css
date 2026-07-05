@@ -2211,6 +2211,9 @@ body {
   text-anchor: middle;
 }
 
+#wizard-explain .dc-rac-cross { stroke: var(--accent, #4da3ff); stroke-width: 1; stroke-dasharray: 2 2; opacity: 0.9; }
+#wizard-explain .dc-rac-tick.hot { fill: var(--accent, #4da3ff); font-weight: 700; }
+
 #wizard-explain .dc-rac-cap {
   margin-top: 4px;
   font-size: 11px;

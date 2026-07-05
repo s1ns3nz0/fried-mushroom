@@ -282,6 +282,8 @@ def build_tick_payload(
         risk = {
             "rac": top.get("rac"),
             "compound_urgency_score": top.get("compound_urgency_score"),
+            "l_class": top.get("l_class_final"),
+            "severity_label": top.get("severity_label_final"),
         }
     else:
         risk = None

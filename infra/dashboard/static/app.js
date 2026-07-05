@@ -148,54 +148,58 @@ function buildThreatLegendHtml(stages) {
   return '<div class="dc-tlegend" aria-label="위협 유형 T1~T7 범례">' + chips + "</div>";
 }
 
-// RAC(High/Serious/Medium/Low) 대표 셀의 SVG 좌표 — index.html 의 원래 rac-cell-* 위치와 동일.
-const RAC_CELL_POS = {
-  high: { x: 100, y: 6 },
-  medium: { x: 52, y: 22 },
-  serious: { x: 76, y: 22 },
-  low: { x: 28, y: 54 },
+// MIL-STD-882E RAC 매트릭스 (행=심각도 Ⅰ~Ⅳ, 열=가능도 A~F). src/onboard/shared/constants.py 미러(표시용).
+const RAC_BAND = {
+  A1: "high", B1: "high", C1: "serious", D1: "serious", E1: "medium", F1: "medium",
+  A2: "high", B2: "serious", C2: "serious", D2: "medium", E2: "medium", F2: "low",
+  A3: "serious", B3: "medium", C3: "medium", D3: "low", E3: "low", F3: "low",
+  A4: "medium", B4: "low", C4: "low", D4: "low", E4: "low", F4: "low",
 };
+const SEV_LABEL_TO_NUM = { Catastrophic: 1, Critical: 2, Marginal: 3, Negligible: 4 };
 
-/** 3 위험 평가 말풍선 extra — RAC 미니 매트릭스 SVG HTML(현재 rac 좌표에 강조 마커). */
+/** 3 위험 평가 말풍선 extra — 실제 6×4 RAC 매트릭스 + (가능도×심각도) 교차 마커·십자 투영선. */
 function buildRacSvgHtml(stages) {
   const a = stages && stages.assess;
-  const key = a && a.rac ? String(a.rac).toLowerCase() : "";
-  const pos = RAC_CELL_POS[key];
-  const hereRect = pos
-    ? '<rect class="dc-rac-here on" x="' + pos.x + '" y="' + pos.y + '" width="24" height="16"/>'
-    : '<rect class="dc-rac-here" width="24" height="16"/>';
+  const COLS = ["A", "B", "C", "D", "E", "F"];
+  const ROMAN = ["Ⅰ", "Ⅱ", "Ⅲ", "Ⅳ"];
+  const CW = 18, CH = 15, X0 = 26, Y0 = 6;
+  const lc = a && a.l_class ? String(a.l_class).toUpperCase() : null;
+  const sv = a && a.severity_label ? SEV_LABEL_TO_NUM[a.severity_label] : null;
+  const ci = lc ? COLS.indexOf(lc) : -1;
+  const ri = sv >= 1 && sv <= 4 ? sv - 1 : -1;
+  let cells = "";
+  for (let s = 1; s <= 4; s++) {
+    for (let i = 0; i < 6; i++) {
+      const band = RAC_BAND[COLS[i] + s];
+      const on = i === ci && s - 1 === ri ? " on" : "";
+      cells += '<rect class="dc-rc ' + band + on + '" x="' + (X0 + i * CW) +
+        '" y="' + (Y0 + (s - 1) * CH) + '" width="' + CW + '" height="' + CH + '"/>';
+    }
+  }
+  let marker = "", cross = "";
+  if (ci >= 0 && ri >= 0) {
+    const mx = X0 + ci * CW, my = Y0 + ri * CH, cx = mx + CW / 2, cy = my + CH / 2;
+    marker = '<rect class="dc-rac-here on" x="' + mx + '" y="' + my + '" width="' + CW + '" height="' + CH + '"/>';
+    cross =
+      '<line class="dc-rac-cross" x1="' + cx + '" y1="' + cy + '" x2="' + cx + '" y2="' + (Y0 + 4 * CH + 4) + '"/>' +
+      '<line class="dc-rac-cross" x1="' + cx + '" y1="' + cy + '" x2="' + (X0 - 6) + '" y2="' + cy + '"/>';
+  }
+  let colTicks = "", rowTicks = "";
+  for (let i = 0; i < 6; i++)
+    colTicks += '<text class="dc-rac-tick' + (i === ci ? " hot" : "") + '" x="' + (X0 + i * CW + CW / 2) +
+      '" y="' + (Y0 + 4 * CH + 12) + '" text-anchor="middle">' + COLS[i] + "</text>";
+  for (let s = 1; s <= 4; s++)
+    rowTicks += '<text class="dc-rac-tick' + (s - 1 === ri ? " hot" : "") + '" x="' + (X0 - 9) +
+      '" y="' + (Y0 + (s - 1) * CH + CH / 2 + 3) + '" text-anchor="middle">' + ROMAN[s - 1] + "</text>";
+  const midY = Y0 + 2 * CH;
   return (
     '<div class="dc-rac">' +
-    '<svg class="dc-rac-svg" viewBox="0 0 132 96" role="img" aria-label="RAC 매트릭스 — 가능성 × 심각도">' +
-    '<text class="dc-rac-axt" x="8" y="38" transform="rotate(-90 8 38)">심각도 ↑</text>' +
-    '<text class="dc-rac-tick" x="22" y="17">Ⅰ</text>' +
-    '<text class="dc-rac-tick" x="22" y="33">Ⅱ</text>' +
-    '<text class="dc-rac-tick" x="22" y="49">Ⅲ</text>' +
-    '<text class="dc-rac-tick" x="22" y="65">Ⅳ</text>' +
-    '<rect class="dc-rc medium" x="28" y="6" width="24" height="16"/>' +
-    '<rect class="dc-rc serious" x="52" y="6" width="24" height="16"/>' +
-    '<rect class="dc-rc high" x="76" y="6" width="24" height="16"/>' +
-    '<rect class="dc-rc high" x="100" y="6" width="24" height="16"/>' +
-    '<rect class="dc-rc medium" x="28" y="22" width="24" height="16"/>' +
-    '<rect class="dc-rc medium" x="52" y="22" width="24" height="16"/>' +
-    '<rect class="dc-rc serious" x="76" y="22" width="24" height="16"/>' +
-    '<rect class="dc-rc high" x="100" y="22" width="24" height="16"/>' +
-    '<rect class="dc-rc low" x="28" y="38" width="24" height="16"/>' +
-    '<rect class="dc-rc low" x="52" y="38" width="24" height="16"/>' +
-    '<rect class="dc-rc medium" x="76" y="38" width="24" height="16"/>' +
-    '<rect class="dc-rc serious" x="100" y="38" width="24" height="16"/>' +
-    '<rect class="dc-rc low" x="28" y="54" width="24" height="16"/>' +
-    '<rect class="dc-rc low" x="52" y="54" width="24" height="16"/>' +
-    '<rect class="dc-rc low" x="76" y="54" width="24" height="16"/>' +
-    '<rect class="dc-rc medium" x="100" y="54" width="24" height="16"/>' +
-    hereRect +
-    '<text class="dc-rac-tick" x="40" y="80">E</text>' +
-    '<text class="dc-rac-tick" x="64" y="80">D</text>' +
-    '<text class="dc-rac-tick" x="88" y="80">B</text>' +
-    '<text class="dc-rac-tick" x="112" y="80">A</text>' +
-    '<text class="dc-rac-axt" x="76" y="92">가능성 →</text>' +
+    '<svg class="dc-rac-svg" viewBox="0 0 140 100" role="img" aria-label="RAC 매트릭스 6x4 — 가능성 A~F × 심각도 Ⅰ~Ⅳ">' +
+    '<text class="dc-rac-axt" x="8" y="' + midY + '" transform="rotate(-90 8 ' + midY + ')">심각도 ↑</text>' +
+    cells + marker + cross + rowTicks + colTicks +
+    '<text class="dc-rac-axt" x="' + (X0 + 3 * CW) + '" y="96" text-anchor="middle">가능성 → (A높음~F낮음)</text>' +
     "</svg>" +
-    '<div class="dc-rac-cap">RAC = 가능성 × 심각도</div>' +
+    '<div class="dc-rac-cap">RAC = 가능성(L) × 심각도(S)' + (lc && sv ? " · 현재 " + lc + "×" + ROMAN[sv - 1] : "") + "</div>" +
     "</div>"
   );
 }
@@ -452,6 +456,8 @@ function applyLiveDecision(dec, channels) {
     stages.assess = {
       msg: "RAC",
       rac: dec.risk.rac,
+      l_class: dec.risk.l_class,
+      severity_label: dec.risk.severity_label,
       sub: "긴급도 " + (typeof urg === "number" ? urg.toFixed(2) : String(urg)),
     };
   }
