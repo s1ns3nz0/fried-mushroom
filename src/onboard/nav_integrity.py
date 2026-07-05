@@ -62,6 +62,7 @@ def assess_nav_integrity(
     nav_window: list[Any],
     *,
     cycle_interval_s: float = _DEFAULT_CYCLE_INTERVAL_S,
+    cycle_seconds: list[float] | None = None,
     dr_hold_s: float = _DEFAULT_DR_HOLD_S,
     rtl_s: float = _DEFAULT_RTL_S,
     land_s: float = _DEFAULT_LAND_S,
@@ -69,6 +70,8 @@ def assess_nav_integrity(
     """최근 position_consistency 출력 윈도우(오래된→최신) → 항법 failsafe 권고. advisory.
 
     윈도우 원소는 03 `position_consistency` ChannelOutput dict({"state": ...}) 또는 상태 문자열.
+    cycle_seconds: nav_window 와 병렬인 사이클별 실경과(초) 리스트 (#410). 제공 시 말단 streak
+    구간의 실경과를 합산(가변 cadence 정확). None/빈 리스트면 cycle_interval_s 스칼라 폴백.
     반환: {assessable, recommended_action(CONTINUE|MONITOR|DR_HOLD|RTL|LAND|UNKNOWN),
            advisory_only, current_state, untrusted_streak, untrusted_seconds, dead_reckoning, note}.
     """
@@ -90,7 +93,12 @@ def assess_nav_integrity(
             streak += 1
         else:
             break
-    untrusted_s = streak * cycle_interval_s
+    # cycle_seconds 는 window 와 1:1 정렬일 때만 신뢰(길이 불일치 = resume 시 window 만 seed 되고
+    # seconds 미seed → 짧은 슬라이스가 streak 과소집계, codex P2). 불일치면 스칼라 폴백.
+    if cycle_seconds and len(cycle_seconds) == len(window) and streak > 0:
+        untrusted_s = sum(cycle_seconds[-streak:])
+    else:
+        untrusted_s = streak * cycle_interval_s
 
     # 신뢰상실 아님(degraded) → fix 약하나 사용가능, 에스컬레이션 없이 감시.
     if streak == 0:

@@ -202,6 +202,20 @@ def extract_nav_window(results: list[dict]) -> list[dict]:
     return window
 
 
+def extract_link_cycle_seconds(results: list[dict]) -> list[float]:
+    """chain 결과 마지막 원소에서 link cycle_seconds 윈도우 추출 (#410). 체인 이어붙이기용."""
+    if not results:
+        return []
+    return list(results[-1].get("_link_cycle_seconds_window", []))
+
+
+def extract_nav_cycle_seconds(results: list[dict]) -> list[float]:
+    """chain 결과 마지막 원소에서 nav cycle_seconds 윈도우 추출 (#410). 체인 이어붙이기용."""
+    if not results:
+        return []
+    return list(results[-1].get("_nav_cycle_seconds_window", []))
+
+
 def extract_rf_window(results: list[dict]) -> list[dict]:
     """chain 결과 시퀀스에서 rf_spectrum 채널 출력 윈도우 추출. assess_ew_jamming 입력용."""
     window = []
@@ -231,6 +245,8 @@ def run_cycle_chain(
     previous_nav_window: list[dict] | None = None,
     previous_rf_window: list[dict] | None = None,
     previous_ts_ms: int | float | None = None,
+    previous_link_cycle_seconds: list[float] | None = None,
+    previous_nav_cycle_seconds: list[float] | None = None,
 ) -> list[dict]:
     """(raw, mission_brief) 시퀀스를 연속 실행하며 사이클 간 상태를 자동 스레딩한다 (#133).
 
@@ -253,8 +269,10 @@ def run_cycle_chain(
     **누적**해서 넘긴다(마지막 배치만 추출하면 히스토리 소실):
         win = win + extract_link_window(batch_results)
 
-    cycle_interval_s 는 raw.ts_ms 델타에서 도출된다(1Hz 하드코딩 아님) — 등cadence 정확.
-    가변 cadence 구간 스트릭의 실경과 합산 정밀화는 후속 #410.
+    cycle_interval_s 는 raw.ts_ms 델타에서 도출된다(1Hz 하드코딩 아님).
+    가변 cadence 정밀화(#410): link/nav 윈도우 병렬로 사이클별 실경과(cycle_seconds) 를
+    스레딩해 스트릭 구간의 실경과를 합산한다(스칼라 × streak 오에스컬레이션 방지).
+    체인 이어붙이기: previous_link_cycle_seconds/previous_nav_cycle_seconds 도 주입.
     """
     from .link_loss import assess_link_loss
     from .nav_integrity import assess_nav_integrity
@@ -267,6 +285,8 @@ def run_cycle_chain(
     link_window: list[dict] = list(previous_link_window or [])
     nav_window: list[dict] = list(previous_nav_window or [])
     rf_window: list[dict] = list(previous_rf_window or [])
+    link_cycle_seconds: list[float] = list(previous_link_cycle_seconds or [])
+    nav_cycle_seconds: list[float] = list(previous_nav_cycle_seconds or [])
     prev_ts = previous_ts_ms
 
     for raw, mission_brief in pairs:
@@ -276,22 +296,31 @@ def run_cycle_chain(
             previous_qualities=prev_q,
             previous_flight_plan_state=prev_fp,
         )
-        # cross-cycle advisory 윈도우 갱신
-        for ch in result["abstraction"]["channels"]:
-            if ch["channel"] == "link_status":
-                link_window.append(ch)
-            elif ch["channel"] == "position_consistency":
-                nav_window.append(ch)
-            elif ch["channel"] == "rf_spectrum":
-                rf_window.append(ch)
         ts = raw.get("ts_ms")
         interval = _cycle_interval_s(ts, prev_ts)
         if isinstance(ts, (int, float)):
             prev_ts = ts
+        # cross-cycle advisory 윈도우 갱신 — cycle_seconds 는 link/nav 병렬 추가 (#410)
+        for ch in result["abstraction"]["channels"]:
+            if ch["channel"] == "link_status":
+                link_window.append(ch)
+                link_cycle_seconds.append(interval)
+            elif ch["channel"] == "position_consistency":
+                nav_window.append(ch)
+                nav_cycle_seconds.append(interval)
+            elif ch["channel"] == "rf_spectrum":
+                rf_window.append(ch)
         result = dict(result)
-        result["link_loss"] = assess_link_loss(link_window, cycle_interval_s=interval)
-        result["nav_integrity"] = assess_nav_integrity(nav_window, cycle_interval_s=interval)
+        result["link_loss"] = assess_link_loss(
+            link_window, cycle_interval_s=interval, cycle_seconds=link_cycle_seconds
+        )
+        result["nav_integrity"] = assess_nav_integrity(
+            nav_window, cycle_interval_s=interval, cycle_seconds=nav_cycle_seconds
+        )
         result["ew_jamming"] = assess_ew_jamming(rf_window, cycle_interval_s=interval)
+        # 체인 이어붙이기용 cycle_seconds 윈도우 스냅샷 (#410).
+        result["_link_cycle_seconds_window"] = list(link_cycle_seconds)
+        result["_nav_cycle_seconds_window"] = list(nav_cycle_seconds)
         result["failsafe"] = assess_failsafe({
             "energy": result["endurance"],
             "comms": result["link_loss"],
