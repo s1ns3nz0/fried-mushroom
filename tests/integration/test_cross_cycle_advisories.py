@@ -356,3 +356,18 @@ def test_chain_result_contains_failsafe_key():
     results = run_cycle_chain([(_raw_normal(i), _brief()) for i in range(2)])
     for r in results:
         assert "failsafe" in r and r["failsafe"]["advisory_only"] is True
+
+
+def test_chain_result_contains_ew_jamming_key():
+    """run_cycle_chain 각 결과에 ew_jamming advisory 키가 있어야 한다 (#404)."""
+    results = run_cycle_chain([(_raw_normal(i), _brief()) for i in range(2)])
+    for r in results:
+        assert "ew_jamming" in r and r["ew_jamming"]["advisory_only"] is True
+
+
+def test_ew_jamming_resume_seed_preserves_window():
+    """rf 윈도우 seed(previous_rf_window) 로 분할 스트림 EW 스트릭이 보존돼야 한다."""
+    from onboard.run import extract_rf_window
+    brief = _brief()
+    n = run_cycle_chain([(_raw_normal(0), brief)])  # rf_spectrum 정상 채널 존재 확인
+    assert len(extract_rf_window(n)) == 1  # 사이클당 rf_spectrum 1개

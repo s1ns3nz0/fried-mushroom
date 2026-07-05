@@ -137,3 +137,12 @@ def test_cycle_seconds_empty_falls_back_to_scalar():
     """cycle_seconds=[] 이면 스칼라 폴백."""
     r = assess_link_loss(_lost(3), cycle_interval_s=1.0, cycle_seconds=[])
     assert r["outage_seconds"] == 3.0
+
+
+def test_cycle_seconds_length_mismatch_falls_back_to_scalar():
+    # codex P2: cycle_seconds 가 window 보다 짧으면(resume 시 window 만 seed) 과소집계 금지 —
+    # 스칼라 폴백으로 full streak 카운트. 4개 seconds 로 12 두절 윈도우 → 12*1.0 = RTL.
+    win = _lost(12)
+    r = assess_link_loss(win, cycle_interval_s=1.0, cycle_seconds=[0.1, 0.1, 0.1, 0.1])
+    assert r["recommended_action"] == "RTL"
+    assert r["outage_seconds"] == 12.0

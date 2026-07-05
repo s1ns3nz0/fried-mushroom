@@ -41,13 +41,23 @@ jobs:
         env:
           # terraform output dashboard_bucket 값을 repo variable로 등록
           BUCKET: ${{ vars.DASHBOARD_BUCKET }}
+          # prod 공개 수집기 URL — repo variables(식별자 하드코딩 금지, #208/#221 원칙)
+          COLLECTOR_WS_URL: ${{ vars.COLLECTOR_WS_URL }}
+          COLLECTOR_HTTP_URL: ${{ vars.COLLECTOR_HTTP_URL }}
         # Split layout: JS/CSS assets go under /static/ (index.html references
         # them as /static/...), while index.html and config.json sit at the
         # bucket root (frontend fetches /config.json; CloudFront DefaultRootObject=index.html).
+        # config.json 은 repo 의 dev(localhost) 파일을 올리지 않는다 — prod 공개 수집기
+        # URL(repo vars)로 생성해 올린다. vars 미설정 시 배포를 건너뛰어 기존 prod config 보존.
         run: |
-          aws s3 sync infra/dashboard/static/ "s3://$BUCKET/static/" --delete --exclude "index.html" --exclude "config.json"
-          aws s3 cp infra/dashboard/static/index.html "s3://$BUCKET/index.html"
-          aws s3 cp infra/dashboard/static/config.json "s3://$BUCKET/config.json"
+          aws s3 sync infra/dashboard/static/ "s3://$BUCKET/static/" --delete --cache-control "no-cache" --exclude "index.html" --exclude "config.json"
+          aws s3 cp infra/dashboard/static/index.html "s3://$BUCKET/index.html" --cache-control "no-cache" --content-type "text/html; charset=utf-8"
+          if [ -n "$COLLECTOR_WS_URL" ] && [ -n "$COLLECTOR_HTTP_URL" ]; then
+            printf '{"log_ws_url":"%s","collector_http_url":"%s"}\n' "$COLLECTOR_WS_URL" "$COLLECTOR_HTTP_URL" > /tmp/prod-config.json
+            aws s3 cp /tmp/prod-config.json "s3://$BUCKET/config.json" --cache-control "no-cache" --content-type "application/json"
+          else
+            echo "COLLECTOR_WS_URL/HTTP_URL unset — skip config.json (preserve existing prod config)"
+          fi
 
       - name: Invalidate CloudFront cache
         if: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID != '' }}

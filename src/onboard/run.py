@@ -216,6 +216,17 @@ def extract_nav_cycle_seconds(results: list[dict]) -> list[float]:
     return list(results[-1].get("_nav_cycle_seconds_window", []))
 
 
+def extract_rf_window(results: list[dict]) -> list[dict]:
+    """chain 결과 시퀀스에서 rf_spectrum 채널 출력 윈도우 추출. assess_ew_jamming 입력용."""
+    window = []
+    for r in results:
+        for ch in r["abstraction"]["channels"]:
+            if ch["channel"] == "rf_spectrum":
+                window.append(ch)
+                break
+    return window
+
+
 def _cycle_interval_s(ts_ms, prev_ts_ms) -> float:
     """연속 두 raw 의 ts_ms 델타(초). 산출 불가(결측/역행) 시 1.0 폴백.
 
@@ -232,6 +243,7 @@ def run_cycle_chain(
     previous_flight_plan_state: dict | None = None,
     previous_link_window: list[dict] | None = None,
     previous_nav_window: list[dict] | None = None,
+    previous_rf_window: list[dict] | None = None,
     previous_ts_ms: int | float | None = None,
     previous_link_cycle_seconds: list[float] | None = None,
     previous_nav_cycle_seconds: list[float] | None = None,
@@ -247,6 +259,7 @@ def run_cycle_chain(
     - nav_integrity (#389): 누적 position_consistency 윈도우 → GNSS 항법 failsafe 타임라인
     - failsafe (#399): endurance(energy)·link_loss(comms)·nav_integrity(nav) 3축을
       most-conservative-wins 로 융합한 통합 failsafe 권고
+    - ew_jamming (#404): 누적 rf_spectrum 윈도우 → EW 광대역 재밍 지속·방위 확정
     CRITICAL: advisory_only — 결정론 판정(risk/threat/response/flight_plan) 불변(SCC-1).
 
     pairs: iterable of (raw, mission_brief). 반환: 사이클별 run_cycle 결과 리스트.
@@ -264,12 +277,14 @@ def run_cycle_chain(
     from .link_loss import assess_link_loss
     from .nav_integrity import assess_nav_integrity
     from .failsafe_arbiter import assess_failsafe
+    from .ew_jamming import assess_ew_jamming
 
     results: list[dict] = []
     prev_q = previous_qualities
     prev_fp = previous_flight_plan_state
     link_window: list[dict] = list(previous_link_window or [])
     nav_window: list[dict] = list(previous_nav_window or [])
+    rf_window: list[dict] = list(previous_rf_window or [])
     link_cycle_seconds: list[float] = list(previous_link_cycle_seconds or [])
     nav_cycle_seconds: list[float] = list(previous_nav_cycle_seconds or [])
     prev_ts = previous_ts_ms
@@ -285,7 +300,7 @@ def run_cycle_chain(
         interval = _cycle_interval_s(ts, prev_ts)
         if isinstance(ts, (int, float)):
             prev_ts = ts
-        # cross-cycle advisory 윈도우 갱신 — cycle_seconds 는 link/nav 각자 병렬 추가 (#410)
+        # cross-cycle advisory 윈도우 갱신 — cycle_seconds 는 link/nav 병렬 추가 (#410)
         for ch in result["abstraction"]["channels"]:
             if ch["channel"] == "link_status":
                 link_window.append(ch)
@@ -293,6 +308,8 @@ def run_cycle_chain(
             elif ch["channel"] == "position_consistency":
                 nav_window.append(ch)
                 nav_cycle_seconds.append(interval)
+            elif ch["channel"] == "rf_spectrum":
+                rf_window.append(ch)
         result = dict(result)
         result["link_loss"] = assess_link_loss(
             link_window, cycle_interval_s=interval, cycle_seconds=link_cycle_seconds
@@ -300,6 +317,7 @@ def run_cycle_chain(
         result["nav_integrity"] = assess_nav_integrity(
             nav_window, cycle_interval_s=interval, cycle_seconds=nav_cycle_seconds
         )
+        result["ew_jamming"] = assess_ew_jamming(rf_window, cycle_interval_s=interval)
         # 체인 이어붙이기용 cycle_seconds 윈도우 스냅샷 (#410).
         result["_link_cycle_seconds_window"] = list(link_cycle_seconds)
         result["_nav_cycle_seconds_window"] = list(nav_cycle_seconds)
@@ -307,6 +325,7 @@ def run_cycle_chain(
             "energy": result["endurance"],
             "comms": result["link_loss"],
             "nav": result["nav_integrity"],
+            "ew": result["ew_jamming"],
         })
         results.append(result)
         prev_q = extract_qualities(result)

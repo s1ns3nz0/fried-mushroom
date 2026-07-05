@@ -149,4 +149,20 @@ def test_failsafe_contributions_include_known_axes():
     contribs = fs["contributions"]
     # contributions dict 키는 assessable 축만 포함 — 최소 0개 이상
     for axis in contribs:
-        assert axis in ("energy", "comms", "nav"), f"알 수 없는 축: {axis}"
+        assert axis in ("energy", "comms", "nav", "ew"), f"알 수 없는 축: {axis}"
+
+
+def test_failsafe_includes_ew_axis(monkeypatch):
+    """failsafe 4축 융합에 ew(ew_jamming) 축이 포함돼야 한다 (#404/#408 통합)."""
+    from onboard import ew_jamming as ew_mod
+    from onboard.run import run_cycle_chain
+    from onboard.layer_02_sensor.mock_source import build_normal_envelope
+    import json, pathlib
+    brief = json.loads((pathlib.Path(__file__).resolve().parents[2] / "examples" / "mission_brief_t3.json").read_text())
+    # ew_jamming 이 EMCON_EVADE 를 내도록 stub(run_cycle_chain 이 지역 import 하므로 소스 모듈 패치).
+    monkeypatch.setattr(ew_mod, "assess_ew_jamming",
+                        lambda window, **kw: {"recommended_action": "EMCON_EVADE", "assessable": True, "advisory_only": True})
+    res = run_cycle_chain([(build_normal_envelope("EW", 0, 0), brief)])
+    fs = res[-1]["failsafe"]
+    assert "ew" in fs["contributions"]
+    assert fs["recommended_action"] == "EMCON_EVADE"  # sev3, 다른 축 정상 → ew 지배

@@ -104,3 +104,44 @@ def test_input_not_mutated():
     before = {"comms": dict(reports["comms"])}
     assess_failsafe(reports)
     assert reports["comms"] == before["comms"]
+
+
+# ── EW 축 (ew_jamming) 통합 ─────────────────────────────────────────────────
+
+
+def test_ew_emcon_evade_drives_failsafe():
+    # ew EMCON_EVADE(3) vs 나머지 저심각 → EW 가 지배, EMCON_EVADE 그대로 방출.
+    r = assess_failsafe({"energy": _rep("CONTINUE"), "comms": _rep("MONITOR"),
+                         "nav": _rep("CONTINUE"), "ew": _rep("EMCON_EVADE")})
+    assert r["recommended_action"] == "EMCON_EVADE"
+    assert r["severity"] == 3
+    assert r["driving_axes"] == ["ew"]
+
+
+def test_ew_monitor_ranks_low():
+    # ew MONITOR(1) vs nav DR_HOLD(2) → nav 지배.
+    r = assess_failsafe({"ew": _rep("MONITOR"), "nav": _rep("DR_HOLD")})
+    assert r["recommended_action"] == "DR_HOLD"
+    assert r["severity"] == 2
+
+
+def test_emcon_evade_ties_rtl_precedence_order():
+    # ew EMCON_EVADE(3) 와 energy RTL(3) 동률 → 축 우선순위 ew > energy → EMCON_EVADE.
+    r = assess_failsafe({"energy": _rep("RTL"), "ew": _rep("EMCON_EVADE")})
+    assert r["severity"] == 3
+    assert r["recommended_action"] == "EMCON_EVADE"
+    assert r["driving_axes"] == ["ew", "energy"]
+
+
+def test_nav_outranks_ew_on_tie():
+    # nav RTL(3) 와 ew EMCON_EVADE(3) 동률 → nav 우선(가장 근본적) → RTL.
+    r = assess_failsafe({"nav": _rep("RTL"), "ew": _rep("EMCON_EVADE")})
+    assert r["severity"] == 3
+    assert r["recommended_action"] == "RTL"
+    assert r["driving_axes"] == ["nav", "ew"]
+
+
+def test_land_still_dominates_emcon_evade():
+    r = assess_failsafe({"ew": _rep("EMCON_EVADE"), "comms": _rep("LAND")})
+    assert r["recommended_action"] == "LAND"
+    assert r["severity"] == 4

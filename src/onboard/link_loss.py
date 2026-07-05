@@ -114,7 +114,9 @@ def assess_link_loss(
             streak += 1
         else:
             break
-    if cycle_seconds and streak > 0:
+    # cycle_seconds 는 window 와 1:1 정렬일 때만 신뢰(길이 불일치 = resume 시 window 만 seed 되고
+    # seconds 미seed → 짧은 슬라이스가 streak 과소집계, codex P2). 불일치면 스칼라 폴백.
+    if cycle_seconds and len(cycle_seconds) == len(window) and streak > 0:
         outage_s = sum(cycle_seconds[-streak:])
     else:
         outage_s = streak * cycle_interval_s
