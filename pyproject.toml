@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 semantic = ["sentence-transformers>=2.2", "sqlite-vec>=0.1"]
 # ml: 코퍼스 기반 numpy 실 ML 모델(outcome_model 결과예측 / novelty_model 이례성). 미설치 시
 # 각 모델이 미학습으로 자동 하향(SCC-1 advisory) — 코어 파이프라인은 stdlib-only 그대로.
-ml = ["numpy>=1.24"]
+ml = ["numpy>=2.4.6"]
 # perception: 03 실 perception 모델 스택(음향 YAMNet/TF Hub 포함). ONBOARD_PERCEPTION_MODEL=1 opt-in.
 # 미설치 시 lazy import 실패 → stub 자동 폴백(SCC-1, 결정론/골든 불변).
 perception = ["tensorflow>=2.13", "tensorflow-hub>=0.14"]
